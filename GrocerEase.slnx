@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="GrocerEase.Api/GrocerEase.Api.csproj" />
+  <Project Path="GrocerEase.Application/GrocerEase.Application.csproj" />
+  <Project Path="GrocerEase.Contracts/GrocerEase.Contracts.csproj" />
+  <Project Path="GrocerEase.Domain/GrocerEase.Domain.csproj" />
+  <Project Path="GrocerEase.Infrastructure/GrocerEase.Infrastructure.csproj" />
+</Solution>

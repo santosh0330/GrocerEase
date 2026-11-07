@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# The workflow only reads the repository.
+permissions:
+  contents: read
+
+# A newer push to the same branch or PR cancels the run that is still going.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      # Installs the SDK that global.json pins, so CI builds with the same SDK as your machine.
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - run: dotnet restore
+
+      # Warnings are errors (Directory.Build.props), so this step is also the analyzer gate.
+      - run: dotnet build --no-restore --configuration Release
+
+      - run: dotnet test --no-build --configuration Release
+
+  docker:
+    name: Docker image and Compose file
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      # Build only, nothing is pushed. Catches a Dockerfile that no longer builds.
+      - run: docker build --tag grocerease-api:ci .
+
+      # Catches a Compose file that no longer parses. .env.example supplies the required variables.
+      - run: docker compose --env-file .env.example config --quiet

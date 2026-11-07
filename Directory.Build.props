@@ -7,4 +7,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <!-- Static analysis -->
+  <PropertyGroup>
+    <!-- Newest .NET analyzer rule set, at the "Recommended" strictness (more rules on than the default). -->
+    <AnalysisLevel>latest-Recommended</AnalysisLevel>
+    <!-- Run IDExxxx code-style rules (from .editorconfig) during dotnet build, not just in the IDE. -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Version comes from Directory.Packages.props. PrivateAssets keeps the analyzer from flowing to consumers. -->
+    <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers" />
+  </ItemGroup>
+
 </Project>

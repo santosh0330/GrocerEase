@@ -13,6 +13,8 @@
     <AnalysisLevel>latest-Recommended</AnalysisLevel>
     <!-- Run IDExxxx code-style rules (from .editorconfig) during dotnet build, not just in the IDE. -->
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- Any compiler, analyzer or NuGet warning fails the build. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>

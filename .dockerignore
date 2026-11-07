@@ -1,0 +1,27 @@
+# Keep the build context small and stop host build output from leaking into the image.
+
+# Build output (the image builds its own)
+**/bin/
+**/obj/
+
+# Source control and editors
+.git/
+.gitignore
+.vs/
+.vscode/
+.idea/
+*.user
+
+# Secrets and local configuration
+.env
+.env.*
+**/appsettings.Development.json
+**/Properties/launchSettings.json
+
+# Not needed to build the API image
+tests/
+Dockerfile
+.dockerignore
+docker-compose*.yml
+README.md
+**/*.http

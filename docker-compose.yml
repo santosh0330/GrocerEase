@@ -1,0 +1,49 @@
+# Local development stack: the API and its PostgreSQL database.
+#   cp .env.example .env     (then set POSTGRES_PASSWORD)
+#   docker compose up --build
+services:
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      # The API does not read this yet; it is here for when EF Core is added.
+      ConnectionStrings__Default: Host=db;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    # The image already runs as the non-root "app" user; these two limit what it could do anyway.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  db:
+    image: postgres:18
+    # Run as the image's "postgres" user from the start instead of starting as root and
+    # dropping privileges. The named volume below takes its ownership from the image.
+    user: postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      # Loopback only, so tools on this machine can connect but the network cannot.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      # PostgreSQL 18+ images keep data in a version folder below /var/lib/postgresql.
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+volumes:
+  db-data:

@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/tests/">
+    <Project Path="tests/GrocerEase.ArchitectureTests/GrocerEase.ArchitectureTests.csproj" />
+  </Folder>
   <Project Path="GrocerEase.Api/GrocerEase.Api.csproj" />
   <Project Path="GrocerEase.Application/GrocerEase.Application.csproj" />
   <Project Path="GrocerEase.Contracts/GrocerEase.Contracts.csproj" />

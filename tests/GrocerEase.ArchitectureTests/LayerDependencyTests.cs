@@ -36,6 +36,21 @@ public class LayerDependencyTests
     public void Contracts_DoesNotDependOnAnyOtherLayer() =>
         AssertNoDependencies(Contracts, DomainNs, ApplicationNs, InfrastructureNs, ApiNs);
 
+    [Fact]
+    public void Contracts_RequestsAndResponses_AreSealedRecords()
+    {
+        var types = Types.InAssembly(Contracts)
+            .That().ResideInNamespaceStartingWith($"{ContractsNs}.")
+            .And().HaveNameEndingWith("Request", StringComparison.Ordinal).Or().HaveNameEndingWith("Response", StringComparison.Ordinal)
+            .GetTypes()
+            .ToList();
+
+        Assert.NotEmpty(types);
+        // A record has a compiler-generated <Clone>$ method; a class does not.
+        var notRecords = types.Where(t => t.GetMethod("<Clone>$") is null || !t.IsSealed).Select(t => t.Name);
+        Assert.True(!notRecords.Any(), $"Request/response types must be sealed records: {string.Join(", ", notRecords)}");
+    }
+
     private static void AssertNoDependencies(Assembly assembly, params string[] forbidden)
     {
         var result = Types.InAssembly(assembly)

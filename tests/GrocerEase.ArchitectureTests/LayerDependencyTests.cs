@@ -1,4 +1,5 @@
 using System.Reflection;
+using GrocerEase.Application.Abstractions;
 using Microsoft.AspNetCore.Mvc;
 using NetArchTest.Rules;
 
@@ -83,6 +84,23 @@ public class LayerDependencyTests
         Assert.NotEmpty(types);
         var notRecords = types.Where(t => t.GetMethod("<Clone>$") is null || !t.IsSealed).Select(t => t.Name);
         Assert.True(!notRecords.Any(), $"Commands must be sealed records: {string.Join(", ", notRecords)}");
+    }
+
+    [Fact]
+    public void Application_Handlers_AreSealedCommandHandlers()
+    {
+        var types = Types.InAssembly(Application)
+            .That().HaveNameEndingWith("Handler", StringComparison.Ordinal)
+            .And().AreClasses()
+            .GetTypes()
+            .ToList();
+
+        Assert.NotEmpty(types);
+        var offenders = types
+            .Where(t => !t.IsSealed || !t.GetInterfaces().Any(i =>
+                i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ICommandHandler<,>)))
+            .Select(t => t.Name);
+        Assert.True(!offenders.Any(), $"Handlers must be sealed and implement ICommandHandler<,>: {string.Join(", ", offenders)}");
     }
 
     private static void AssertNoDependencies(Assembly assembly, params string[] forbidden)

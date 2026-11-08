@@ -1,4 +1,5 @@
 using System.Reflection;
+using Microsoft.AspNetCore.Mvc;
 using NetArchTest.Rules;
 
 namespace GrocerEase.ArchitectureTests;
@@ -18,6 +19,7 @@ public class LayerDependencyTests
     private static readonly Assembly Domain = typeof(Domain.AssemblyReference).Assembly;
     private static readonly Assembly Application = typeof(Application.AssemblyReference).Assembly;
     private static readonly Assembly Infrastructure = typeof(Infrastructure.AssemblyReference).Assembly;
+    private static readonly Assembly Api = typeof(Program).Assembly;
     private static readonly Assembly Contracts = typeof(Contracts.AssemblyReference).Assembly;
 
     [Fact]
@@ -49,6 +51,25 @@ public class LayerDependencyTests
         // A record has a compiler-generated <Clone>$ method; a class does not.
         var notRecords = types.Where(t => t.GetMethod("<Clone>$") is null || !t.IsSealed).Select(t => t.Name);
         Assert.True(!notRecords.Any(), $"Request/response types must be sealed records: {string.Join(", ", notRecords)}");
+    }
+
+    [Fact]
+    public void Controllers_AreSealedControllerBasesNamedController_AndSkipDomainAndInfrastructure()
+    {
+        var controllers = Types.InAssembly(Api).That().ResideInNamespace($"{ApiNs}.Controllers");
+
+        Assert.NotEmpty(controllers.GetTypes());
+
+        var shape = controllers.Should().HaveNameEndingWith("Controller", StringComparison.Ordinal)
+            .And().Inherit(typeof(ControllerBase))
+            .And().BeSealed()
+            .GetResult();
+        Assert.True(shape.IsSuccessful, $"Offending controllers: {string.Join(", ", shape.FailingTypeNames ?? [])}");
+
+        var dependencies = controllers.ShouldNot().HaveDependencyOnAny(DomainNs, InfrastructureNs).GetResult();
+        Assert.True(
+            dependencies.IsSuccessful,
+            $"Controllers must go through Application, not Domain/Infrastructure: {string.Join(", ", dependencies.FailingTypeNames ?? [])}");
     }
 
     private static void AssertNoDependencies(Assembly assembly, params string[] forbidden)

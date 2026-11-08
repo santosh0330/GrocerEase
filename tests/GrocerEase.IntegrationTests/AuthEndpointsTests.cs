@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using GrocerEase.Contracts.Authentication;
+using Microsoft.AspNetCore.Mvc;
 
 namespace GrocerEase.IntegrationTests;
 
@@ -14,7 +15,7 @@ public class AuthEndpointsTests(ApiFactory factory) : IClassFixture<ApiFactory>
     {
         var response = await _client.PostAsJsonAsync(
             new Uri("/auth/register", UriKind.Relative),
-            new RegisterRequest("Ada", "Lovelace", "ada@example.com", "s3cret!"));
+            new RegisterRequest("Ada", "Lovelace", "ada@example.com", "Sup3r-s3cret!"));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<AuthenticationResponse>();
@@ -59,4 +60,57 @@ public class AuthEndpointsTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
     }
+
+    [Fact]
+    public async Task Post_Register_WithEmptyFields_ReturnsValidationProblemKeyedByJsonName()
+    {
+        var response = await _client.PostAsJsonAsync(
+            new Uri("/auth/register", UriKind.Relative),
+            new RegisterRequest("", "", "", ""));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+        Assert.NotNull(problem);
+        Assert.Equal(["email", "firstName", "lastName", "password"], SortedKeys(problem), StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public async Task Post_Register_WithShortPasswordAndBadEmail_ReportsOnlyThoseFields()
+    {
+        var response = await _client.PostAsJsonAsync(
+            new Uri("/auth/register", UriKind.Relative),
+            new RegisterRequest("Ada", "Lovelace", "not-an-email", "short"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+        Assert.NotNull(problem);
+        Assert.Equal(["email", "password"], SortedKeys(problem), StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public async Task Post_Login_WithEmptyFields_ReturnsValidationProblem()
+    {
+        var response = await _client.PostAsJsonAsync(
+            new Uri("/auth/login", UriKind.Relative),
+            new LoginRequest("", ""));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+        Assert.NotNull(problem);
+        Assert.Equal(["email", "password"], SortedKeys(problem), StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public async Task Post_Login_WithShortPassword_IsNotRejectedByThePasswordPolicy()
+    {
+        var response = await _client.PostAsJsonAsync(
+            new Uri("/auth/login", UriKind.Relative),
+            new LoginRequest("ada@example.com", "a"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    private static string[] SortedKeys(ValidationProblemDetails problem) =>
+        [.. problem.Errors.Keys.Order(StringComparer.Ordinal)];
 }

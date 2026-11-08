@@ -1,0 +1,54 @@
+using System.Text.Json;
+using GrocerEase.Contracts.Authentication;
+
+namespace GrocerEase.UnitTests.Contracts;
+
+public class AuthenticationContractsTests
+{
+    private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
+
+    [Fact]
+    public void RegisterRequest_DeserializesFromCamelCaseJson()
+    {
+        const string json = """{"firstName":"Ada","lastName":"Lovelace","email":"ada@example.com","password":"s3cret!"}""";
+
+        var request = JsonSerializer.Deserialize<RegisterRequest>(json, Web);
+
+        Assert.Equal(new RegisterRequest("Ada", "Lovelace", "ada@example.com", "s3cret!"), request);
+    }
+
+    [Fact]
+    public void LoginRequest_DeserializesFromCamelCaseJson()
+    {
+        const string json = """{"email":"ada@example.com","password":"s3cret!"}""";
+
+        var request = JsonSerializer.Deserialize<LoginRequest>(json, Web);
+
+        Assert.Equal(new LoginRequest("ada@example.com", "s3cret!"), request);
+    }
+
+    [Fact]
+    public void AuthenticationResponse_SerializesToCamelCaseJson()
+    {
+        var id = Guid.Parse("11111111-2222-3333-4444-555555555555");
+        var response = new AuthenticationResponse(id, "Ada", "Lovelace", "ada@example.com", "jwt");
+
+        var json = JsonSerializer.Serialize(response, Web);
+
+        Assert.Equal(
+            """{"id":"11111111-2222-3333-4444-555555555555","firstName":"Ada","lastName":"Lovelace","email":"ada@example.com","token":"jwt"}""",
+            json);
+    }
+
+    [Fact]
+    public void RegisterRequest_ToString_DoesNotContainPassword() =>
+        Assert.DoesNotContain("s3cret!", new RegisterRequest("Ada", "Lovelace", "ada@example.com", "s3cret!").ToString(), StringComparison.Ordinal);
+
+    [Fact]
+    public void LoginRequest_ToString_DoesNotContainPassword() =>
+        Assert.DoesNotContain("s3cret!", new LoginRequest("ada@example.com", "s3cret!").ToString(), StringComparison.Ordinal);
+
+    [Fact]
+    public void AuthenticationResponse_ToString_DoesNotContainToken() =>
+        Assert.DoesNotContain("jwt-value", new AuthenticationResponse(Guid.NewGuid(), "Ada", "Lovelace", "ada@example.com", "jwt-value").ToString(), StringComparison.Ordinal);
+}

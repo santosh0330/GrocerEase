@@ -1,4 +1,5 @@
 using System.Reflection;
+using FluentValidation;
 using GrocerEase.Application.Abstractions;
 using Microsoft.AspNetCore.Mvc;
 using NetArchTest.Rules;
@@ -104,6 +105,56 @@ public class LayerDependencyTests
 
         var misplaced = types.Where(t => t.Namespace is null || !t.Namespace.EndsWith(".Handlers", StringComparison.Ordinal)).Select(t => t.FullName);
         Assert.True(!misplaced.Any(), $"Handlers must live in a Handlers namespace/folder: {string.Join(", ", misplaced)}");
+    }
+
+    [Fact]
+    public void Application_Validators_AreSealedAbstractValidatorsInAValidatorsFolder()
+    {
+        var types = Types.InAssembly(Application)
+            .That().HaveNameEndingWith("Validator", StringComparison.Ordinal)
+            .And().AreClasses()
+            .GetTypes()
+            .ToList();
+
+        Assert.NotEmpty(types);
+        var offenders = types
+            .Where(t => !t.IsSealed
+                || !InheritsFromGeneric(t, typeof(AbstractValidator<>))
+                || t.Namespace is null
+                || !t.Namespace.EndsWith(".Validators", StringComparison.Ordinal))
+            .Select(t => t.FullName);
+        Assert.True(!offenders.Any(), $"Validators must be sealed AbstractValidator<> classes in a .Validators namespace: {string.Join(", ", offenders)}");
+    }
+
+    [Fact]
+    public void Application_EveryCommand_HasAValidator()
+    {
+        var commands = Types.InAssembly(Application)
+            .That().HaveNameEndingWith("Command", StringComparison.Ordinal)
+            .GetTypes()
+            .ToList();
+        var validators = Types.InAssembly(Application)
+            .That().HaveNameEndingWith("Validator", StringComparison.Ordinal)
+            .GetTypes()
+            .Select(t => t.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.NotEmpty(commands);
+        var missing = commands.Where(c => !validators.Contains(c.Name + "Validator")).Select(c => c.Name);
+        Assert.True(!missing.Any(), $"Commands without a <Command>Validator: {string.Join(", ", missing)}");
+    }
+
+    private static bool InheritsFromGeneric(Type type, Type openGenericBase)
+    {
+        for (var current = type.BaseType; current is not null; current = current.BaseType)
+        {
+            if (current.IsGenericType && current.GetGenericTypeDefinition() == openGenericBase)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static void AssertNoDependencies(Assembly assembly, params string[] forbidden)

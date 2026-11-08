@@ -72,6 +72,19 @@ public class LayerDependencyTests
             $"Controllers must go through Application, not Domain/Infrastructure: {string.Join(", ", dependencies.FailingTypeNames ?? [])}");
     }
 
+    [Fact]
+    public void Application_Commands_AreSealedRecords()
+    {
+        var types = Types.InAssembly(Application)
+            .That().HaveNameEndingWith("Command", StringComparison.Ordinal)
+            .GetTypes()
+            .ToList();
+
+        Assert.NotEmpty(types);
+        var notRecords = types.Where(t => t.GetMethod("<Clone>$") is null || !t.IsSealed).Select(t => t.Name);
+        Assert.True(!notRecords.Any(), $"Commands must be sealed records: {string.Join(", ", notRecords)}");
+    }
+
     private static void AssertNoDependencies(Assembly assembly, params string[] forbidden)
     {
         var result = Types.InAssembly(assembly)

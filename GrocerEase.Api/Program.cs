@@ -1,6 +1,7 @@
 using GrocerEase.Application.Abstractions;
 using GrocerEase.Application.Authentication.Commands;
 using GrocerEase.Application.Authentication.Common;
+using GrocerEase.Application.Authentication.Handlers;
 
 var builder = WebApplication.CreateBuilder(args);
 

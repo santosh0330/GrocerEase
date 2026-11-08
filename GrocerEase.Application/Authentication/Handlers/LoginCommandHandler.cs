@@ -1,7 +1,8 @@
 using GrocerEase.Application.Abstractions;
+using GrocerEase.Application.Authentication.Commands;
 using GrocerEase.Application.Authentication.Common;
 
-namespace GrocerEase.Application.Authentication.Commands;
+namespace GrocerEase.Application.Authentication.Handlers;
 
 public sealed class LoginCommandHandler : ICommandHandler<LoginCommand, AuthenticationResult>
 {

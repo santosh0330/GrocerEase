@@ -1,4 +1,5 @@
 using GrocerEase.Application.Authentication.Commands;
+using GrocerEase.Application.Authentication.Handlers;
 
 namespace GrocerEase.UnitTests.Application;
 

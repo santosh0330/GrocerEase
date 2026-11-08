@@ -101,6 +101,9 @@ public class LayerDependencyTests
                 i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ICommandHandler<,>)))
             .Select(t => t.Name);
         Assert.True(!offenders.Any(), $"Handlers must be sealed and implement ICommandHandler<,>: {string.Join(", ", offenders)}");
+
+        var misplaced = types.Where(t => t.Namespace is null || !t.Namespace.EndsWith(".Handlers", StringComparison.Ordinal)).Select(t => t.FullName);
+        Assert.True(!misplaced.Any(), $"Handlers must live in a Handlers namespace/folder: {string.Join(", ", misplaced)}");
     }
 
     private static void AssertNoDependencies(Assembly assembly, params string[] forbidden)

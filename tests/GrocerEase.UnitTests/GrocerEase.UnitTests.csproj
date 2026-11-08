@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\GrocerEase.Domain\GrocerEase.Domain.csproj" />
     <ProjectReference Include="..\..\GrocerEase.Application\GrocerEase.Application.csproj" />
+    <ProjectReference Include="..\..\GrocerEase.Api\GrocerEase.Api.csproj" />
     <ProjectReference Include="..\..\GrocerEase.Contracts\GrocerEase.Contracts.csproj" />
   </ItemGroup>
 

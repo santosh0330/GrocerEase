@@ -1,6 +1,23 @@
 @GrocerEase.Api_HostAddress = http://localhost:5242
 
-GET {{GrocerEase.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+POST {{GrocerEase.Api_HostAddress}}/auth/register
+Content-Type: application/json
+
+{
+  "firstName": "Ada",
+  "lastName": "Lovelace",
+  "email": "ada@example.com",
+  "password": "s3cret!"
+}
+
+###
+
+POST {{GrocerEase.Api_HostAddress}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "ada@example.com",
+  "password": "s3cret!"
+}
 
 ###

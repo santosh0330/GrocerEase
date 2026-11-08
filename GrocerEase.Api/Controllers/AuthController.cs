@@ -1,24 +1,35 @@
+using GrocerEase.Api.Mapping;
+using GrocerEase.Application.Abstractions;
+using GrocerEase.Application.Authentication.Commands;
+using GrocerEase.Application.Authentication.Common;
 using GrocerEase.Contracts.Authentication;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GrocerEase.Api.Controllers;
 
-/// <summary>Registration and login. Request and response bodies are the DTOs from the Contracts layer.</summary>
+/// <summary>
+/// Registration and login. Maps the Contracts DTOs to Application commands, runs the handler,
+/// and maps the result back to a DTO; it holds no logic of its own.
+/// </summary>
 [ApiController]
 [Route("auth")]
-public sealed class AuthController : ControllerBase
+public sealed class AuthController(
+    ICommandHandler<RegisterCommand, AuthenticationResult> registerHandler,
+    ICommandHandler<LoginCommand, AuthenticationResult> loginHandler) : ControllerBase
 {
-    // TEMPORARY: no use-case handlers exist yet, so both actions echo the input with a placeholder
-    // token. Replace the bodies with calls to the Application layer; do not deploy as is.
-    private const string PlaceholderToken = "placeholder-token";
-
     [HttpPost("register")]
     [ProducesResponseType<AuthenticationResponse>(StatusCodes.Status200OK)]
-    public IActionResult Register(RegisterRequest request) =>
-        Ok(new AuthenticationResponse(Guid.NewGuid(), request.FirstName, request.LastName, request.Email, PlaceholderToken));
+    public async Task<IActionResult> Register(RegisterRequest request, CancellationToken cancellationToken)
+    {
+        var result = await registerHandler.Handle(request.ToCommand(), cancellationToken);
+        return Ok(result.ToResponse());
+    }
 
     [HttpPost("login")]
     [ProducesResponseType<AuthenticationResponse>(StatusCodes.Status200OK)]
-    public IActionResult Login(LoginRequest request) =>
-        Ok(new AuthenticationResponse(Guid.NewGuid(), "placeholder", "placeholder", request.Email, PlaceholderToken));
+    public async Task<IActionResult> Login(LoginRequest request, CancellationToken cancellationToken)
+    {
+        var result = await loginHandler.Handle(request.ToCommand(), cancellationToken);
+        return Ok(result.ToResponse());
+    }
 }

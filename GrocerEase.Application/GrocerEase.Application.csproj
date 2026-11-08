@@ -4,4 +4,8 @@
     <ProjectReference Include="..\GrocerEase.Domain\GrocerEase.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+
 </Project>

@@ -21,16 +21,11 @@ public sealed class InMemoryUserRepository : IUserRepository
         return Task.FromResult(user);
     }
 
-    public Task AddAsync(User user, CancellationToken cancellationToken)
+    public Task<bool> TryAddAsync(User user, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(user);
 
-        // TryAdd is atomic, so two simultaneous registrations of one email cannot both succeed.
-        if (!_usersByEmail.TryAdd(user.Email, user))
-        {
-            throw new InvalidOperationException($"A user with the email '{user.Email}' already exists.");
-        }
-
-        return Task.CompletedTask;
+        // TryAdd is atomic, so of two simultaneous registrations of one email exactly one gets true.
+        return Task.FromResult(_usersByEmail.TryAdd(user.Email, user));
     }
 }

@@ -21,6 +21,14 @@ public class RegisterCommandHandlerTests
         }
     }
 
+    // Looks empty when the handler checks, then refuses the add: another registration won the race in between.
+    private sealed class RaceLosingRepository : IUserRepository
+    {
+        public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken) => Task.FromResult<User?>(null);
+
+        public Task<bool> TryAddAsync(User user, CancellationToken cancellationToken) => Task.FromResult(false);
+    }
+
     private static readonly RegisterCommand Ada = new("Ada", "Lovelace", "ada@example.com", "s3cret!");
 
     [Fact]
@@ -42,6 +50,19 @@ public class RegisterCommandHandlerTests
         Assert.NotNull(stored);
         Assert.Equal(user.Id, stored.Id);
         Assert.Same(stored, tokens.LastUser);
+    }
+
+    [Fact]
+    public async Task Handle_WhenAnotherRegistrationWinsTheRace_ReturnsADuplicateEmailConflictAndNoToken()
+    {
+        var tokens = new StubTokenGenerator();
+        var handler = new RegisterCommandHandler(new RaceLosingRepository(), new FakePasswordHasher(), tokens);
+
+        var result = await handler.Handle(Ada, CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthenticationErrors.DuplicateEmail, result.Error);
+        Assert.Null(tokens.LastUser);
     }
 
     [Fact]

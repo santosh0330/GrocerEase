@@ -47,6 +47,31 @@ dotnet run --project GrocerEase.Api
 
 `Jwt:Issuer`, `Jwt:Audience` and `Jwt:ExpiryMinutes` are not secret and live in `GrocerEase.Api/appsettings.json`. User-secrets are only read when `ASPNETCORE_ENVIRONMENT` is `Development` (the `dotnet run` launch profiles set it). In any other environment, set the environment variable `Jwt__SecretKey`.
 
+## Authentication
+
+`POST /auth/register` and `POST /auth/login` return a JWT in `token`. Send it on every request to a protected route:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8080/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"ada@example.com","password":"s3cret!!"}' | jq -r .token)
+curl -s http://localhost:8080/me -H "Authorization: Bearer $TOKEN"
+```
+
+| Route | Needs | Returns |
+|---|---|---|
+| `GET /me` | a valid bearer token | `{ id, firstName, lastName, email }` of the signed-in user |
+
+A token lives 60 minutes (`Jwt:ExpiryMinutes`). A request without a valid token never reaches the route. It gets `application/problem+json` with a `code` to switch on, plus a `WWW-Authenticate` header:
+
+| Status | `code` | When |
+|---|---|---|
+| `401` | `Authentication.Required` | no token, or not a bearer one (`Basic ...`) |
+| `401` | `Authentication.InvalidToken` | garbage, wrong signature, wrong issuer or audience, no signature, no expiry |
+| `401` | `Authentication.TokenExpired` | a real token that has expired: sign in again |
+| `403` | `Authorization.Forbidden` | signed in, but not allowed to do this (no route needs a permission yet) |
+
+A token is accepted up to 30 seconds past its expiry, to forgive small clock differences between servers. Only HMAC-SHA256 tokens signed with this API's key, for this API's issuer and audience, are accepted. `GrocerEase.Api/GrocerEase.Api.http` has ready-made requests (run `login` first).
+
 ## Rate limits
 
 Two endpoints are limited per client address, each with its own counter:

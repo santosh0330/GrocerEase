@@ -5,15 +5,24 @@ using GrocerEase.Application.Common;
 
 namespace GrocerEase.Application.Authentication.Handlers;
 
-public sealed class LoginCommandHandler : ICommandHandler<LoginCommand, Result<AuthenticationResult>>
+public sealed class LoginCommandHandler(
+    IUserRepository userRepository,
+    IJwtTokenGenerator jwtTokenGenerator) : ICommandHandler<LoginCommand, Result<AuthenticationResult>>
 {
-    // TEMPORARY: nothing checks the password yet, so any login succeeds with made-up details.
-    // Replace with the real use case; do not deploy as is.
-    public Task<Result<AuthenticationResult>> Handle(LoginCommand command, CancellationToken cancellationToken)
+    public async Task<Result<AuthenticationResult>> Handle(LoginCommand command, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        return Task.FromResult(Result.Success(new AuthenticationResult(
-            Guid.NewGuid(), "FirstName", "LastName", command.Email, "placeholder-token")));
+        var user = await userRepository.GetByEmailAsync(command.Email, cancellationToken);
+
+        // TEMPORARY: plain-text comparison. See User.Password. An unknown email and a wrong password
+        // give the same error on purpose, so a caller cannot tell which emails are registered.
+        if (user is null || !string.Equals(user.Password, command.Password, StringComparison.Ordinal))
+        {
+            return Result.Failure<AuthenticationResult>(AuthenticationErrors.InvalidCredentials);
+        }
+
+        var token = jwtTokenGenerator.GenerateToken(user);
+        return Result.Success(new AuthenticationResult(user.Id, user.FirstName, user.LastName, user.Email, token));
     }
 }

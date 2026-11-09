@@ -13,6 +13,11 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
     /// <summary>The unique index on the email. The repository recognises "email already taken" by this name.</summary>
     public const string EmailIndexName = "ix_users_email";
 
+    /// <summary>Names of the shadow properties for the two timestamp columns: <c>db.Entry(user).Property&lt;DateTimeOffset&gt;(name)</c>.</summary>
+    public const string CreatedAtProperty = "CreatedAt";
+
+    public const string UpdatedAtProperty = "UpdatedAt";
+
     private const int PasswordHashMaxLength = 256;
 
     public void Configure(EntityTypeBuilder<User> builder)
@@ -39,6 +44,18 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
 
         // Not a domain rule: it is the room the hashing algorithm needs (an ASP.NET Core Identity hash is 84 characters),
         // with headroom for a stronger one later. So it lives here, with the schema, and not on the entity.
+        // When a row was created and last changed. The database keeps both (a default, and a trigger for updated_at, written
+        // into the migration), so the value is right whatever changes the row. They are shadow properties: they exist in the
+        // model and the table, but not on the User entity, because nothing in the domain needs them.
+        builder.Property<DateTimeOffset>(CreatedAtProperty)
+            .HasColumnName("created_at")
+            .HasDefaultValueSql("now()")
+            .ValueGeneratedOnAdd();
+        builder.Property<DateTimeOffset>(UpdatedAtProperty)
+            .HasColumnName("updated_at")
+            .HasDefaultValueSql("now()")
+            .ValueGeneratedOnAddOrUpdate();
+
         builder.Property(user => user.PasswordHash).HasColumnName("password_hash").HasMaxLength(PasswordHashMaxLength).IsRequired();
     }
 }

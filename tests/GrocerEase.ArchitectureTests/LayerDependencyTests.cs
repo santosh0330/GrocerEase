@@ -37,6 +37,33 @@ public class LayerDependencyTests
     public void Infrastructure_DoesNotDependOnContractsOrApi() =>
         AssertNoDependencies(Infrastructure, ContractsNs, ApiNs);
 
+    // Hashing and tokens are details behind IPasswordHasher and IJwtTokenGenerator. If Domain or Application used these
+    // libraries directly, swapping the algorithm or the library would mean changing business code.
+    private static readonly string[] IdentityAndTokenLibraries =
+    [
+        "Microsoft.AspNetCore.Identity",
+        "Microsoft.Extensions.Identity",
+        "Microsoft.IdentityModel",
+        "System.IdentityModel",
+    ];
+
+    [Fact]
+    public void Domain_DoesNotUseIdentityOrTokenLibraries() =>
+        AssertNoDependencies(Domain, IdentityAndTokenLibraries);
+
+    [Fact]
+    public void Application_DoesNotUseIdentityOrTokenLibraries() =>
+        AssertNoDependencies(Application, IdentityAndTokenLibraries);
+
+    [Fact]
+    public void TheIdentityAndTokenLibraryRule_CanFail_BecauseInfrastructureDoesUseThem()
+    {
+        // Guards the two tests above against passing by accident (a wrong namespace would match nothing).
+        var result = Types.InAssembly(Infrastructure).ShouldNot().HaveDependencyOnAny(IdentityAndTokenLibraries).GetResult();
+
+        Assert.False(result.IsSuccessful);
+    }
+
     [Fact]
     public void Contracts_DoesNotDependOnAnyOtherLayer() =>
         AssertNoDependencies(Contracts, DomainNs, ApplicationNs, InfrastructureNs, ApiNs);

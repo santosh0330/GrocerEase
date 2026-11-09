@@ -12,8 +12,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace GrocerEase.IntegrationTests;
 
 /// <summary>
-/// The real handlers never fail yet (they are placeholders), so these tests swap one in that returns a failed
-/// <see cref="Result{T}"/> and check the whole pipeline turns it into a problem response.
+/// The real handlers' failures are covered in <see cref="AuthEndpointsTests"/>. These tests swap in a handler that returns
+/// a chosen failure and check the whole pipeline turns it into a problem response.
 /// </summary>
 public class AuthFailureEndpointsTests(ApiFactory factory) : IClassFixture<ApiFactory>
 {

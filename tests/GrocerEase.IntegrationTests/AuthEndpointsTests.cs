@@ -48,17 +48,44 @@ public class AuthEndpointsTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task Post_Login_ReturnsOkWithAuthenticationResponse()
+    public async Task Post_Login_AfterRegistering_ReturnsOkWithTheSameUser()
     {
+        var email = UniqueEmail();
+        var registered = await RegisterAsync(email, "Sup3r-s3cret!");
+
         var response = await _client.PostAsJsonAsync(
             new Uri("/auth/login", UriKind.Relative),
-            new LoginRequest("ada@example.com", "s3cret!"));
+            new LoginRequest(email, "Sup3r-s3cret!"));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<AuthenticationResponse>();
         Assert.NotNull(body);
-        Assert.Equal("ada@example.com", body.Email);
+        Assert.Equal(registered.Id, body.Id);
+        Assert.Equal(email, body.Email);
         Assert.False(string.IsNullOrEmpty(body.Token));
+    }
+
+    [Fact]
+    public async Task Post_Login_WithAWrongPassword_Returns401Problem()
+    {
+        var email = UniqueEmail();
+        await RegisterAsync(email, "Sup3r-s3cret!");
+
+        var response = await _client.PostAsJsonAsync(
+            new Uri("/auth/login", UriKind.Relative),
+            new LoginRequest(email, "not-the-password"));
+
+        await AssertInvalidCredentialsAsync(response);
+    }
+
+    [Fact]
+    public async Task Post_Login_WithAnEmailThatIsNotRegistered_Returns401Problem()
+    {
+        var response = await _client.PostAsJsonAsync(
+            new Uri("/auth/login", UriKind.Relative),
+            new LoginRequest(UniqueEmail(), "Sup3r-s3cret!"));
+
+        await AssertInvalidCredentialsAsync(response);
     }
 
     [Theory]
@@ -126,11 +153,31 @@ public class AuthEndpointsTests(ApiFactory factory) : IClassFixture<ApiFactory>
     [Fact]
     public async Task Post_Login_WithShortPassword_IsNotRejectedByThePasswordPolicy()
     {
+        // The password policy applies when choosing a password, not when logging in: a short one is a wrong
+        // password (401 from the handler), not malformed input (400 from the validator).
         var response = await _client.PostAsJsonAsync(
             new Uri("/auth/login", UriKind.Relative),
-            new LoginRequest("ada@example.com", "a"));
+            new LoginRequest(UniqueEmail(), "a"));
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    private async Task<AuthenticationResponse> RegisterAsync(string email, string password)
+    {
+        var response = await _client.PostAsJsonAsync(
+            new Uri("/auth/register", UriKind.Relative),
+            new RegisterRequest("Ada", "Lovelace", email, password));
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<AuthenticationResponse>())!;
+    }
+
+    private static async Task AssertInvalidCredentialsAsync(HttpResponseMessage response)
+    {
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        Assert.NotNull(problem);
+        Assert.Equal("Authentication.InvalidCredentials", problem.Extensions["code"]?.ToString());
     }
 
     private static string[] SortedKeys(ValidationProblemDetails problem) =>

@@ -1,4 +1,5 @@
 using GrocerEase.Api.ExceptionHandling;
+using GrocerEase.Api.RateLimiting;
 using GrocerEase.Application;
 using GrocerEase.Infrastructure;
 
@@ -10,6 +11,7 @@ builder.Services.AddControllers();
 builder.Services
     .AddApplication()
     .AddInfrastructure(builder.Configuration);
+builder.Services.AddLoginRateLimiting(builder.Configuration);
 builder.Services.AddExceptionHandler<ValidationExceptionHandler>();
 builder.Services.AddExceptionHandler<UnhandledExceptionHandler>();
 builder.Services.AddProblemDetails();
@@ -25,6 +27,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
+app.UseRateLimiter();
 
 app.MapControllers();
 app.MapGet("/test", () => "test");

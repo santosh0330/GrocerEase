@@ -19,6 +19,13 @@ public class ApiFactory : WebApplicationFactory<Program>
 
         // Added last, so it wins over user-secrets or environment variables on a developer's machine.
         builder.ConfigureAppConfiguration((_, config) =>
-            config.AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["Jwt:SecretKey"] = JwtSecretKey }));
+            config.AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Jwt:SecretKey"] = JwtSecretKey,
+
+                // Tests share one client and log in many times; the real limit would block them. The rate limit's own
+                // tests set a small limit on their own app instance.
+                ["RateLimiting:Login:PermitLimit"] = "1000",
+            }));
     }
 }

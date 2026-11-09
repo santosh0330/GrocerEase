@@ -47,5 +47,11 @@ dotnet run --project GrocerEase.Api
 
 `Jwt:Issuer`, `Jwt:Audience` and `Jwt:ExpiryMinutes` are not secret and live in `GrocerEase.Api/appsettings.json`. User-secrets are only read when `ASPNETCORE_ENVIRONMENT` is `Development` (the `dotnet run` launch profiles set it). In any other environment, set the environment variable `Jwt__SecretKey`.
 
+## Login rate limit
+
+`POST /auth/login` accepts 5 attempts per minute from one client address. The next one gets `429 Too Many Requests` as `application/problem+json`, with a `Retry-After` header (seconds) and the code `RateLimit.TooManyRequests`. Every attempt counts, whether the credentials were right, wrong, or the body was invalid. IPv6 clients are grouped by their `/64` prefix. Change the numbers in `GrocerEase.Api/appsettings.json` (`RateLimiting:Login:PermitLimit` and `WindowSeconds`); the API refuses to start with a value outside 1-1000 attempts or 1-3600 seconds.
+
+The limit is per client **address**. Behind a reverse proxy or load balancer every request arrives from the proxy's address, so everyone would share one limit until forwarded headers are configured for the known proxy.
+
 The project changes is going to be documented as md files on `~/Documents/Guides to Great SW/Better NCC DEV/Applications/GrocerEase`
 

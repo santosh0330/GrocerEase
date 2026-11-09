@@ -5,6 +5,7 @@ using GrocerEase.Application;
 using GrocerEase.Application.Authentication.Commands;
 using GrocerEase.Application.Authentication.Common;
 using GrocerEase.Application.Authentication.Handlers;
+using GrocerEase.Application.Common;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,8 +13,8 @@ var builder = WebApplication.CreateBuilder(args);
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddControllers();
 builder.Services.AddValidatorsFromAssembly(typeof(AssemblyReference).Assembly);
-builder.Services.AddValidatedCommandHandler<RegisterCommand, AuthenticationResult, RegisterCommandHandler>();
-builder.Services.AddValidatedCommandHandler<LoginCommand, AuthenticationResult, LoginCommandHandler>();
+builder.Services.AddValidatedCommandHandler<RegisterCommand, Result<AuthenticationResult>, RegisterCommandHandler>();
+builder.Services.AddValidatedCommandHandler<LoginCommand, Result<AuthenticationResult>, LoginCommandHandler>();
 builder.Services.AddExceptionHandler<ValidationExceptionHandler>();
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();

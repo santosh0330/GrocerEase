@@ -13,8 +13,10 @@ public class RegisterCommandHandlerTests
         var result = await handler.Handle(
             new RegisterCommand("Ada", "Lovelace", "ada@example.com", "s3cret!"), CancellationToken.None);
 
-        Assert.Equal(("Ada", "Lovelace", "ada@example.com"), (result.FirstName, result.LastName, result.Email));
-        Assert.NotEqual(Guid.Empty, result.Id);
-        Assert.False(string.IsNullOrEmpty(result.Token));
+        Assert.True(result.IsSuccess);
+        var user = result.Value;
+        Assert.Equal(("Ada", "Lovelace", "ada@example.com"), (user.FirstName, user.LastName, user.Email));
+        Assert.NotEqual(Guid.Empty, user.Id);
+        Assert.False(string.IsNullOrEmpty(user.Token));
     }
 }

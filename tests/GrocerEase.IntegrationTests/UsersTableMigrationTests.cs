@@ -1,8 +1,5 @@
-using GrocerEase.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql;
+using static GrocerEase.IntegrationTests.MigrationTestSupport;
 
 namespace GrocerEase.IntegrationTests;
 
@@ -12,30 +9,18 @@ namespace GrocerEase.IntegrationTests;
 /// </summary>
 public class UsersTableMigrationTests
 {
-    private static async Task<string> MigratedDatabaseAsync()
+    // These tests describe what CreateUsers leaves behind, so they stop after it: later migrations have their own tests.
+    private static async Task<string> AfterCreateUsersAsync()
     {
         var connectionString = await PostgresServer.CreateEmptyDatabaseAsync();
-        await MigrateAsync(connectionString);
+        await MigrateAsync(connectionString, AllMigrations()[0]);
         return connectionString;
-    }
-
-    private static async Task MigrateAsync(string connectionString, string? targetMigration = null)
-    {
-        await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().Configure(connectionString).Options);
-        if (targetMigration is null)
-        {
-            await db.Database.MigrateAsync();
-        }
-        else
-        {
-            await db.GetService<IMigrator>().MigrateAsync(targetMigration);
-        }
     }
 
     [Fact]
     public async Task MigratingAnEmptyDatabase_CreatesTheUsersTableWithTheExpectedColumns()
     {
-        var database = await MigratedDatabaseAsync();
+        var database = await AfterCreateUsersAsync();
 
         var columns = await PostgresServer.ScalarAsync<string>(
             database,
@@ -52,7 +37,7 @@ public class UsersTableMigrationTests
     [Fact]
     public async Task TheIdIsThePrimaryKey()
     {
-        var database = await MigratedDatabaseAsync();
+        var database = await AfterCreateUsersAsync();
 
         var key = await PostgresServer.ScalarAsync<string>(
             database,
@@ -64,7 +49,7 @@ public class UsersTableMigrationTests
     [Fact]
     public async Task TheEmailHasAUniqueIndex()
     {
-        var database = await MigratedDatabaseAsync();
+        var database = await AfterCreateUsersAsync();
 
         var definition = await PostgresServer.ScalarAsync<string>(
             database, "select indexdef from pg_indexes where schemaname = 'public' and indexname = 'ix_users_email'");
@@ -75,7 +60,7 @@ public class UsersTableMigrationTests
     [Fact]
     public async Task TheSameEmailTwice_IsRefusedByTheUniqueIndex()
     {
-        var database = await MigratedDatabaseAsync();
+        var database = await AfterCreateUsersAsync();
         const string insert = "insert into users (first_name, last_name, email, password_hash) values ('Ada', 'Lovelace', 'ada@example.com', 'hash')";
         await PostgresServer.ExecuteAsync(database, insert);
 
@@ -88,7 +73,7 @@ public class UsersTableMigrationTests
     [Fact]
     public async Task ARowInsertedWithoutAnId_GetsAVersion7UuidFromTheDatabase()
     {
-        var database = await MigratedDatabaseAsync();
+        var database = await AfterCreateUsersAsync();
 
         var version = await PostgresServer.ScalarAsync<short>(
             database,
@@ -100,7 +85,7 @@ public class UsersTableMigrationTests
     [Fact]
     public async Task AnIdThatIsNotVersion7_IsRefusedByTheDatabase()
     {
-        var database = await MigratedDatabaseAsync();
+        var database = await AfterCreateUsersAsync();
 
         var exception = await Assert.ThrowsAsync<PostgresException>(() => PostgresServer.ExecuteAsync(
             database,
@@ -113,7 +98,7 @@ public class UsersTableMigrationTests
     [Fact]
     public async Task TheMigrationHistoryIsKeptInItsOwnSchema_NotNextToTheTables()
     {
-        var database = await MigratedDatabaseAsync();
+        var database = await AfterCreateUsersAsync();
 
         Assert.Equal(1L, await PostgresServer.ScalarAsync<long>(database, "select count(*) from migrations.\"__EFMigrationsHistory\""));
         Assert.Null(await PostgresServer.ScalarAsync<string>(database, "select to_regclass('public.\"__EFMigrationsHistory\"')::text"));
@@ -122,9 +107,9 @@ public class UsersTableMigrationTests
     [Fact]
     public async Task MigratingTwice_ChangesNothingTheSecondTime()
     {
-        var database = await MigratedDatabaseAsync();
+        var database = await AfterCreateUsersAsync();
 
-        await MigrateAsync(database);
+        await MigrateAsync(database, AllMigrations()[0]);
 
         Assert.Equal(1L, await PostgresServer.ScalarAsync<long>(database, "select count(*) from migrations.\"__EFMigrationsHistory\""));
     }
@@ -132,7 +117,7 @@ public class UsersTableMigrationTests
     [Fact]
     public async Task RollingBackToTheStart_RemovesTheUsersTable()
     {
-        var database = await MigratedDatabaseAsync();
+        var database = await AfterCreateUsersAsync();
 
         await MigrateAsync(database, targetMigration: "0");
 

@@ -24,6 +24,7 @@ public sealed class AuthController(
     private const string ProblemJson = "application/problem+json";
 
     [HttpPost("register")]
+    [EnableRateLimiting(RateLimitingExtensions.RegisterPolicy)]
     [ProducesResponseType<AuthenticationResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, ProblemJson)]

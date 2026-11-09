@@ -11,7 +11,7 @@ builder.Services.AddControllers();
 builder.Services
     .AddApplication()
     .AddInfrastructure(builder.Configuration);
-builder.Services.AddLoginRateLimiting(builder.Configuration);
+builder.Services.AddRateLimiting(builder.Configuration);
 builder.Services.AddExceptionHandler<ValidationExceptionHandler>();
 builder.Services.AddExceptionHandler<UnhandledExceptionHandler>();
 builder.Services.AddProblemDetails();

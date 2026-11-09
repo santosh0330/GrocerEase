@@ -17,47 +17,63 @@ public static class RateLimitingExtensions
     // plus a burst at the start of the next would otherwise allow twice the limit within a few seconds.
     private const int SegmentsPerWindow = 6;
 
-    /// <summary>Registers the login rate limit and its settings. Pair it with <c>app.UseRateLimiter()</c>.</summary>
-    public static IServiceCollection AddLoginRateLimiting(this IServiceCollection services, IConfiguration configuration)
+    // Used only if a rejected request has no known policy, which should not happen: the longest window a setting allows.
+    private const int FallbackRetryAfterSeconds = RateLimitSettings.MaxWindowSeconds;
+
+    /// <summary>Registers the rate limit policies and their settings. Pair it with <c>app.UseRateLimiter()</c>.</summary>
+    public static IServiceCollection AddRateLimiting(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        services.AddOptions<LoginRateLimitSettings>()
-            .Bind(configuration.GetSection(LoginRateLimitSettings.SectionName))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
+        AddPolicySettings(services, configuration, LoginPolicy, "RateLimiting:Login");
 
         services.AddRateLimiter(_ => { });
-        services.AddOptions<RateLimiterOptions>().Configure<IOptions<LoginRateLimitSettings>>((options, login) =>
+        services.AddOptions<RateLimiterOptions>().Configure<IOptionsMonitor<RateLimitSettings>>((options, settingsByPolicy) =>
         {
-            var settings = login.Value;
-
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-            options.AddPolicy(LoginPolicy, httpContext => RateLimitPartition.GetSlidingWindowLimiter(
-                ClientPartitionKey.For(httpContext.Connection.RemoteIpAddress),
-                _ => new SlidingWindowRateLimiterOptions
-                {
-                    PermitLimit = settings.PermitLimit,
-                    Window = TimeSpan.FromSeconds(settings.WindowSeconds),
-                    SegmentsPerWindow = SegmentsPerWindow,
-                    QueueLimit = 0, // refuse at once; a queued login would only hold a connection open
-                }));
-            options.OnRejected = (context, _) => WriteRejectionAsync(context, settings);
+            AddSlidingWindowPolicy(options, LoginPolicy, settingsByPolicy.Get(LoginPolicy));
+            options.OnRejected = (context, _) => WriteRejectionAsync(context, settingsByPolicy);
         });
 
         return services;
     }
 
+    // One named instance of RateLimitSettings per policy, so each policy reads its own section.
+    private static void AddPolicySettings(IServiceCollection services, IConfiguration configuration, string policy, string section) =>
+        services.AddOptions<RateLimitSettings>(policy)
+            .Bind(configuration.GetSection(section))
+            .Validate(
+                s => s.PermitLimit is >= RateLimitSettings.MinPermitLimit and <= RateLimitSettings.MaxPermitLimit,
+                $"{section}:PermitLimit must be between {RateLimitSettings.MinPermitLimit} and {RateLimitSettings.MaxPermitLimit}.")
+            .Validate(
+                s => s.WindowSeconds is >= RateLimitSettings.MinWindowSeconds and <= RateLimitSettings.MaxWindowSeconds,
+                $"{section}:WindowSeconds must be between {RateLimitSettings.MinWindowSeconds} and {RateLimitSettings.MaxWindowSeconds} (one hour).")
+            .ValidateOnStart();
+
+    private static void AddSlidingWindowPolicy(RateLimiterOptions options, string policy, RateLimitSettings settings) =>
+        options.AddPolicy(policy, httpContext => RateLimitPartition.GetSlidingWindowLimiter(
+            ClientPartitionKey.For(httpContext.Connection.RemoteIpAddress),
+            _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = settings.PermitLimit,
+                Window = TimeSpan.FromSeconds(settings.WindowSeconds),
+                SegmentsPerWindow = SegmentsPerWindow,
+                QueueLimit = 0, // refuse at once; a queued request would only hold a connection open
+            }));
+
     // The limiter runs before MVC, so the controller's error mapping is not involved: build the same
     // application/problem+json response here, through the same service every other error uses.
-    private static async ValueTask WriteRejectionAsync(OnRejectedContext context, LoginRateLimitSettings settings)
+    private static async ValueTask WriteRejectionAsync(OnRejectedContext context, IOptionsMonitor<RateLimitSettings> settingsByPolicy)
     {
         var http = context.HttpContext;
 
+        // The sliding window limiter gives no retry hint (I checked: TryGetMetadata is false), so say the window length:
+        // by then every counted attempt has expired. The window belongs to the policy of the endpoint that was hit.
+        var policy = http.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName;
         var retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var delay)
             ? delay
-            : TimeSpan.FromSeconds(settings.WindowSeconds);
+            : TimeSpan.FromSeconds(policy is null ? FallbackRetryAfterSeconds : settingsByPolicy.Get(policy).WindowSeconds);
         http.Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
         http.Response.StatusCode = StatusCodes.Status429TooManyRequests;
 

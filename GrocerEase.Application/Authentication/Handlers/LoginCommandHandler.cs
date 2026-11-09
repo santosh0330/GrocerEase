@@ -7,6 +7,7 @@ namespace GrocerEase.Application.Authentication.Handlers;
 
 public sealed class LoginCommandHandler(
     IUserRepository userRepository,
+    IPasswordHasher passwordHasher,
     IJwtTokenGenerator jwtTokenGenerator) : ICommandHandler<LoginCommand, Result<AuthenticationResult>>
 {
     public async Task<Result<AuthenticationResult>> Handle(LoginCommand command, CancellationToken cancellationToken)
@@ -15,9 +16,10 @@ public sealed class LoginCommandHandler(
 
         var user = await userRepository.GetByEmailAsync(command.Email, cancellationToken);
 
-        // TEMPORARY: plain-text comparison. See User.Password. An unknown email and a wrong password
-        // give the same error on purpose, so a caller cannot tell which emails are registered.
-        if (user is null || !string.Equals(user.Password, command.Password, StringComparison.Ordinal))
+        // Verify runs even when there is no such user (it is given null), so an unknown email costs the same time as a
+        // wrong password. Then both give the same error, so a caller cannot tell which emails are registered.
+        var passwordMatches = passwordHasher.Verify(user?.PasswordHash, command.Password);
+        if (user is null || !passwordMatches)
         {
             return Result.Failure<AuthenticationResult>(AuthenticationErrors.InvalidCredentials);
         }

@@ -10,7 +10,7 @@ public class PlaceholderJwtTokenGeneratorTests
     {
         var generator = new PlaceholderJwtTokenGenerator();
 
-        var token = generator.GenerateToken(new User(Guid.NewGuid(), "Ada", "Lovelace", "ada@example.com", "s3cret!"));
+        var token = generator.GenerateToken(new User(Guid.NewGuid(), "Ada", "Lovelace", "ada@example.com", "hash"));
 
         Assert.False(string.IsNullOrEmpty(token));
     }

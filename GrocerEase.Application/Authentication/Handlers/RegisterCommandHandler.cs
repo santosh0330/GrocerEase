@@ -8,19 +8,21 @@ namespace GrocerEase.Application.Authentication.Handlers;
 
 public sealed class RegisterCommandHandler(
     IUserRepository userRepository,
+    IPasswordHasher passwordHasher,
     IJwtTokenGenerator jwtTokenGenerator) : ICommandHandler<RegisterCommand, Result<AuthenticationResult>>
 {
     public async Task<Result<AuthenticationResult>> Handle(RegisterCommand command, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(command);
 
+        // Checked before hashing: hashing is deliberately slow, so do not spend it on a request that will be refused.
         if (await userRepository.GetByEmailAsync(command.Email, cancellationToken) is not null)
         {
             return Result.Failure<AuthenticationResult>(AuthenticationErrors.DuplicateEmail);
         }
 
-        // TEMPORARY: the password is stored as given. See User.Password.
-        var user = new User(Guid.NewGuid(), command.FirstName, command.LastName, command.Email, command.Password);
+        var user = new User(
+            Guid.NewGuid(), command.FirstName, command.LastName, command.Email, passwordHasher.Hash(command.Password));
         await userRepository.AddAsync(user, cancellationToken);
 
         var token = jwtTokenGenerator.GenerateToken(user);

@@ -27,6 +27,19 @@ public class OpenApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
     public async Task Login_DeclaresSuccessValidationFailureInvalidCredentialsAndTooManyAttempts() =>
         Assert.Equal(["200", "400", "401", "429"], Statuses(await ResponsesOfAsync("/auth/login")));
 
+    [Fact]
+    public async Task Me_DeclaresSuccessAndUnauthorized()
+    {
+        using var client = factory.CreateClient();
+        var json = await client.GetStringAsync(new Uri("/openapi/v1.json", UriKind.Relative));
+        using var document = JsonDocument.Parse(json);
+
+        var responses = document.RootElement.GetProperty("paths").GetProperty("/me").GetProperty("get").GetProperty("responses");
+
+        Assert.Equal(["200", "401"], Statuses(responses));
+        Assert.True(responses.GetProperty("401").GetProperty("content").TryGetProperty("application/problem+json", out _));
+    }
+
     [Theory]
     [InlineData("/auth/register", "409")]
     [InlineData("/auth/register", "429")]

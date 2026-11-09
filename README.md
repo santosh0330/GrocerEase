@@ -20,7 +20,7 @@ Requires Docker with the Compose plugin.
 
 ```bash
 cp .env.example .env          # then edit .env: set the three database passwords and JWT_SECRET_KEY
-docker compose up --build     # API on http://localhost:8080, PostgreSQL on 127.0.0.1:5432
+docker compose up --build     # PostgreSQL on 127.0.0.1:5432, then migrations, then the API on http://localhost:8080
 ```
 
 Use a different random value for each of `POSTGRES_PASSWORD`, `DB_MIGRATOR_PASSWORD` and `DB_APP_PASSWORD`, and use hex (`openssl rand -hex 24`) so no character needs escaping in a connection string.
@@ -38,6 +38,26 @@ Check it: `curl http://localhost:8080/test` returns `test`.
 
 Both containers run as non-root users (`app` for the API, `postgres` for the database) with all Linux capabilities dropped, and CI checks it. The database port is published on loopback only.
 
+### Migrations
+
+The schema is created and changed by Entity Framework Core migrations in `GrocerEase.Infrastructure/Persistence/Migrations`. **The API never applies migrations when it starts.** Compose runs a one-off `migrate` service first (an EF migration bundle, run as the `grocerease_migrator` role); the API waits for it to finish. Running it again when nothing is new changes nothing.
+
+To add a migration after changing the model (the tool version is pinned in `.config/dotnet-tools.json`):
+
+```bash
+dotnet tool restore
+dotnet ef migrations add <Name> --project GrocerEase.Infrastructure --output-dir Persistence/Migrations
+```
+
+To apply migrations to a database you started yourself (for `dotnet run`), as the migrator role:
+
+```bash
+dotnet ef database update --project GrocerEase.Infrastructure \
+  --connection "Host=localhost;Database=grocerease;Username=grocerease_migrator;Password=<DB_MIGRATOR_PASSWORD>"
+```
+
+A unit test fails if the model has changed without a migration. `./scripts/smoke-test.sh` starts the whole stack with throwaway passwords, checks it end to end, and removes everything (CI runs it too; it needs ports 8080 and 5432 free).
+
 ### Database roles
 
 Nothing in the application connects as the PostgreSQL superuser. `docker/postgres/init/01-roles.sh` creates two roles the first time the data volume is created:
@@ -45,7 +65,7 @@ Nothing in the application connects as the PostgreSQL superuser. `docker/postgre
 | Role | Used by | Can do |
 |---|---|---|
 | `POSTGRES_USER` (superuser) | the image, for start-up and health checks only | everything; no application uses it |
-| `grocerease_migrator` | schema migrations | owns the database and creates and changes tables; not a superuser |
+| `grocerease_migrator` | schema migrations (the `migrate` service) | owns the database and creates and changes tables; not a superuser |
 | `grocerease_app` | the API | read and write rows in the tables; **cannot** create, alter or drop anything, see the migration history, or connect to other databases |
 
 If the API is ever tricked into running arbitrary SQL, this limits the damage to the rows it could already touch.
@@ -60,6 +80,8 @@ The signing key must not be written in a committed file, so keep it in [user-sec
 dotnet user-secrets set "Jwt:SecretKey" "$(openssl rand -base64 48)" --project GrocerEase.Api
 dotnet run --project GrocerEase.Api
 ```
+
+The API also needs a PostgreSQL connection string, as the least-privilege role: set `ConnectionStrings:Default` the same way (`dotnet user-secrets set "ConnectionStrings:Default" "Host=localhost;Database=grocerease;Username=grocerease_app;Password=<DB_APP_PASSWORD>" --project GrocerEase.Api`). Start only the database with `docker compose up db`, apply the migrations (see Migrations above), then `dotnet run`.
 
 `Jwt:Issuer`, `Jwt:Audience` and `Jwt:ExpiryMinutes` are not secret and live in `GrocerEase.Api/appsettings.json`. User-secrets are only read when `ASPNETCORE_ENVIRONMENT` is `Development` (the `dotnet run` launch profiles set it). In any other environment, set the environment variable `Jwt__SecretKey`.
 

@@ -2,6 +2,24 @@
 #   cp .env.example .env     (then set the passwords and JWT_SECRET_KEY)
 #   docker compose up --build
 services:
+  # Applies the database migrations, once, then exits. Migrations are never run when the API starts: a request-serving process
+  # must not hold the power to change the schema, and two API instances starting together must not race to migrate.
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      # The migrator role owns the schema (see docker/postgres/init/01-roles.sh); the API's role cannot change it.
+      ConnectionStrings__Default: Host=db;Port=5432;Database=${POSTGRES_DB};Username=grocerease_migrator;Password=${DB_MIGRATOR_PASSWORD:?set DB_MIGRATOR_PASSWORD in .env}
+    depends_on:
+      db:
+        condition: service_healthy
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
   api:
     build: .
     ports:
@@ -16,6 +34,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      # Wait until the schema is up to date: the migrate service must have run and finished without error.
+      migrate:
+        condition: service_completed_successfully
     # The image already runs as the non-root "app" user; these two limit what it could do anyway.
     cap_drop:
       - ALL

@@ -15,6 +15,8 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <!-- Any compiler, analyzer or NuGet warning fails the build. -->
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Two versions of one assembly in the build (MSB3277) is only a warning to MSBuild, and TreatWarningsAsErrors does not catch it. -->
+    <WarningsAsErrors>$(WarningsAsErrors);MSB3277</WarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>

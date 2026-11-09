@@ -64,6 +64,18 @@ internal static class PostgresServer
 
     public static Task<string> MigratorConnectionStringAsync() => ConnectionStringAsync(MigratorUser, MigratorPassword);
 
+    /// <summary>
+    /// Creates a new, empty database owned by the migrator and returns the migrator's connection string to it. For tests that
+    /// need a blank schema (migrations). The application database's role grants are not copied, so it is not for the app role.
+    /// </summary>
+    public static async Task<string> CreateEmptyDatabaseAsync()
+    {
+        var name = $"test_{Guid.NewGuid():N}";
+        var admin = await ConnectionStringAsync(AdminUser, AdminPassword);
+        await ExecuteAsync(admin, $"create database \"{name}\" owner {MigratorUser}");
+        return await ConnectionStringAsync(MigratorUser, MigratorPassword, name);
+    }
+
     public static async Task ExecuteAsync(string connectionString, string sql)
     {
         await using var connection = new NpgsqlConnection(connectionString);

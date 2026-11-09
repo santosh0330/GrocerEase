@@ -13,6 +13,10 @@ public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand
 
     public RegisterCommandValidator()
     {
+        // A rule stops at its first failing check, so an empty email says "must not be empty" and not also
+        // "not a valid email". Different fields are still all checked, so every bad field is reported.
+        RuleLevelCascadeMode = CascadeMode.Stop;
+
         RuleFor(x => x.FirstName).NotEmpty().MaximumLength(MaxNameLength);
         RuleFor(x => x.LastName).NotEmpty().MaximumLength(MaxNameLength);
         RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(MaxEmailLength);

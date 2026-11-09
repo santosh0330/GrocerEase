@@ -1,0 +1,76 @@
+using System.Globalization;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
+
+namespace GrocerEase.Api.RateLimiting;
+
+public static class RateLimitingExtensions
+{
+    /// <summary>The policy name, used by <c>[EnableRateLimiting]</c> on the login action.</summary>
+    public const string LoginPolicy = "login";
+
+    /// <summary>The stable <c>code</c> in the problem response, so clients can switch on it like on every other error.</summary>
+    public const string TooManyRequestsCode = "RateLimit.TooManyRequests";
+
+    // Counting in segments of a sliding window avoids the fixed window's weakness: a burst at the end of one window
+    // plus a burst at the start of the next would otherwise allow twice the limit within a few seconds.
+    private const int SegmentsPerWindow = 6;
+
+    /// <summary>Registers the login rate limit and its settings. Pair it with <c>app.UseRateLimiter()</c>.</summary>
+    public static IServiceCollection AddLoginRateLimiting(this IServiceCollection services, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        services.AddOptions<LoginRateLimitSettings>()
+            .Bind(configuration.GetSection(LoginRateLimitSettings.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.AddRateLimiter(_ => { });
+        services.AddOptions<RateLimiterOptions>().Configure<IOptions<LoginRateLimitSettings>>((options, login) =>
+        {
+            var settings = login.Value;
+
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.AddPolicy(LoginPolicy, httpContext => RateLimitPartition.GetSlidingWindowLimiter(
+                ClientPartitionKey.For(httpContext.Connection.RemoteIpAddress),
+                _ => new SlidingWindowRateLimiterOptions
+                {
+                    PermitLimit = settings.PermitLimit,
+                    Window = TimeSpan.FromSeconds(settings.WindowSeconds),
+                    SegmentsPerWindow = SegmentsPerWindow,
+                    QueueLimit = 0, // refuse at once; a queued login would only hold a connection open
+                }));
+            options.OnRejected = (context, _) => WriteRejectionAsync(context, settings);
+        });
+
+        return services;
+    }
+
+    // The limiter runs before MVC, so the controller's error mapping is not involved: build the same
+    // application/problem+json response here, through the same service every other error uses.
+    private static async ValueTask WriteRejectionAsync(OnRejectedContext context, LoginRateLimitSettings settings)
+    {
+        var http = context.HttpContext;
+
+        var retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var delay)
+            ? delay
+            : TimeSpan.FromSeconds(settings.WindowSeconds);
+        http.Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+        http.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+
+        await http.RequestServices.GetRequiredService<IProblemDetailsService>().TryWriteAsync(new ProblemDetailsContext
+        {
+            HttpContext = http,
+            ProblemDetails = new Microsoft.AspNetCore.Mvc.ProblemDetails
+            {
+                Status = StatusCodes.Status429TooManyRequests,
+                Title = "Too many requests.",
+                Detail = "Too many login attempts. Wait and try again.",
+                Extensions = { ["code"] = TooManyRequestsCode },
+            },
+        });
+    }
+}

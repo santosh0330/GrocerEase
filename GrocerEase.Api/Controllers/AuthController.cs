@@ -1,10 +1,12 @@
 using GrocerEase.Api.Mapping;
+using GrocerEase.Api.RateLimiting;
 using GrocerEase.Application.Abstractions;
 using GrocerEase.Application.Authentication.Commands;
 using GrocerEase.Application.Authentication.Common;
 using GrocerEase.Application.Common;
 using GrocerEase.Contracts.Authentication;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace GrocerEase.Api.Controllers;
 
@@ -32,6 +34,7 @@ public sealed class AuthController(
     }
 
     [HttpPost("login")]
+    [EnableRateLimiting(RateLimitingExtensions.LoginPolicy)]
     [ProducesResponseType<AuthenticationResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, ProblemJson)]

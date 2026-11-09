@@ -46,3 +46,12 @@ jobs:
 
       # Catches a Compose file that no longer parses. .env.example supplies the required variables.
       - run: docker compose --env-file .env.example config --quiet
+
+      # Neither container may run as root. The API image takes its user from the base image ("USER $APP_UID");
+      # the database takes it from "user: postgres" in docker-compose.yml.
+      - name: Containers do not run as root
+        run: |
+          docker compose --env-file .env.example config --format json | jq -e '.services.db.user == "postgres"'
+          user="$(docker image inspect --format '{{.Config.User}}' grocerease-api:ci)"
+          echo "API image user: '$user'"
+          test -n "$user" && test "$user" != "0" && test "$user" != "root"

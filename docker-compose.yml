@@ -1,5 +1,5 @@
 # Local development stack: the API and its PostgreSQL database.
-#   cp .env.example .env     (then set POSTGRES_PASSWORD)
+#   cp .env.example .env     (then set POSTGRES_PASSWORD and JWT_SECRET_KEY)
 #   docker compose up --build
 services:
   api:
@@ -9,6 +9,9 @@ services:
     environment:
       # The API does not read this yet; it is here for when EF Core is added.
       ConnectionStrings__Default: Host=db;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      # Becomes the Jwt:SecretKey setting ("__" is how an environment variable names a nested key). The API refuses
+      # to start if it is missing or shorter than 32 characters. It lives in .env, never in a committed file.
+      Jwt__SecretKey: ${JWT_SECRET_KEY:?set JWT_SECRET_KEY in .env}
     depends_on:
       db:
         condition: service_healthy

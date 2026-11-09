@@ -1,5 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <PropertyGroup>
+    <!-- Lets "dotnet user-secrets" keep the Jwt signing key outside the repository (see the README). -->
+    <UserSecretsId>9d14ee61-b0a8-4021-adb7-3045c8689d61</UserSecretsId>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />

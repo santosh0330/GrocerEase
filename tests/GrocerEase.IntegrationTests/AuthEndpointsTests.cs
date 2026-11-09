@@ -10,19 +10,41 @@ public class AuthEndpointsTests(ApiFactory factory) : IClassFixture<ApiFactory>
 {
     private readonly HttpClient _client = factory.CreateClient();
 
+    // The repository lives as long as the factory, which every test in this class shares: give each test its own email.
+    private static string UniqueEmail() => $"ada-{Guid.NewGuid():N}@example.com";
+
     [Fact]
     public async Task Post_Register_ReturnsOkWithAuthenticationResponse()
     {
+        var email = UniqueEmail();
+
         var response = await _client.PostAsJsonAsync(
             new Uri("/auth/register", UriKind.Relative),
-            new RegisterRequest("Ada", "Lovelace", "ada@example.com", "Sup3r-s3cret!"));
+            new RegisterRequest("Ada", "Lovelace", email, "Sup3r-s3cret!"));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<AuthenticationResponse>();
         Assert.NotNull(body);
-        Assert.Equal(("Ada", "Lovelace", "ada@example.com"), (body.FirstName, body.LastName, body.Email));
+        Assert.Equal(("Ada", "Lovelace", email), (body.FirstName, body.LastName, body.Email));
         Assert.NotEqual(Guid.Empty, body.Id);
         Assert.False(string.IsNullOrEmpty(body.Token));
+    }
+
+    [Fact]
+    public async Task Post_Register_WithAnEmailThatIsAlreadyRegistered_Returns409Problem()
+    {
+        var email = UniqueEmail();
+        var request = new RegisterRequest("Ada", "Lovelace", email, "Sup3r-s3cret!");
+        var first = await _client.PostAsJsonAsync(new Uri("/auth/register", UriKind.Relative), request);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+
+        var second = await _client.PostAsJsonAsync(new Uri("/auth/register", UriKind.Relative), request with { Email = email.ToUpperInvariant() });
+
+        Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+        Assert.Equal("application/problem+json", second.Content.Headers.ContentType?.MediaType);
+        var problem = await second.Content.ReadFromJsonAsync<ProblemDetails>();
+        Assert.NotNull(problem);
+        Assert.Equal("User.DuplicateEmail", problem.Extensions["code"]?.ToString());
     }
 
     [Fact]

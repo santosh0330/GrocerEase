@@ -18,8 +18,13 @@ public sealed class AuthController(
     ICommandHandler<RegisterCommand, Result<AuthenticationResult>> registerHandler,
     ICommandHandler<LoginCommand, Result<AuthenticationResult>> loginHandler) : ControllerBase
 {
+    // Failures are RFC 9457 problem documents, so say so: without it the OpenAPI document lists the default text/json types.
+    private const string ProblemJson = "application/problem+json";
+
     [HttpPost("register")]
     [ProducesResponseType<AuthenticationResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, ProblemJson)]
     public async Task<IActionResult> Register(RegisterRequest request, CancellationToken cancellationToken)
     {
         var result = await registerHandler.Handle(request.ToCommand(), cancellationToken);
@@ -28,6 +33,8 @@ public sealed class AuthController(
 
     [HttpPost("login")]
     [ProducesResponseType<AuthenticationResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, ProblemJson)]
     public async Task<IActionResult> Login(LoginRequest request, CancellationToken cancellationToken)
     {
         var result = await loginHandler.Handle(request.ToCommand(), cancellationToken);

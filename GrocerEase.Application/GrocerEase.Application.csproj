@@ -6,6 +6,8 @@
 
   <ItemGroup>
     <PackageReference Include="FluentValidation" />
+    <!-- AddValidatorsFromAssembly, and IServiceCollection for the AddApplication extension. -->
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
   </ItemGroup>
 
 </Project>

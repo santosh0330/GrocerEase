@@ -166,6 +166,46 @@ public class LayerDependencyTests
         Assert.True(!missing.Any(), $"Commands without a <Command>Validator: {string.Join(", ", missing)}");
     }
 
+    [Fact]
+    public void Application_Abstractions_AreInterfacesNamedWithAnI()
+    {
+        var types = Types.InAssembly(Application)
+            .That().ResideInNamespace($"{ApplicationNs}.Abstractions")
+            .GetTypes()
+            .ToList();
+
+        Assert.NotEmpty(types);
+        var offenders = types
+            .Where(t => !t.IsInterface || !t.Name.StartsWith('I'))
+            .Select(t => t.Name);
+        Assert.True(!offenders.Any(), $"Application.Abstractions must hold only interfaces named I...: {string.Join(", ", offenders)}");
+    }
+
+    [Fact]
+    public void Infrastructure_ImplementsEveryApplicationPort_WithASealedClass()
+    {
+        // ICommandHandler is implemented by Application's own handlers; every other abstraction is a port
+        // that Application needs and Infrastructure must provide.
+        var ports = Types.InAssembly(Application)
+            .That().ResideInNamespace($"{ApplicationNs}.Abstractions")
+            .And().AreInterfaces()
+            .GetTypes()
+            .Where(t => t != typeof(ICommandHandler<,>))
+            .ToList();
+        var infrastructureClasses = Types.InAssembly(Infrastructure).That().AreClasses().GetTypes().ToList();
+
+        Assert.NotEmpty(ports);
+        var unimplemented = ports
+            .Where(port => !infrastructureClasses.Any(c => port.IsAssignableFrom(c)))
+            .Select(port => port.Name);
+        Assert.True(!unimplemented.Any(), $"Ports without an Infrastructure implementation: {string.Join(", ", unimplemented)}");
+
+        var notSealed = infrastructureClasses
+            .Where(c => ports.Any(port => port.IsAssignableFrom(c)) && !c.IsSealed)
+            .Select(c => c.Name);
+        Assert.True(!notSealed.Any(), $"Infrastructure implementations must be sealed: {string.Join(", ", notSealed)}");
+    }
+
     private static bool InheritsFromGeneric(Type type, Type openGenericBase)
     {
         for (var current = type.BaseType; current is not null; current = current.BaseType)

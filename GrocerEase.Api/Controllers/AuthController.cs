@@ -5,6 +5,7 @@ using GrocerEase.Application.Authentication.Commands;
 using GrocerEase.Application.Authentication.Common;
 using GrocerEase.Application.Common;
 using GrocerEase.Contracts.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 
@@ -16,6 +17,7 @@ namespace GrocerEase.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("auth")]
+[AllowAnonymous] // open on purpose: this is where someone without a token gets one (it is rate limited instead)
 public sealed class AuthController(
     ICommandHandler<RegisterCommand, Result<AuthenticationResult>> registerHandler,
     ICommandHandler<LoginCommand, Result<AuthenticationResult>> loginHandler) : ControllerBase

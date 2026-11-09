@@ -2,7 +2,9 @@ using System.Reflection;
 using FluentValidation;
 using GrocerEase.Application.Abstractions;
 using GrocerEase.Application.Common;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using NetArchTest.Rules;
 
@@ -131,6 +133,30 @@ public class LayerDependencyTests
         Assert.True(
             dependencies.IsSuccessful,
             $"Controllers must go through Application, not Domain/Infrastructure: {string.Join(", ", dependencies.FailingTypeNames ?? [])}");
+    }
+
+    [Fact]
+    public void Controllers_EveryRoute_SaysWhoMayCallIt_WithAuthorizeOrAllowAnonymous()
+    {
+        // Open by omission is the classic way to ship an unprotected endpoint. Making every route choose, in plain sight,
+        // means a new route cannot be left open just because someone forgot an attribute.
+        static bool Decides(ICustomAttributeProvider member) =>
+            member.IsDefined(typeof(AuthorizeAttribute), inherit: true) || member.IsDefined(typeof(AllowAnonymousAttribute), inherit: true);
+
+        var controllers = Types.InAssembly(Api).That().ResideInNamespace($"{ApiNs}.Controllers").GetTypes().ToList();
+        Assert.NotEmpty(controllers);
+
+        var undecided = controllers
+            .SelectMany(controller => controller
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                .Where(method => method.IsDefined(typeof(HttpMethodAttribute), inherit: true))
+                .Where(method => !Decides(controller) && !Decides(method))
+                .Select(method => $"{controller.Name}.{method.Name}"))
+            .ToList();
+
+        Assert.True(
+            undecided.Count == 0,
+            $"Add [Authorize] or [AllowAnonymous] to the controller or the action: {string.Join(", ", undecided)}");
     }
 
     [Fact]

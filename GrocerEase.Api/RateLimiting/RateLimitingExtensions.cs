@@ -7,8 +7,10 @@ namespace GrocerEase.Api.RateLimiting;
 
 public static class RateLimitingExtensions
 {
-    /// <summary>The policy name, used by <c>[EnableRateLimiting]</c> on the login action.</summary>
+    /// <summary>The policy names, used by <c>[EnableRateLimiting]</c> on the login and register actions.</summary>
     public const string LoginPolicy = "login";
+
+    public const string RegisterPolicy = "register";
 
     /// <summary>The stable <c>code</c> in the problem response, so clients can switch on it like on every other error.</summary>
     public const string TooManyRequestsCode = "RateLimit.TooManyRequests";
@@ -27,12 +29,14 @@ public static class RateLimitingExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         AddPolicySettings(services, configuration, LoginPolicy, "RateLimiting:Login");
+        AddPolicySettings(services, configuration, RegisterPolicy, "RateLimiting:Register");
 
         services.AddRateLimiter(_ => { });
         services.AddOptions<RateLimiterOptions>().Configure<IOptionsMonitor<RateLimitSettings>>((options, settingsByPolicy) =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             AddSlidingWindowPolicy(options, LoginPolicy, settingsByPolicy.Get(LoginPolicy));
+            AddSlidingWindowPolicy(options, RegisterPolicy, settingsByPolicy.Get(RegisterPolicy));
             options.OnRejected = (context, _) => WriteRejectionAsync(context, settingsByPolicy);
         });
 
@@ -84,7 +88,7 @@ public static class RateLimitingExtensions
             {
                 Status = StatusCodes.Status429TooManyRequests,
                 Title = "Too many requests.",
-                Detail = "Too many login attempts. Wait and try again.",
+                Detail = "Too many attempts. Wait and try again.",
                 Extensions = { ["code"] = TooManyRequestsCode },
             },
         });

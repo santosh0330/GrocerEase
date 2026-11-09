@@ -23,9 +23,10 @@ public class ApiFactory : WebApplicationFactory<Program>
             {
                 ["Jwt:SecretKey"] = JwtSecretKey,
 
-                // Tests share one client and log in many times; the real limit would block them. The rate limit's own
-                // tests set a small limit on their own app instance.
+                // Tests share one client and log in and register many times; the real limits would block them.
+                // The rate limit's own tests set small limits on their own app instance.
                 ["RateLimiting:Login:PermitLimit"] = "1000",
+                ["RateLimiting:Register:PermitLimit"] = "1000",
             }));
     }
 }

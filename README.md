@@ -47,9 +47,16 @@ dotnet run --project GrocerEase.Api
 
 `Jwt:Issuer`, `Jwt:Audience` and `Jwt:ExpiryMinutes` are not secret and live in `GrocerEase.Api/appsettings.json`. User-secrets are only read when `ASPNETCORE_ENVIRONMENT` is `Development` (the `dotnet run` launch profiles set it). In any other environment, set the environment variable `Jwt__SecretKey`.
 
-## Login rate limit
+## Rate limits
 
-`POST /auth/login` accepts 5 attempts per minute from one client address. The next one gets `429 Too Many Requests` as `application/problem+json`, with a `Retry-After` header (seconds) and the code `RateLimit.TooManyRequests`. Every attempt counts, whether the credentials were right, wrong, or the body was invalid. IPv6 clients are grouped by their `/64` prefix. Change the numbers in `GrocerEase.Api/appsettings.json` (`RateLimiting:Login:PermitLimit` and `WindowSeconds`); the API refuses to start with a value outside 1-1000 attempts or 1-3600 seconds.
+Two endpoints are limited per client address, each with its own counter:
+
+| Endpoint | Limit | Why |
+|---|---|---|
+| `POST /auth/login` | 5 per minute | Stops password guessing, and stops guesses from costing the server a slow hash each |
+| `POST /auth/register` | 10 per hour | Stops mass account creation and probing for registered emails (the `409`) |
+
+The next request over a limit gets `429 Too Many Requests` as `application/problem+json`, with a `Retry-After` header (seconds, the length of that endpoint's window) and the code `RateLimit.TooManyRequests`. Every request counts, whether it succeeded, was refused, or had an invalid body. IPv6 clients are grouped by their `/64` prefix. Change the numbers in `GrocerEase.Api/appsettings.json` (`RateLimiting:Login` and `RateLimiting:Register`, each with `PermitLimit` and `WindowSeconds`); the API refuses to start with a value outside 1-1000 requests or 1-3600 seconds.
 
 The limit is per client **address**. Behind a reverse proxy or load balancer every request arrives from the proxy's address, so everyone would share one limit until forwarded headers are configured for the known proxy.
 

@@ -20,8 +20,8 @@ public class OpenApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         [.. responses.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal)];
 
     [Fact]
-    public async Task Register_DeclaresSuccessValidationFailureAndDuplicateEmail() =>
-        Assert.Equal(["200", "400", "409"], Statuses(await ResponsesOfAsync("/auth/register")));
+    public async Task Register_DeclaresSuccessValidationFailureDuplicateEmailAndTooManyAttempts() =>
+        Assert.Equal(["200", "400", "409", "429"], Statuses(await ResponsesOfAsync("/auth/register")));
 
     [Fact]
     public async Task Login_DeclaresSuccessValidationFailureInvalidCredentialsAndTooManyAttempts() =>
@@ -29,6 +29,7 @@ public class OpenApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
     [Theory]
     [InlineData("/auth/register", "409")]
+    [InlineData("/auth/register", "429")]
     [InlineData("/auth/login", "401")]
     [InlineData("/auth/login", "429")]
     public async Task TheFailureResponses_AreProblemJson(string path, string status)

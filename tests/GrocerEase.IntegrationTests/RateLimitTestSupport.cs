@@ -42,7 +42,9 @@ internal static class RateLimitTestSupport
         string? loginLimit = null,
         string? loginWindow = null,
         string? registerLimit = null,
-        string? registerWindow = null) =>
+        string? registerWindow = null,
+        string? healthLimit = null,
+        string? healthWindow = null) =>
         factory.WithWebHostBuilder(builder =>
         {
             var settings = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
@@ -50,6 +52,8 @@ internal static class RateLimitTestSupport
             Add(settings, "RateLimiting:Login:WindowSeconds", loginWindow);
             Add(settings, "RateLimiting:Register:PermitLimit", registerLimit);
             Add(settings, "RateLimiting:Register:WindowSeconds", registerWindow);
+            Add(settings, "RateLimiting:Health:PermitLimit", healthLimit);
+            Add(settings, "RateLimiting:Health:WindowSeconds", healthWindow);
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(settings));
             builder.ConfigureTestServices(services => services.AddSingleton<IStartupFilter, ClientIpStartupFilter>());
         });

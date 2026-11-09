@@ -110,6 +110,23 @@ A token lives 60 minutes (`Jwt:ExpiryMinutes`). A request without a valid token 
 
 A token is accepted up to 30 seconds past its expiry, to forgive small clock differences between servers. Only HMAC-SHA256 tokens signed with this API's key, for this API's issuer and audience, are accepted. `GrocerEase.Api/GrocerEase.Api.http` has ready-made requests (run `login` first).
 
+## Health checks
+
+Two endpoints, open to anyone (a probe has no token):
+
+| Endpoint | Question | Runs | Answer |
+|---|---|---|---|
+| `GET /health` | Can this instance serve requests that need the database? (readiness) | every check: the database | `200` healthy, `503` unhealthy |
+| `GET /health/live` | Is the process up? (liveness) | no check | `200` whenever it can answer |
+
+```json
+{ "status": "Healthy", "totalDurationMs": 4.1, "checks": [ { "name": "database", "status": "Healthy", "durationMs": 3.8 } ] }
+```
+
+The database check reads from the `users` table, so it passes only if the database is reachable, the API's role may use it, **and the migrations have run**. A check that failed is reported by name and status only. **The reason is never in the response** (it would name hosts and users): it is in the API's log, with the exception.
+
+Use `/health/live` for a probe that **restarts** the app: restarting does not fix a database outage, so liveness must not depend on it. Use `/health` to decide whether to **send traffic** or to show status. `/health` queries the database on every call, so it is rate limited per client address (`RateLimiting:Health`, 60 per minute by default); `/health/live` is not. Responses are never cached.
+
 ## Rate limits
 
 Two endpoints are limited per client address, each with its own counter:

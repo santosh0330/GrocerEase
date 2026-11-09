@@ -12,6 +12,8 @@ public static class RateLimitingExtensions
 
     public const string RegisterPolicy = "register";
 
+    public const string HealthPolicy = "health";
+
     /// <summary>The stable <c>code</c> in the problem response, so clients can switch on it like on every other error.</summary>
     public const string TooManyRequestsCode = "RateLimit.TooManyRequests";
 
@@ -30,6 +32,7 @@ public static class RateLimitingExtensions
 
         AddPolicySettings(services, configuration, LoginPolicy, "RateLimiting:Login");
         AddPolicySettings(services, configuration, RegisterPolicy, "RateLimiting:Register");
+        AddPolicySettings(services, configuration, HealthPolicy, "RateLimiting:Health");
 
         services.AddRateLimiter(_ => { });
         services.AddOptions<RateLimiterOptions>().Configure<IOptionsMonitor<RateLimitSettings>>((options, settingsByPolicy) =>
@@ -37,6 +40,7 @@ public static class RateLimitingExtensions
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             AddSlidingWindowPolicy(options, LoginPolicy, settingsByPolicy.Get(LoginPolicy));
             AddSlidingWindowPolicy(options, RegisterPolicy, settingsByPolicy.Get(RegisterPolicy));
+            AddSlidingWindowPolicy(options, HealthPolicy, settingsByPolicy.Get(HealthPolicy));
             options.OnRejected = (context, _) => WriteRejectionAsync(context, settingsByPolicy);
         });
 

@@ -1,5 +1,6 @@
 using GrocerEase.Api.Authentication;
 using GrocerEase.Api.ExceptionHandling;
+using GrocerEase.Api.Health;
 using GrocerEase.Api.RateLimiting;
 using GrocerEase.Application;
 using GrocerEase.Infrastructure;
@@ -35,6 +36,7 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapGet("/test", () => "test");
+app.MapHealthEndpoints();
 
 app.Run();
 

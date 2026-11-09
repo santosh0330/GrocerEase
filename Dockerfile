@@ -20,7 +20,33 @@ RUN dotnet publish GrocerEase.Api/GrocerEase.Api.csproj \
       --no-restore \
       --output /app/publish
 
+# ---- bundle: turn the EF Core migrations into one executable ----
+# A "migration bundle" carries the migrations and everything needed to run them, so applying them needs no SDK and no source.
+# The dotnet-ef version is pinned in .config/dotnet-tools.json.
+FROM build AS bundle
+ARG TARGETARCH
+RUN dotnet tool restore
+# A self-contained executable is built for one runtime, so the packages must be restored for that runtime first.
+RUN case "$TARGETARCH" in arm64) rid=linux-arm64 ;; *) rid=linux-x64 ;; esac \
+ && dotnet restore GrocerEase.Infrastructure/GrocerEase.Infrastructure.csproj --runtime "$rid" \
+ && dotnet ef migrations bundle \
+      --project GrocerEase.Infrastructure \
+      --configuration Release \
+      --self-contained \
+      --runtime "$rid" \
+      --output /app/efbundle \
+      --force
+
+# ---- migrate: runs the bundle once, against the database named by ConnectionStrings__Default, then exits ----
+# Self-contained, so only the OS libraries are needed (no .NET runtime). Same non-root user as the API.
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0 AS migrate
+WORKDIR /app
+COPY --from=bundle /app/efbundle .
+USER $APP_UID
+ENTRYPOINT ["./efbundle"]
+
 # ---- runtime: the ASP.NET Core runtime only, no SDK ----
+# This must stay the LAST stage: it is what "docker build ." builds when no --target is given.
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 COPY --from=build /app/publish .

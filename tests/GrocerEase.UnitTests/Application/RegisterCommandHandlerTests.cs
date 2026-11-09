@@ -45,6 +45,16 @@ public class RegisterCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_GivesTheNewUserAVersion7Id()
+    {
+        var handler = new RegisterCommandHandler(new InMemoryUserRepository(), new FakePasswordHasher(), new StubTokenGenerator());
+
+        var result = await handler.Handle(Ada, CancellationToken.None);
+
+        Assert.Equal(7, result.Value.Id.Version);
+    }
+
+    [Fact]
     public async Task Handle_StoresTheHashOfThePassword_NotThePassword()
     {
         var repository = new InMemoryUserRepository();

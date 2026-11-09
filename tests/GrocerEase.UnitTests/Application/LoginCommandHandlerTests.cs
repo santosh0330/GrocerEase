@@ -19,7 +19,7 @@ public class LoginCommandHandlerTests
     {
         var repository = new InMemoryUserRepository();
         var hasher = new FakePasswordHasher();
-        var ada = new User(Guid.NewGuid(), "Ada", "Lovelace", "ada@example.com", hasher.Hash("s3cret!"));
+        var ada = new User(Guid.CreateVersion7(), "Ada", "Lovelace", "ada@example.com", hasher.Hash("s3cret!"));
         await repository.AddAsync(ada, CancellationToken.None);
         return (new LoginCommandHandler(repository, hasher, new StubTokenGenerator()), ada, hasher);
     }

@@ -22,7 +22,7 @@ public sealed class RegisterCommandHandler(
         }
 
         var user = new User(
-            Guid.NewGuid(), command.FirstName, command.LastName, command.Email, passwordHasher.Hash(command.Password));
+            Guid.CreateVersion7(), command.FirstName, command.LastName, command.Email, passwordHasher.Hash(command.Password));
         await userRepository.AddAsync(user, cancellationToken);
 
         var token = jwtTokenGenerator.GenerateToken(user);

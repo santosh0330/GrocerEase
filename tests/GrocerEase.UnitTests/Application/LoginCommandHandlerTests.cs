@@ -12,8 +12,10 @@ public class LoginCommandHandlerTests
 
         var result = await handler.Handle(new LoginCommand("ada@example.com", "s3cret!"), CancellationToken.None);
 
-        Assert.Equal("ada@example.com", result.Email);
-        Assert.NotEqual(Guid.Empty, result.Id);
-        Assert.False(string.IsNullOrEmpty(result.Token));
+        Assert.True(result.IsSuccess);
+        var user = result.Value;
+        Assert.Equal("ada@example.com", user.Email);
+        Assert.NotEqual(Guid.Empty, user.Id);
+        Assert.False(string.IsNullOrEmpty(user.Token));
     }
 }

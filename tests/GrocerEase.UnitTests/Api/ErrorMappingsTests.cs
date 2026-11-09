@@ -2,26 +2,12 @@ using GrocerEase.Api.Mapping;
 using GrocerEase.Application.Common;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Infrastructure;
-using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace GrocerEase.UnitTests.Api;
 
 public class ErrorMappingsTests
 {
     private sealed class TestController : ControllerBase;
-
-    /// <summary>Builds a plain <see cref="ProblemDetails"/> so the test needs no HttpContext or DI container.</summary>
-    private sealed class StubProblemDetailsFactory : ProblemDetailsFactory
-    {
-        public override ProblemDetails CreateProblemDetails(
-            HttpContext httpContext, int? statusCode = null, string? title = null, string? type = null, string? detail = null, string? instance = null) =>
-            new() { Status = statusCode, Title = title, Type = type, Detail = detail, Instance = instance };
-
-        public override ValidationProblemDetails CreateValidationProblemDetails(
-            HttpContext httpContext, ModelStateDictionary modelStateDictionary, int? statusCode = null, string? title = null, string? type = null, string? detail = null, string? instance = null) =>
-            new(modelStateDictionary) { Status = statusCode, Title = title, Type = type, Detail = detail, Instance = instance };
-    }
 
     [Theory]
     [InlineData(ErrorType.NotFound, StatusCodes.Status404NotFound)]

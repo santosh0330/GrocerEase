@@ -10,6 +10,8 @@ namespace GrocerEase.Infrastructure.Persistence.Configurations;
 /// </summary>
 public sealed class UserConfiguration : IEntityTypeConfiguration<User>
 {
+    private const int PasswordHashMaxLength = 256;
+
     public void Configure(EntityTypeBuilder<User> builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -25,13 +27,15 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
             .ValueGeneratedNever() // the application creates the id (Guid.CreateVersion7) before it stores the user
             .HasDefaultValueSql("uuidv7()"); // and for a row inserted by any other means, PostgreSQL 18 makes one itself
 
-        builder.Property(user => user.FirstName).HasColumnName("first_name").HasMaxLength(100).IsRequired();
-        builder.Property(user => user.LastName).HasColumnName("last_name").HasMaxLength(100).IsRequired();
+        builder.Property(user => user.FirstName).HasColumnName("first_name").HasMaxLength(User.MaxNameLength).IsRequired();
+        builder.Property(user => user.LastName).HasColumnName("last_name").HasMaxLength(User.MaxNameLength).IsRequired();
 
         // Stored trimmed and lower case (User.NormalizeEmail), so a plain unique index is a case-insensitive uniqueness rule.
-        builder.Property(user => user.Email).HasColumnName("email").HasMaxLength(254).IsRequired();
+        builder.Property(user => user.Email).HasColumnName("email").HasMaxLength(User.MaxEmailLength).IsRequired();
         builder.HasIndex(user => user.Email).IsUnique().HasDatabaseName("ix_users_email");
 
-        builder.Property(user => user.PasswordHash).HasColumnName("password_hash").HasMaxLength(256).IsRequired();
+        // Not a domain rule: it is the room the hashing algorithm needs (an ASP.NET Core Identity hash is 84 characters),
+        // with headroom for a stronger one later. So it lives here, with the schema, and not on the entity.
+        builder.Property(user => user.PasswordHash).HasColumnName("password_hash").HasMaxLength(PasswordHashMaxLength).IsRequired();
     }
 }

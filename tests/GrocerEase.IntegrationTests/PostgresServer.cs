@@ -1,3 +1,5 @@
+using GrocerEase.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -22,6 +24,7 @@ internal static class PostgresServer
     public const string AppPassword = "app-password-for-tests";
 
     private static readonly Lazy<Task<PostgreSqlContainer>> Container = new(StartAsync);
+    private static readonly Lazy<Task<string>> PreparedApplicationDatabase = new(PrepareApplicationDatabaseAsync);
 
     private static async Task<PostgreSqlContainer> StartAsync()
     {
@@ -58,6 +61,19 @@ internal static class PostgresServer
             Database = database ?? Database,
             Pooling = false, // each test opens its own short-lived connections and must not see another's session
         }.ConnectionString;
+    }
+
+    /// <summary>
+    /// The application database after the migrator has applied every migration (once per run), as the connection string the API
+    /// uses: the least-privilege app role. This is what the API under test and the repository tests connect with.
+    /// </summary>
+    public static Task<string> ApplicationConnectionStringAsync() => PreparedApplicationDatabase.Value;
+
+    private static async Task<string> PrepareApplicationDatabaseAsync()
+    {
+        await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().Configure(await MigratorConnectionStringAsync()).Options);
+        await db.Database.MigrateAsync();
+        return await AppConnectionStringAsync();
     }
 
     public static Task<string> AppConnectionStringAsync() => ConnectionStringAsync(AppUser, AppPassword);

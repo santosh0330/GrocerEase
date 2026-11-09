@@ -1,4 +1,3 @@
-using System.Text;
 using GrocerEase.Application.Abstractions;
 using GrocerEase.Domain.Entities;
 using Microsoft.Extensions.Options;
@@ -25,9 +24,7 @@ public sealed class JwtTokenGenerator : IJwtTokenGenerator
 
         _settings = options.Value;
         _timeProvider = timeProvider;
-        _credentials = new SigningCredentials(
-            new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.SecretKey)),
-            SecurityAlgorithms.HmacSha256);
+        _credentials = new SigningCredentials(_settings.CreateSigningKey(), SecurityAlgorithms.HmacSha256);
     }
 
     public string GenerateToken(User user)

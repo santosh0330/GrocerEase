@@ -1,4 +1,6 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text;
+using Microsoft.IdentityModel.Tokens;
 
 namespace GrocerEase.Infrastructure.Authentication;
 
@@ -26,4 +28,7 @@ public sealed class JwtSettings
 
     [Range(1, 1440, ErrorMessage = "Jwt:ExpiryMinutes must be between 1 and 1440 (one day).")]
     public int ExpiryMinutes { get; init; }
+
+    /// <summary>The key as the signing and the checking side both need it, so the two cannot build it differently.</summary>
+    public SymmetricSecurityKey CreateSigningKey() => new(Encoding.UTF8.GetBytes(SecretKey));
 }

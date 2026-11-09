@@ -65,4 +65,41 @@ public class UserTests
     [Fact]
     public void NormalizeEmail_RejectsNull() =>
         Assert.Throws<ArgumentNullException>(() => User.NormalizeEmail(null!));
+
+    [Fact]
+    public void Constructor_AcceptsNamesAndEmailAtTheirMaximumLength()
+    {
+        var name = new string('a', User.MaxNameLength);
+        var email = new string('a', User.MaxEmailLength - "@x.co".Length) + "@x.co";
+
+        var user = new User(Guid.CreateVersion7(), name, name, email, "hash");
+
+        Assert.Equal(User.MaxNameLength, user.FirstName.Length);
+        Assert.Equal(User.MaxEmailLength, user.Email.Length);
+    }
+
+    [Fact]
+    public void Constructor_RejectsAFirstNameOverTheMaximum() =>
+        Assert.Throws<ArgumentException>("firstName", () =>
+            new User(Guid.CreateVersion7(), new string('a', User.MaxNameLength + 1), "Lovelace", "ada@example.com", "hash"));
+
+    [Fact]
+    public void Constructor_RejectsALastNameOverTheMaximum() =>
+        Assert.Throws<ArgumentException>("lastName", () =>
+            new User(Guid.CreateVersion7(), "Ada", new string('a', User.MaxNameLength + 1), "ada@example.com", "hash"));
+
+    [Fact]
+    public void Constructor_RejectsAnEmailOverTheMaximum() =>
+        Assert.Throws<ArgumentException>("email", () =>
+            new User(Guid.CreateVersion7(), "Ada", "Lovelace", new string('a', User.MaxEmailLength) + "@example.com", "hash"));
+
+    [Fact]
+    public void Constructor_MeasuresTheEmailAfterTrimming_SoPaddingDoesNotCountAgainstTheLimit()
+    {
+        var email = new string('a', User.MaxEmailLength - "@x.co".Length) + "@x.co";
+
+        var user = new User(Guid.CreateVersion7(), "Ada", "Lovelace", $"   {email}   ", "hash");
+
+        Assert.Equal(User.MaxEmailLength, user.Email.Length);
+    }
 }

@@ -1,6 +1,7 @@
 using FluentValidation.TestHelper;
 using GrocerEase.Application.Authentication.Commands;
 using GrocerEase.Application.Authentication.Validators;
+using GrocerEase.Domain.Entities;
 
 namespace GrocerEase.UnitTests.Application.Validators;
 
@@ -22,7 +23,7 @@ public class RegisterCommandValidatorTests
 
     [Fact]
     public void FirstName_TooLong_IsInvalid() =>
-        _validator.TestValidate(Valid with { FirstName = new string('a', RegisterCommandValidator.MaxNameLength + 1) })
+        _validator.TestValidate(Valid with { FirstName = new string('a', User.MaxNameLength + 1) })
             .ShouldHaveValidationErrorFor(x => x.FirstName);
 
     [Theory]
@@ -33,7 +34,7 @@ public class RegisterCommandValidatorTests
 
     [Fact]
     public void LastName_TooLong_IsInvalid() =>
-        _validator.TestValidate(Valid with { LastName = new string('a', RegisterCommandValidator.MaxNameLength + 1) })
+        _validator.TestValidate(Valid with { LastName = new string('a', User.MaxNameLength + 1) })
             .ShouldHaveValidationErrorFor(x => x.LastName);
 
     [Theory]
@@ -45,7 +46,7 @@ public class RegisterCommandValidatorTests
 
     [Fact]
     public void Email_TooLong_IsInvalid() =>
-        _validator.TestValidate(Valid with { Email = new string('a', RegisterCommandValidator.MaxEmailLength) + "@example.com" })
+        _validator.TestValidate(Valid with { Email = new string('a', User.MaxEmailLength) + "@example.com" })
             .ShouldHaveValidationErrorFor(x => x.Email);
 
     [Fact]

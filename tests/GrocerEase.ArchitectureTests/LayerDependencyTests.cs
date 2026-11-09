@@ -177,6 +177,24 @@ public class LayerDependencyTests
     }
 
     [Fact]
+    public void Application_Validators_StopEachRuleAtItsFirstFailure()
+    {
+        // Without this, an empty email is reported twice ("must not be empty" and "not a valid email").
+        var validators = Types.InAssembly(Application)
+            .That().HaveNameEndingWith("Validator", StringComparison.Ordinal)
+            .And().AreClasses()
+            .GetTypes()
+            .ToList();
+
+        Assert.NotEmpty(validators);
+        var offenders = validators
+            .Where(t => t.GetProperty(nameof(AbstractValidator<object>.RuleLevelCascadeMode))?.GetValue(Activator.CreateInstance(t))
+                is not CascadeMode.Stop)
+            .Select(t => t.Name);
+        Assert.True(!offenders.Any(), $"Validators must set RuleLevelCascadeMode = CascadeMode.Stop: {string.Join(", ", offenders)}");
+    }
+
+    [Fact]
     public void Application_EveryCommand_HasAValidator()
     {
         var commands = Types.InAssembly(Application)

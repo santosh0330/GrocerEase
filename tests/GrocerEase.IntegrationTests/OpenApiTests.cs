@@ -24,12 +24,13 @@ public class OpenApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(["200", "400", "409"], Statuses(await ResponsesOfAsync("/auth/register")));
 
     [Fact]
-    public async Task Login_DeclaresSuccessValidationFailureAndInvalidCredentials() =>
-        Assert.Equal(["200", "400", "401"], Statuses(await ResponsesOfAsync("/auth/login")));
+    public async Task Login_DeclaresSuccessValidationFailureInvalidCredentialsAndTooManyAttempts() =>
+        Assert.Equal(["200", "400", "401", "429"], Statuses(await ResponsesOfAsync("/auth/login")));
 
     [Theory]
     [InlineData("/auth/register", "409")]
     [InlineData("/auth/login", "401")]
+    [InlineData("/auth/login", "429")]
     public async Task TheFailureResponses_AreProblemJson(string path, string status)
     {
         var responses = await ResponsesOfAsync(path);

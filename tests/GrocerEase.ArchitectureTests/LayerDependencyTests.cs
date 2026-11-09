@@ -5,6 +5,7 @@ using GrocerEase.Application.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Routing;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
 using NetArchTest.Rules;
 
@@ -157,6 +158,28 @@ public class LayerDependencyTests
         Assert.True(
             undecided.Count == 0,
             $"Add [Authorize] or [AllowAnonymous] to the controller or the action: {string.Join(", ", undecided)}");
+    }
+
+    [Fact]
+    public void HealthChecks_AreSealedClassesNamedHealthCheck_InInfrastructureHealth_AndNowhereElse()
+    {
+        // A health check probes something outside the process (the database), so it is an Infrastructure detail like a repository.
+        static List<Type> HealthChecksIn(Assembly assembly) =>
+            [.. assembly.GetTypes().Where(t => t.IsClass && !t.IsAbstract && typeof(IHealthCheck).IsAssignableFrom(t))];
+
+        foreach (var (name, assembly) in new[] { ("Domain", Domain), ("Application", Application), ("Api", Api), ("Contracts", Contracts) })
+        {
+            Assert.True(HealthChecksIn(assembly).Count == 0, $"{name} must not define health checks: {string.Join(", ", HealthChecksIn(assembly).Select(t => t.Name))}");
+        }
+
+        var checks = HealthChecksIn(Infrastructure);
+        Assert.NotEmpty(checks);
+        var offenders = checks
+            .Where(t => !t.IsSealed
+                || !t.Name.EndsWith("HealthCheck", StringComparison.Ordinal)
+                || !string.Equals(t.Namespace, $"{InfrastructureNs}.Health", StringComparison.Ordinal))
+            .Select(t => t.FullName);
+        Assert.True(!offenders.Any(), $"Health checks must be sealed, named *HealthCheck, in {InfrastructureNs}.Health: {string.Join(", ", offenders)}");
     }
 
     [Fact]

@@ -180,6 +180,18 @@ public class AuthEndpointsTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Post_Register_WithEmptyFields_ReportsOneMessagePerField()
+    {
+        var response = await _client.PostAsJsonAsync(
+            new Uri("/auth/register", UriKind.Relative),
+            new RegisterRequest("", "", "", ""));
+
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+        Assert.NotNull(problem);
+        Assert.All(problem.Errors, field => Assert.Single(field.Value));
+    }
+
+    [Fact]
     public async Task Post_Register_WithShortPasswordAndBadEmail_ReportsOnlyThoseFields()
     {
         var response = await _client.PostAsJsonAsync(

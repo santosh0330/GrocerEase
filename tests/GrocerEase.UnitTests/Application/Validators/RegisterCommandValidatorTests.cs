@@ -66,4 +66,29 @@ public class RegisterCommandValidatorTests
     public void Password_TooLong_IsInvalid() =>
         _validator.TestValidate(Valid with { Password = new string('a', RegisterCommandValidator.MaxPasswordLength + 1) })
             .ShouldHaveValidationErrorFor(x => x.Password);
+
+    // A rule stops at its first failure, so an empty value is reported once ("must not be empty"),
+    // not again by every later check in the chain ("not a valid email", "too short").
+    [Fact]
+    public void Email_Empty_GivesOneMessage() =>
+        Assert.Single(_validator.TestValidate(Valid with { Email = "" }).ShouldHaveValidationErrorFor(x => x.Email));
+
+    [Fact]
+    public void Password_Empty_GivesOneMessage() =>
+        Assert.Single(_validator.TestValidate(Valid with { Password = "" }).ShouldHaveValidationErrorFor(x => x.Password));
+
+    [Fact]
+    public void Email_Malformed_GivesOneMessage() =>
+        Assert.Single(_validator.TestValidate(Valid with { Email = "not-an-email" }).ShouldHaveValidationErrorFor(x => x.Email));
+
+    [Fact]
+    public void EveryEmptyField_IsStillReported_OneMessageEach()
+    {
+        var result = _validator.TestValidate(new RegisterCommand("", "", "", ""));
+
+        Assert.Single(result.ShouldHaveValidationErrorFor(x => x.FirstName));
+        Assert.Single(result.ShouldHaveValidationErrorFor(x => x.LastName));
+        Assert.Single(result.ShouldHaveValidationErrorFor(x => x.Email));
+        Assert.Single(result.ShouldHaveValidationErrorFor(x => x.Password));
+    }
 }

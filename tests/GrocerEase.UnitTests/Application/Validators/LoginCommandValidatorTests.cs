@@ -32,4 +32,12 @@ public class LoginCommandValidatorTests
     public void Password_TooLong_IsInvalid() =>
         _validator.TestValidate(Valid with { Password = new string('a', RegisterCommandValidator.MaxPasswordLength + 1) })
             .ShouldHaveValidationErrorFor(x => x.Password);
+
+    [Fact]
+    public void Email_Empty_GivesOneMessage() =>
+        Assert.Single(_validator.TestValidate(Valid with { Email = "" }).ShouldHaveValidationErrorFor(x => x.Email));
+
+    [Fact]
+    public void Email_Malformed_GivesOneMessage() =>
+        Assert.Single(_validator.TestValidate(Valid with { Email = "not-an-email" }).ShouldHaveValidationErrorFor(x => x.Email));
 }

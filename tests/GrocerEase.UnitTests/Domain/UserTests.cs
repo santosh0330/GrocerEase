@@ -48,4 +48,21 @@ public class UserTests
 
         Assert.Contains("version 7", exception.Message, StringComparison.Ordinal);
     }
+
+    [Theory]
+    [InlineData("Ada@Example.COM", "ada@example.com")]
+    [InlineData("  ada@example.com  ", "ada@example.com")]
+    [InlineData("ADA@EXAMPLE.COM", "ada@example.com")]
+    public void Constructor_StoresTheEmailTrimmedAndInLowerCase(string given, string stored) =>
+        Assert.Equal(stored, new User(Guid.CreateVersion7(), "Ada", "Lovelace", given, "hash").Email, StringComparer.Ordinal);
+
+    [Theory]
+    [InlineData("Ada@Example.COM", "ada@example.com")]
+    [InlineData("  ada@example.com ", "ada@example.com")]
+    public void NormalizeEmail_AppliesTheSameRuleAsTheConstructor(string given, string normalized) =>
+        Assert.Equal(normalized, User.NormalizeEmail(given), StringComparer.Ordinal);
+
+    [Fact]
+    public void NormalizeEmail_RejectsNull() =>
+        Assert.Throws<ArgumentNullException>(() => User.NormalizeEmail(null!));
 }

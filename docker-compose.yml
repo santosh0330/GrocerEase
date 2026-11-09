@@ -37,6 +37,15 @@ services:
       # Wait until the schema is up to date: the migrate service must have run and finished without error.
       migrate:
         condition: service_completed_successfully
+    healthcheck:
+      # Asks the API's own /health (readiness, which includes the database). The runtime image has no curl or wget, and adding one
+      # would grow the image, so bash opens the connection and sends the request by hand. Docker only reports the result in
+      # "docker compose ps"; nothing restarts the container because of it.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET /health HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -q \" 200 \"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     # The image already runs as the non-root "app" user; these two limit what it could do anyway.
     cap_drop:
       - ALL

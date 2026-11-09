@@ -3,6 +3,7 @@ using FluentValidation;
 using GrocerEase.Application.Abstractions;
 using GrocerEase.Application.Common;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using NetArchTest.Rules;
 
 namespace GrocerEase.ArchitectureTests;
@@ -231,6 +232,24 @@ public class LayerDependencyTests
             .Where(c => ports.Any(port => port.IsAssignableFrom(c)) && !c.IsSealed)
             .Select(c => c.Name);
         Assert.True(!notSealed.Any(), $"Infrastructure implementations must be sealed: {string.Join(", ", notSealed)}");
+    }
+
+    [Theory]
+    [InlineData(ApplicationNs, "AddApplication")]
+    [InlineData(InfrastructureNs, "AddInfrastructure")]
+    public void EachLayerRegistersItself_ThroughAPublicAddExtensionOnIServiceCollection(string layerNamespace, string methodName)
+    {
+        var assembly = string.Equals(layerNamespace, ApplicationNs, StringComparison.Ordinal) ? Application : Infrastructure;
+
+        var type = assembly.GetType($"{layerNamespace}.DependencyInjection");
+
+        Assert.NotNull(type);
+        Assert.True(type.IsAbstract && type.IsSealed && type.IsPublic, $"{type.FullName} must be a public static class.");
+        var method = type.GetMethods().SingleOrDefault(m => string.Equals(m.Name, methodName, StringComparison.Ordinal));
+        Assert.NotNull(method);
+        Assert.True(method.IsStatic && method.IsDefined(typeof(System.Runtime.CompilerServices.ExtensionAttribute), inherit: false), $"{methodName} must be an extension method.");
+        Assert.Equal(typeof(IServiceCollection), method.GetParameters()[0].ParameterType);
+        Assert.Equal(typeof(IServiceCollection), method.ReturnType);
     }
 
     private static bool InheritsFromGeneric(Type type, Type openGenericBase)

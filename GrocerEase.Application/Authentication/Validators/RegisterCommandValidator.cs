@@ -1,12 +1,13 @@
 using FluentValidation;
 using GrocerEase.Application.Authentication.Commands;
+using GrocerEase.Domain.Entities;
 
 namespace GrocerEase.Application.Authentication.Validators;
 
 public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand>
 {
-    public const int MaxNameLength = 100;
-    public const int MaxEmailLength = 254;
+    // Name and email limits belong to the User entity, which the database columns follow too. The password limits are
+    // an input policy, not a column size (the column holds a hash), so they stay here.
     public const int MinPasswordLength = 8;
     // Long enough for passphrases, short enough that hashing one cannot be used to burn CPU.
     public const int MaxPasswordLength = 128;
@@ -17,9 +18,9 @@ public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand
         // "not a valid email". Different fields are still all checked, so every bad field is reported.
         RuleLevelCascadeMode = CascadeMode.Stop;
 
-        RuleFor(x => x.FirstName).NotEmpty().MaximumLength(MaxNameLength);
-        RuleFor(x => x.LastName).NotEmpty().MaximumLength(MaxNameLength);
-        RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(MaxEmailLength);
+        RuleFor(x => x.FirstName).NotEmpty().MaximumLength(User.MaxNameLength);
+        RuleFor(x => x.LastName).NotEmpty().MaximumLength(User.MaxNameLength);
+        RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(User.MaxEmailLength);
         RuleFor(x => x.Password).NotEmpty().MinimumLength(MinPasswordLength).MaximumLength(MaxPasswordLength);
     }
 }

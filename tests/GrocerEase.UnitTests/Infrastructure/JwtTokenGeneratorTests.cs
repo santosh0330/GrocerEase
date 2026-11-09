@@ -26,7 +26,7 @@ public class JwtTokenGeneratorTests
     private static JwtTokenGenerator Generator(DateTimeOffset? now = null, JwtSettings? settings = null) =>
         new(Options.Create(settings ?? Settings()), new FixedTimeProvider(now ?? DateTimeOffset.UtcNow));
 
-    private static User Ada() => new(Guid.NewGuid(), "Ada", "Lovelace", "ada@example.com", "a-password-hash");
+    private static User Ada() => new(Guid.CreateVersion7(), "Ada", "Lovelace", "ada@example.com", "a-password-hash");
 
     private static TokenValidationParameters Rules(string key = Key, string issuer = "issuer-x", string audience = "audience-x") => new()
     {

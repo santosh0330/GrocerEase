@@ -7,7 +7,7 @@ public class UserTests
     [Fact]
     public void Constructor_KeepsTheValuesItWasGiven()
     {
-        var id = Guid.NewGuid();
+        var id = Guid.CreateVersion7();
 
         var user = new User(id, "Ada", "Lovelace", "ada@example.com", "s3cret!");
 
@@ -25,9 +25,81 @@ public class UserTests
     [InlineData("Ada", "Lovelace", "", "s3cret!")]
     [InlineData("Ada", "Lovelace", "ada@example.com", "")]
     public void Constructor_RejectsBlankText(string firstName, string lastName, string email, string passwordHash) =>
-        Assert.Throws<ArgumentException>(() => new User(Guid.NewGuid(), firstName, lastName, email, passwordHash));
+        Assert.Throws<ArgumentException>(() => new User(Guid.CreateVersion7(), firstName, lastName, email, passwordHash));
 
     [Fact]
     public void Constructor_RejectsNull() =>
-        Assert.Throws<ArgumentNullException>(() => new User(Guid.NewGuid(), null!, "Lovelace", "ada@example.com", "s3cret!"));
+        Assert.Throws<ArgumentNullException>(() => new User(Guid.CreateVersion7(), null!, "Lovelace", "ada@example.com", "s3cret!"));
+
+    [Fact]
+    public void Constructor_AcceptsAVersion7Id()
+    {
+        var id = Guid.CreateVersion7();
+
+        Assert.Equal(7, new User(id, "Ada", "Lovelace", "ada@example.com", "hash").Id.Version);
+    }
+
+    [Fact]
+    public void Constructor_RejectsAnIdThatIsNotVersion7()
+    {
+        var randomId = Guid.NewGuid(); // version 4
+
+        var exception = Assert.Throws<ArgumentException>(() => new User(randomId, "Ada", "Lovelace", "ada@example.com", "hash"));
+
+        Assert.Contains("version 7", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Ada@Example.COM", "ada@example.com")]
+    [InlineData("  ada@example.com  ", "ada@example.com")]
+    [InlineData("ADA@EXAMPLE.COM", "ada@example.com")]
+    public void Constructor_StoresTheEmailTrimmedAndInLowerCase(string given, string stored) =>
+        Assert.Equal(stored, new User(Guid.CreateVersion7(), "Ada", "Lovelace", given, "hash").Email, StringComparer.Ordinal);
+
+    [Theory]
+    [InlineData("Ada@Example.COM", "ada@example.com")]
+    [InlineData("  ada@example.com ", "ada@example.com")]
+    public void NormalizeEmail_AppliesTheSameRuleAsTheConstructor(string given, string normalized) =>
+        Assert.Equal(normalized, User.NormalizeEmail(given), StringComparer.Ordinal);
+
+    [Fact]
+    public void NormalizeEmail_RejectsNull() =>
+        Assert.Throws<ArgumentNullException>(() => User.NormalizeEmail(null!));
+
+    [Fact]
+    public void Constructor_AcceptsNamesAndEmailAtTheirMaximumLength()
+    {
+        var name = new string('a', User.MaxNameLength);
+        var email = new string('a', User.MaxEmailLength - "@x.co".Length) + "@x.co";
+
+        var user = new User(Guid.CreateVersion7(), name, name, email, "hash");
+
+        Assert.Equal(User.MaxNameLength, user.FirstName.Length);
+        Assert.Equal(User.MaxEmailLength, user.Email.Length);
+    }
+
+    [Fact]
+    public void Constructor_RejectsAFirstNameOverTheMaximum() =>
+        Assert.Throws<ArgumentException>("firstName", () =>
+            new User(Guid.CreateVersion7(), new string('a', User.MaxNameLength + 1), "Lovelace", "ada@example.com", "hash"));
+
+    [Fact]
+    public void Constructor_RejectsALastNameOverTheMaximum() =>
+        Assert.Throws<ArgumentException>("lastName", () =>
+            new User(Guid.CreateVersion7(), "Ada", new string('a', User.MaxNameLength + 1), "ada@example.com", "hash"));
+
+    [Fact]
+    public void Constructor_RejectsAnEmailOverTheMaximum() =>
+        Assert.Throws<ArgumentException>("email", () =>
+            new User(Guid.CreateVersion7(), "Ada", "Lovelace", new string('a', User.MaxEmailLength) + "@example.com", "hash"));
+
+    [Fact]
+    public void Constructor_MeasuresTheEmailAfterTrimming_SoPaddingDoesNotCountAgainstTheLimit()
+    {
+        var email = new string('a', User.MaxEmailLength - "@x.co".Length) + "@x.co";
+
+        var user = new User(Guid.CreateVersion7(), "Ada", "Lovelace", $"   {email}   ", "hash");
+
+        Assert.Equal(User.MaxEmailLength, user.Email.Length);
+    }
 }

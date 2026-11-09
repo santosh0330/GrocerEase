@@ -27,3 +27,8 @@ dotnet_diagnostic.MA0004.severity = none
 [tests/**.cs]
 # Test names like Method_Condition_Result use underscores on purpose.
 dotnet_diagnostic.CA1707.severity = none
+
+[**/Persistence/Migrations/*.cs]
+# "dotnet ef migrations add" writes these files (block namespaces, timestamped file names). They are regenerated, not
+# hand-styled, so the style rules and analyzers skip them. The rest of Infrastructure is still checked.
+generated_code = true

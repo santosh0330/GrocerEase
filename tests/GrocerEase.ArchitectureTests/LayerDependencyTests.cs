@@ -67,6 +67,36 @@ public class LayerDependencyTests
         Assert.False(result.IsSuccessful);
     }
 
+    // The database is a detail of Infrastructure. If another layer used EF Core or Npgsql directly, swapping the database or
+    // the library would mean changing business code, and the Domain would be shaped by how it is stored.
+    private static readonly string[] PersistenceLibraries = ["Microsoft.EntityFrameworkCore", "Npgsql"];
+
+    [Fact]
+    public void Domain_DoesNotUsePersistenceLibraries_OrMappingAttributes() =>
+        // System.ComponentModel.DataAnnotations.Schema holds [Table], [Column], [ForeignKey]: mapping belongs in Infrastructure.
+        AssertNoDependencies(Domain, [.. PersistenceLibraries, "System.ComponentModel.DataAnnotations.Schema"]);
+
+    [Fact]
+    public void Application_DoesNotUsePersistenceLibraries() =>
+        AssertNoDependencies(Application, PersistenceLibraries);
+
+    [Fact]
+    public void Api_DoesNotUsePersistenceLibraries() =>
+        AssertNoDependencies(Api, PersistenceLibraries);
+
+    [Fact]
+    public void Contracts_DoesNotUsePersistenceLibraries() =>
+        AssertNoDependencies(Contracts, PersistenceLibraries);
+
+    [Fact]
+    public void ThePersistenceLibraryRule_CanFail_BecauseInfrastructureDoesUseThem()
+    {
+        // Guards the tests above against passing by accident (a wrong namespace would match nothing).
+        var result = Types.InAssembly(Infrastructure).ShouldNot().HaveDependencyOnAny(PersistenceLibraries).GetResult();
+
+        Assert.False(result.IsSuccessful);
+    }
+
     [Fact]
     public void Contracts_DoesNotDependOnAnyOtherLayer() =>
         AssertNoDependencies(Contracts, DomainNs, ApplicationNs, InfrastructureNs, ApiNs);

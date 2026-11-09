@@ -4,7 +4,6 @@ using GrocerEase.Application.Authentication.Common;
 using GrocerEase.Application.Authentication.Handlers;
 using GrocerEase.Application.Common;
 using GrocerEase.Domain.Entities;
-using GrocerEase.Infrastructure.Persistence;
 
 namespace GrocerEase.UnitTests.Application;
 
@@ -21,12 +20,20 @@ public class RegisterCommandHandlerTests
         }
     }
 
+    // Looks empty when the handler checks, then refuses the add: another registration won the race in between.
+    private sealed class RaceLosingRepository : IUserRepository
+    {
+        public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken) => Task.FromResult<User?>(null);
+
+        public Task<bool> TryAddAsync(User user, CancellationToken cancellationToken) => Task.FromResult(false);
+    }
+
     private static readonly RegisterCommand Ada = new("Ada", "Lovelace", "ada@example.com", "s3cret!");
 
     [Fact]
     public async Task Handle_StoresTheUserAndReturnsItWithAToken()
     {
-        var repository = new InMemoryUserRepository();
+        var repository = new FakeUserRepository();
         var tokens = new StubTokenGenerator();
         var handler = new RegisterCommandHandler(repository, new FakePasswordHasher(), tokens);
 
@@ -45,9 +52,42 @@ public class RegisterCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_WhenAnotherRegistrationWinsTheRace_ReturnsADuplicateEmailConflictAndNoToken()
+    {
+        var tokens = new StubTokenGenerator();
+        var handler = new RegisterCommandHandler(new RaceLosingRepository(), new FakePasswordHasher(), tokens);
+
+        var result = await handler.Handle(Ada, CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthenticationErrors.DuplicateEmail, result.Error);
+        Assert.Null(tokens.LastUser);
+    }
+
+    [Fact]
+    public async Task Handle_ReturnsTheEmailInTheFormItWasStoredIn_LowerCase()
+    {
+        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakePasswordHasher(), new StubTokenGenerator());
+
+        var result = await handler.Handle(Ada with { Email = "Ada@Example.COM" }, CancellationToken.None);
+
+        Assert.Equal("ada@example.com", result.Value.Email);
+    }
+
+    [Fact]
+    public async Task Handle_GivesTheNewUserAVersion7Id()
+    {
+        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakePasswordHasher(), new StubTokenGenerator());
+
+        var result = await handler.Handle(Ada, CancellationToken.None);
+
+        Assert.Equal(7, result.Value.Id.Version);
+    }
+
+    [Fact]
     public async Task Handle_StoresTheHashOfThePassword_NotThePassword()
     {
-        var repository = new InMemoryUserRepository();
+        var repository = new FakeUserRepository();
         var handler = new RegisterCommandHandler(repository, new FakePasswordHasher(), new StubTokenGenerator());
 
         await handler.Handle(Ada, CancellationToken.None);
@@ -61,7 +101,7 @@ public class RegisterCommandHandlerTests
     [Fact]
     public async Task Handle_WhenTheEmailIsTaken_ReturnsADuplicateEmailConflictAndStoresNothingNew()
     {
-        var repository = new InMemoryUserRepository();
+        var repository = new FakeUserRepository();
         var handler = new RegisterCommandHandler(repository, new FakePasswordHasher(), new StubTokenGenerator());
         await handler.Handle(Ada, CancellationToken.None);
         var original = await repository.GetByEmailAsync("ada@example.com", CancellationToken.None);
@@ -77,7 +117,7 @@ public class RegisterCommandHandlerTests
     [Fact]
     public async Task Handle_RejectsNull()
     {
-        var handler = new RegisterCommandHandler(new InMemoryUserRepository(), new FakePasswordHasher(), new StubTokenGenerator());
+        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakePasswordHasher(), new StubTokenGenerator());
 
         await Assert.ThrowsAsync<ArgumentNullException>(() => handler.Handle(null!, CancellationToken.None));
     }

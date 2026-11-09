@@ -20,6 +20,9 @@
 
 # Not needed to build the API image
 tests/
+docker/
+scripts/
+.github/
 Dockerfile
 .dockerignore
 docker-compose*.yml

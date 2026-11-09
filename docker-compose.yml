@@ -1,20 +1,42 @@
 # Local development stack: the API and its PostgreSQL database.
-#   cp .env.example .env     (then set POSTGRES_PASSWORD and JWT_SECRET_KEY)
+#   cp .env.example .env     (then set the passwords and JWT_SECRET_KEY)
 #   docker compose up --build
 services:
+  # Applies the database migrations, once, then exits. Migrations are never run when the API starts: a request-serving process
+  # must not hold the power to change the schema, and two API instances starting together must not race to migrate.
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      # The migrator role owns the schema (see docker/postgres/init/01-roles.sh); the API's role cannot change it.
+      ConnectionStrings__Default: Host=db;Port=5432;Database=${POSTGRES_DB};Username=grocerease_migrator;Password=${DB_MIGRATOR_PASSWORD:?set DB_MIGRATOR_PASSWORD in .env}
+    depends_on:
+      db:
+        condition: service_healthy
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
   api:
     build: .
     ports:
       - "8080:8080"
     environment:
-      # The API does not read this yet; it is here for when EF Core is added.
-      ConnectionStrings__Default: Host=db;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      # The API connects as the least-privilege "grocerease_app" role (see docker/postgres/init/01-roles.sh), never as the
+      # superuser: it can read and write rows, and cannot create, alter or drop anything.
+      ConnectionStrings__Default: Host=db;Port=5432;Database=${POSTGRES_DB};Username=grocerease_app;Password=${DB_APP_PASSWORD:?set DB_APP_PASSWORD in .env}
       # Becomes the Jwt:SecretKey setting ("__" is how an environment variable names a nested key). The API refuses
       # to start if it is missing or shorter than 32 characters. It lives in .env, never in a committed file.
       Jwt__SecretKey: ${JWT_SECRET_KEY:?set JWT_SECRET_KEY in .env}
     depends_on:
       db:
         condition: service_healthy
+      # Wait until the schema is up to date: the migrate service must have run and finished without error.
+      migrate:
+        condition: service_completed_successfully
     # The image already runs as the non-root "app" user; these two limit what it could do anyway.
     cap_drop:
       - ALL
@@ -31,12 +53,17 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # Read by docker/postgres/init/01-roles.sh, which creates the two application roles on first start.
+      MIGRATOR_PASSWORD: ${DB_MIGRATOR_PASSWORD:?set DB_MIGRATOR_PASSWORD in .env}
+      APP_PASSWORD: ${DB_APP_PASSWORD:?set DB_APP_PASSWORD in .env}
     ports:
       # Loopback only, so tools on this machine can connect but the network cannot.
       - "127.0.0.1:5432:5432"
     volumes:
       # PostgreSQL 18+ images keep data in a version folder below /var/lib/postgresql.
       - db-data:/var/lib/postgresql
+      # Scripts here run once, when the data volume is first created. They do not run again on an existing volume.
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s

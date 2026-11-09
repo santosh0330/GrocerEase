@@ -19,6 +19,7 @@ public class ApplicationDependencyInjectionTests
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
+                ["ConnectionStrings:Default"] = "Host=localhost;Database=never_connected",
                 ["Jwt:SecretKey"] = "unit-test-signing-key-0123456789-abcdef",
                 ["Jwt:Issuer"] = "issuer-x",
                 ["Jwt:Audience"] = "audience-x",

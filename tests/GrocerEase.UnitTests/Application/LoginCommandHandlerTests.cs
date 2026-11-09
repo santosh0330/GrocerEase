@@ -4,7 +4,6 @@ using GrocerEase.Application.Authentication.Common;
 using GrocerEase.Application.Authentication.Handlers;
 using GrocerEase.Application.Common;
 using GrocerEase.Domain.Entities;
-using GrocerEase.Infrastructure.Persistence;
 
 namespace GrocerEase.UnitTests.Application;
 
@@ -17,7 +16,7 @@ public class LoginCommandHandlerTests
 
     private static async Task<(LoginCommandHandler Handler, User Ada, FakePasswordHasher Hasher)> HandlerWithAdaAsync()
     {
-        var repository = new InMemoryUserRepository();
+        var repository = new FakeUserRepository();
         var hasher = new FakePasswordHasher();
         var ada = new User(Guid.CreateVersion7(), "Ada", "Lovelace", "ada@example.com", hasher.Hash("s3cret!"));
         Assert.True(await repository.TryAddAsync(ada, CancellationToken.None));

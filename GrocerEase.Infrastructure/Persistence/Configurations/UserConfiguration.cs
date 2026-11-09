@@ -10,6 +10,9 @@ namespace GrocerEase.Infrastructure.Persistence.Configurations;
 /// </summary>
 public sealed class UserConfiguration : IEntityTypeConfiguration<User>
 {
+    /// <summary>The unique index on the email. The repository recognises "email already taken" by this name.</summary>
+    public const string EmailIndexName = "ix_users_email";
+
     private const int PasswordHashMaxLength = 256;
 
     public void Configure(EntityTypeBuilder<User> builder)
@@ -32,7 +35,7 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
 
         // Stored trimmed and lower case (User.NormalizeEmail), so a plain unique index is a case-insensitive uniqueness rule.
         builder.Property(user => user.Email).HasColumnName("email").HasMaxLength(User.MaxEmailLength).IsRequired();
-        builder.HasIndex(user => user.Email).IsUnique().HasDatabaseName("ix_users_email");
+        builder.HasIndex(user => user.Email).IsUnique().HasDatabaseName(EmailIndexName);
 
         // Not a domain rule: it is the room the hashing algorithm needs (an ASP.NET Core Identity hash is 84 characters),
         // with headroom for a stronger one later. So it lives here, with the schema, and not on the entity.

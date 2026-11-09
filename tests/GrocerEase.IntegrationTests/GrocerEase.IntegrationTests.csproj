@@ -18,6 +18,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The real init script, so the tests run PostgreSQL with the same roles as docker-compose.yml does. -->
+    <None Include="..\..\docker\postgres\init\01-roles.sh" Link="postgres-init\01-roles.sh" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\GrocerEase.Api\GrocerEase.Api.csproj" />
     <ProjectReference Include="..\..\GrocerEase.Contracts\GrocerEase.Contracts.csproj" />
   </ItemGroup>

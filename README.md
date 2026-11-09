@@ -19,9 +19,11 @@ The planned stack is a ReactJS frontend, an ASP.NET Core REST API, and PostgreSQ
 Requires Docker with the Compose plugin.
 
 ```bash
-cp .env.example .env          # then edit .env: set a real POSTGRES_PASSWORD and JWT_SECRET_KEY
+cp .env.example .env          # then edit .env: set the three database passwords and JWT_SECRET_KEY
 docker compose up --build     # API on http://localhost:8080, PostgreSQL on 127.0.0.1:5432
 ```
+
+Use a different random value for each of `POSTGRES_PASSWORD`, `DB_MIGRATOR_PASSWORD` and `DB_APP_PASSWORD`, and use hex (`openssl rand -hex 24`) so no character needs escaping in a connection string.
 
 `JWT_SECRET_KEY` signs the login tokens and must be a random string of at least 32 characters, for example the output of `openssl rand -base64 48`. The API refuses to start without it.
 
@@ -34,7 +36,21 @@ Check it: `curl http://localhost:8080/test` returns `test`.
 | `docker compose down` | Stop and remove the containers; **the database data is kept** |
 | `docker compose down -v` | Same, and **delete the database volume** |
 
-Both containers run as non-root users (`app` for the API, `postgres` for the database) with all Linux capabilities dropped. The database port is published on loopback only. The API is passed a connection string as `ConnectionStrings__Default` but does not use the database yet.
+Both containers run as non-root users (`app` for the API, `postgres` for the database) with all Linux capabilities dropped, and CI checks it. The database port is published on loopback only.
+
+### Database roles
+
+Nothing in the application connects as the PostgreSQL superuser. `docker/postgres/init/01-roles.sh` creates two roles the first time the data volume is created:
+
+| Role | Used by | Can do |
+|---|---|---|
+| `POSTGRES_USER` (superuser) | the image, for start-up and health checks only | everything; no application uses it |
+| `grocerease_migrator` | schema migrations | owns the database and creates and changes tables; not a superuser |
+| `grocerease_app` | the API | read and write rows in the tables; **cannot** create, alter or drop anything, see the migration history, or connect to other databases |
+
+If the API is ever tricked into running arbitrary SQL, this limits the damage to the rows it could already touch.
+
+**Init scripts run only on a new volume.** If you already have a `db-data` volume from before this change, the roles do not exist and the API cannot connect: run `docker compose down -v` (this **deletes the database data**) and start again.
 
 ## Running without Docker
 

@@ -1,10 +1,5 @@
-using FluentValidation;
 using GrocerEase.Api.ExceptionHandling;
-using GrocerEase.Api.Extensions;
-using GrocerEase.Application.Authentication.Commands;
-using GrocerEase.Application.Authentication.Common;
-using GrocerEase.Application.Authentication.Handlers;
-using GrocerEase.Application.Common;
+using GrocerEase.Application;
 using GrocerEase.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,10 +7,9 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddControllers();
-builder.Services.AddValidatorsFromAssembly(typeof(GrocerEase.Application.AssemblyReference).Assembly);
-builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.AddValidatedCommandHandler<RegisterCommand, Result<AuthenticationResult>, RegisterCommandHandler>();
-builder.Services.AddValidatedCommandHandler<LoginCommand, Result<AuthenticationResult>, LoginCommandHandler>();
+builder.Services
+    .AddApplication()
+    .AddInfrastructure(builder.Configuration);
 builder.Services.AddExceptionHandler<ValidationExceptionHandler>();
 builder.Services.AddExceptionHandler<UnhandledExceptionHandler>();
 builder.Services.AddProblemDetails();

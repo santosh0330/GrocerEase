@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
+using GrocerEase.Application.Abstractions;
 using GrocerEase.Contracts.Authentication;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GrocerEase.IntegrationTests;
 
@@ -28,6 +30,20 @@ public class AuthEndpointsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(("Ada", "Lovelace", email), (body.FirstName, body.LastName, body.Email));
         Assert.NotEqual(Guid.Empty, body.Id);
         Assert.False(string.IsNullOrEmpty(body.Token));
+    }
+
+    [Fact]
+    public async Task Post_Register_StoresAHashOfThePassword_NotThePassword()
+    {
+        var email = UniqueEmail();
+        await RegisterAsync(email, "Sup3r-s3cret!");
+
+        using var scope = factory.Services.CreateScope();
+        var stored = await scope.ServiceProvider.GetRequiredService<IUserRepository>().GetByEmailAsync(email, CancellationToken.None);
+
+        Assert.NotNull(stored);
+        Assert.NotEqual("Sup3r-s3cret!", stored.PasswordHash, StringComparer.Ordinal);
+        Assert.DoesNotContain("Sup3r-s3cret!", stored.PasswordHash, StringComparison.Ordinal);
     }
 
     [Fact]

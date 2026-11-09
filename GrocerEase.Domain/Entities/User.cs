@@ -3,19 +3,19 @@ namespace GrocerEase.Domain.Entities;
 /// <summary>A person with an account. The entity guards its own invariants: it cannot exist with an empty id or blank text.</summary>
 public sealed class User
 {
-    public User(Guid id, string firstName, string lastName, string email, string password)
+    public User(Guid id, string firstName, string lastName, string email, string passwordHash)
     {
         ArgumentOutOfRangeException.ThrowIfEqual(id, Guid.Empty);
         ArgumentException.ThrowIfNullOrWhiteSpace(firstName);
         ArgumentException.ThrowIfNullOrWhiteSpace(lastName);
         ArgumentException.ThrowIfNullOrWhiteSpace(email);
-        ArgumentException.ThrowIfNullOrWhiteSpace(password);
+        ArgumentException.ThrowIfNullOrWhiteSpace(passwordHash);
 
         Id = id;
         FirstName = firstName;
         LastName = lastName;
         Email = email;
-        Password = password;
+        PasswordHash = passwordHash;
     }
 
     public Guid Id { get; }
@@ -26,7 +26,6 @@ public sealed class User
 
     public string Email { get; }
 
-    // TEMPORARY: stored and compared as plain text because no password hasher exists yet.
-    // Replace with a hash (and an IPasswordHasher in Application) before any real storage; do not deploy as is.
-    public string Password { get; }
+    /// <summary>The output of <c>IPasswordHasher.Hash</c>, never the password itself.</summary>
+    public string PasswordHash { get; }
 }

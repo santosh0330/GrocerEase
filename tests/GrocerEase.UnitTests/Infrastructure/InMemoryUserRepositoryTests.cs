@@ -6,7 +6,7 @@ namespace GrocerEase.UnitTests.Infrastructure;
 public class InMemoryUserRepositoryTests
 {
     private static User NewUser(string email = "ada@example.com") =>
-        new(Guid.NewGuid(), "Ada", "Lovelace", email, "s3cret!");
+        new(Guid.NewGuid(), "Ada", "Lovelace", email, "hash");
 
     [Fact]
     public async Task GetByEmailAsync_ReturnsNullWhenThereIsNoUser()

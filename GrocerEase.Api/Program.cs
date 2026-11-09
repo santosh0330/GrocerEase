@@ -16,6 +16,7 @@ builder.Services.AddValidatorsFromAssembly(typeof(AssemblyReference).Assembly);
 builder.Services.AddValidatedCommandHandler<RegisterCommand, Result<AuthenticationResult>, RegisterCommandHandler>();
 builder.Services.AddValidatedCommandHandler<LoginCommand, Result<AuthenticationResult>, LoginCommandHandler>();
 builder.Services.AddExceptionHandler<ValidationExceptionHandler>();
+builder.Services.AddExceptionHandler<UnhandledExceptionHandler>();
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 

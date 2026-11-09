@@ -23,8 +23,19 @@ public sealed class User
         Id = id;
         FirstName = firstName;
         LastName = lastName;
-        Email = email;
+        Email = NormalizeEmail(email);
         PasswordHash = passwordHash;
+    }
+
+    /// <summary>
+    /// The one form an email is stored and looked up in: trimmed and lower case. <c>Ada@x.com</c> and <c>ada@x.com</c> are the same
+    /// mailbox, so they must be the same account; with one stored form, a unique index on the column is enough to guarantee it.
+    /// </summary>
+    public static string NormalizeEmail(string email)
+    {
+        ArgumentNullException.ThrowIfNull(email);
+
+        return email.Trim().ToLowerInvariant();
     }
 
     public Guid Id { get; }

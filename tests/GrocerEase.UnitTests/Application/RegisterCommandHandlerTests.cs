@@ -45,6 +45,16 @@ public class RegisterCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_ReturnsTheEmailInTheFormItWasStoredIn_LowerCase()
+    {
+        var handler = new RegisterCommandHandler(new InMemoryUserRepository(), new FakePasswordHasher(), new StubTokenGenerator());
+
+        var result = await handler.Handle(Ada with { Email = "Ada@Example.COM" }, CancellationToken.None);
+
+        Assert.Equal("ada@example.com", result.Value.Email);
+    }
+
+    [Fact]
     public async Task Handle_GivesTheNewUserAVersion7Id()
     {
         var handler = new RegisterCommandHandler(new InMemoryUserRepository(), new FakePasswordHasher(), new StubTokenGenerator());

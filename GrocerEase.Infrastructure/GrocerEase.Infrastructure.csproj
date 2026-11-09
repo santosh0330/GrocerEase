@@ -1,6 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <!-- Identity, Options and the DI abstractions ship with ASP.NET Core, so no package is needed for them. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\GrocerEase.Application\GrocerEase.Application.csproj" />
   </ItemGroup>
 

@@ -19,6 +19,7 @@ builder.Services.AddValidatorsFromAssembly(typeof(AssemblyReference).Assembly);
 // TEMPORARY: the in-memory repository must be a singleton, or every request would see an empty store.
 builder.Services.AddSingleton<IUserRepository, InMemoryUserRepository>();
 builder.Services.AddSingleton<IJwtTokenGenerator, PlaceholderJwtTokenGenerator>();
+builder.Services.AddSingleton<IPasswordHasher, IdentityPasswordHasher>();
 builder.Services.AddValidatedCommandHandler<RegisterCommand, Result<AuthenticationResult>, RegisterCommandHandler>();
 builder.Services.AddValidatedCommandHandler<LoginCommand, Result<AuthenticationResult>, LoginCommandHandler>();
 builder.Services.AddExceptionHandler<ValidationExceptionHandler>();

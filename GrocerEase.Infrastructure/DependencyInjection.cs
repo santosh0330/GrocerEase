@@ -27,7 +27,7 @@ public static class DependencyInjection
         // TEMPORARY: the in-memory repository must be a singleton, or every request would see an empty store.
         services.AddSingleton<IUserRepository, InMemoryUserRepository>();
         services.AddSingleton<IPasswordHasher, IdentityPasswordHasher>();
-        services.AddSingleton<IJwtTokenGenerator, PlaceholderJwtTokenGenerator>();
+        services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
 
         return services;
     }

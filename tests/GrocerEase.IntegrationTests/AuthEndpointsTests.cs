@@ -5,6 +5,8 @@ using GrocerEase.Application.Abstractions;
 using GrocerEase.Contracts.Authentication;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 
 namespace GrocerEase.IntegrationTests;
 
@@ -30,6 +32,43 @@ public class AuthEndpointsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(("Ada", "Lovelace", email), (body.FirstName, body.LastName, body.Email));
         Assert.NotEqual(Guid.Empty, body.Id);
         Assert.False(string.IsNullOrEmpty(body.Token));
+    }
+
+    [Fact]
+    public async Task Post_Register_ReturnsATokenSignedWithTheConfiguredKeyThatNamesTheUser()
+    {
+        var registered = await RegisterAsync(UniqueEmail(), "Sup3r-s3cret!");
+
+        var result = await ValidateTokenAsync(registered.Token);
+
+        Assert.True(result.IsValid, result.Exception?.Message);
+        Assert.Equal(registered.Id.ToString(), ((JsonWebToken)result.SecurityToken).Subject);
+    }
+
+    [Fact]
+    public async Task Post_Login_ReturnsATokenSignedWithTheConfiguredKeyThatNamesTheUser()
+    {
+        var email = UniqueEmail();
+        var registered = await RegisterAsync(email, "Sup3r-s3cret!");
+
+        var response = await _client.PostAsJsonAsync(new Uri("/auth/login", UriKind.Relative), new LoginRequest(email, "Sup3r-s3cret!"));
+        var body = await response.Content.ReadFromJsonAsync<AuthenticationResponse>();
+
+        Assert.NotNull(body);
+        var result = await ValidateTokenAsync(body.Token);
+        Assert.True(result.IsValid, result.Exception?.Message);
+        Assert.Equal(registered.Id.ToString(), ((JsonWebToken)result.SecurityToken).Subject);
+    }
+
+    [Fact]
+    public async Task ATokenSignedWithAnotherKey_IsNotAccepted()
+    {
+        var registered = await RegisterAsync(UniqueEmail(), "Sup3r-s3cret!");
+        var rules = TokenRules(ApiFactory.JwtSecretKey + "-but-not-really");
+
+        var result = await new JsonWebTokenHandler().ValidateTokenAsync(registered.Token, rules);
+
+        Assert.False(result.IsValid);
     }
 
     [Fact]
@@ -186,6 +225,17 @@ public class AuthEndpointsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<AuthenticationResponse>())!;
     }
+
+    private static TokenValidationParameters TokenRules(string key) => new()
+    {
+        ValidIssuer = "GrocerEase",
+        ValidAudience = "GrocerEase",
+        IssuerSigningKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(key)),
+        ValidateLifetime = true,
+    };
+
+    private static Task<TokenValidationResult> ValidateTokenAsync(string token) =>
+        new JsonWebTokenHandler().ValidateTokenAsync(token, TokenRules(ApiFactory.JwtSecretKey));
 
     private static async Task AssertInvalidCredentialsAsync(HttpResponseMessage response)
     {

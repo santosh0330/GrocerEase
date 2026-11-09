@@ -6,6 +6,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\GrocerEase.Application\GrocerEase.Application.csproj" />
   </ItemGroup>
 

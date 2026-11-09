@@ -16,6 +16,7 @@ public sealed class RegisterCommandHandler(
         ArgumentNullException.ThrowIfNull(command);
 
         // Checked before hashing: hashing is deliberately slow, so do not spend it on a request that will be refused.
+        // The check is only a shortcut; TryAddAsync below is what actually guarantees there is one user per email.
         if (await userRepository.GetByEmailAsync(command.Email, cancellationToken) is not null)
         {
             return Result.Failure<AuthenticationResult>(AuthenticationErrors.DuplicateEmail);
@@ -23,7 +24,11 @@ public sealed class RegisterCommandHandler(
 
         var user = new User(
             Guid.CreateVersion7(), command.FirstName, command.LastName, command.Email, passwordHasher.Hash(command.Password));
-        await userRepository.AddAsync(user, cancellationToken);
+        if (!await userRepository.TryAddAsync(user, cancellationToken))
+        {
+            // Another registration took the email between the check above and this add.
+            return Result.Failure<AuthenticationResult>(AuthenticationErrors.DuplicateEmail);
+        }
 
         var token = jwtTokenGenerator.GenerateToken(user);
         return Result.Success(new AuthenticationResult(user.Id, user.FirstName, user.LastName, user.Email, token));

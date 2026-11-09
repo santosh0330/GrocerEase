@@ -21,7 +21,7 @@ public class InMemoryUserRepositoryTests
     {
         var repository = new InMemoryUserRepository();
         var user = NewUser();
-        await repository.AddAsync(user, CancellationToken.None);
+        Assert.True(await repository.TryAddAsync(user, CancellationToken.None));
 
         var found = await repository.GetByEmailAsync("ada@example.com", CancellationToken.None);
 
@@ -33,28 +33,28 @@ public class InMemoryUserRepositoryTests
     {
         var repository = new InMemoryUserRepository();
         var user = NewUser("Ada@Example.com");
-        await repository.AddAsync(user, CancellationToken.None);
+        Assert.True(await repository.TryAddAsync(user, CancellationToken.None));
 
         Assert.Same(user, await repository.GetByEmailAsync("ada@example.COM", CancellationToken.None));
     }
 
     [Fact]
-    public async Task AddAsync_ThrowsForADuplicateEmailAndKeepsTheFirstUser()
+    public async Task TryAddAsync_ReturnsFalseForADuplicateEmailAndKeepsTheFirstUser()
     {
         var repository = new InMemoryUserRepository();
         var first = NewUser();
-        await repository.AddAsync(first, CancellationToken.None);
+        Assert.True(await repository.TryAddAsync(first, CancellationToken.None));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => repository.AddAsync(NewUser("ADA@example.com"), CancellationToken.None));
+        Assert.False(await repository.TryAddAsync(NewUser("ADA@example.com"), CancellationToken.None));
 
         Assert.Same(first, await repository.GetByEmailAsync("ada@example.com", CancellationToken.None));
     }
 
     [Fact]
-    public async Task AddAsync_RejectsNull()
+    public async Task TryAddAsync_RejectsNull()
     {
         var repository = new InMemoryUserRepository();
 
-        await Assert.ThrowsAsync<ArgumentNullException>(() => repository.AddAsync(null!, CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => repository.TryAddAsync(null!, CancellationToken.None));
     }
 }

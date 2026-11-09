@@ -1,6 +1,7 @@
 using System.Reflection;
 using FluentValidation;
 using GrocerEase.Application.Abstractions;
+using GrocerEase.Application.Common;
 using Microsoft.AspNetCore.Mvc;
 using NetArchTest.Rules;
 
@@ -105,6 +106,27 @@ public class LayerDependencyTests
 
         var misplaced = types.Where(t => t.Namespace is null || !t.Namespace.EndsWith(".Handlers", StringComparison.Ordinal)).Select(t => t.FullName);
         Assert.True(!misplaced.Any(), $"Handlers must live in a Handlers namespace/folder: {string.Join(", ", misplaced)}");
+    }
+
+    [Fact]
+    public void Application_Handlers_ReturnAResult()
+    {
+        var types = Types.InAssembly(Application)
+            .That().HaveNameEndingWith("Handler", StringComparison.Ordinal)
+            .And().AreClasses()
+            .GetTypes()
+            .ToList();
+
+        Assert.NotEmpty(types);
+        // The response type of ICommandHandler<TCommand, TResponse> must be Result<T>, so a failure cannot be forgotten.
+        var offenders = types
+            .Where(t => !t.GetInterfaces().Any(i =>
+                i.IsGenericType
+                && i.GetGenericTypeDefinition() == typeof(ICommandHandler<,>)
+                && i.GetGenericArguments()[1] is { IsGenericType: true } response
+                && response.GetGenericTypeDefinition() == typeof(Result<>)))
+            .Select(t => t.Name);
+        Assert.True(!offenders.Any(), $"Handlers must return Result<T>: {string.Join(", ", offenders)}");
     }
 
     [Fact]

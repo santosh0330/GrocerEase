@@ -26,18 +26,12 @@ public class HealthEndpointsTests(ApiFactory factory) : IClassFixture<ApiFactory
         [.. body.GetProperty("checks").EnumerateArray().Select(c => c.GetProperty("name").GetString()!)];
 
     // An app whose database cannot be reached: right host, a port nothing listens on.
-    private async Task<WebApplicationFactory<Program>> WithUnreachableDatabaseAsync(CapturingLoggerProvider? logs = null)
+    private async Task<WebApplicationFactory<Program>> WithUnreachableDatabaseAsync(CapturingLogSink? logs = null)
     {
         var unreachable = new NpgsqlConnectionStringBuilder(await PostgresServer.ApplicationConnectionStringAsync()) { Port = 1, Timeout = 2 }.ConnectionString;
-        return factory.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
-                new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["ConnectionStrings:Default"] = unreachable }));
-            if (logs is not null)
-            {
-                builder.ConfigureServices(services => services.AddSingleton<ILoggerProvider>(logs));
-            }
-        });
+        var app = factory.WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
+            new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["ConnectionStrings:Default"] = unreachable })));
+        return logs is null ? app : app.WithCapturedLogs(logs);
     }
 
     [Fact]
@@ -126,7 +120,7 @@ public class HealthEndpointsTests(ApiFactory factory) : IClassFixture<ApiFactory
     [Fact]
     public async Task AnUnhealthyAnswer_NeverRepeatsTheFailure_ItGoesToTheLogInstead()
     {
-        var logs = new CapturingLoggerProvider();
+        var logs = new CapturingLogSink();
         using var app = await WithUnreachableDatabaseAsync(logs);
         using var client = app.CreateClient();
 

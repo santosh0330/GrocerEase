@@ -23,6 +23,8 @@ public class DependencyInjectionTests
         ["Jwt:Issuer"] = "issuer-x",
         ["Jwt:Audience"] = "audience-x",
         ["Jwt:ExpiryMinutes"] = "15",
+        ["RefreshToken:LifetimeDays"] = "3",
+        ["RefreshToken:MaxLifetimeDays"] = "30",
     };
 
     [Fact]
@@ -34,6 +36,37 @@ public class DependencyInjectionTests
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IUserRepository>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IPasswordHasher>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IJwtTokenGenerator>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IRefreshTokenGenerator>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IRefreshTokenPolicy>());
+    }
+
+    [Fact]
+    public void TheRefreshTokenPolicy_IsBoundFromTheRefreshTokenSection()
+    {
+        var settings = ValidSettings();
+        settings["RefreshToken:LifetimeDays"] = "2";
+        settings["RefreshToken:MaxLifetimeDays"] = "20";
+        using var provider = Build(settings);
+
+        var policy = provider.GetRequiredService<IRefreshTokenPolicy>();
+
+        Assert.Equal((TimeSpan.FromDays(2), TimeSpan.FromDays(20)), (policy.Lifetime, policy.MaxLifetime));
+    }
+
+    [Theory]
+    [InlineData("31", "30", "RefreshToken:LifetimeDays")]
+    [InlineData("3", "31", "RefreshToken:MaxLifetimeDays")]
+    [InlineData("10", "5", "must not be more than")]
+    public void ARefreshTokenSettingAboveTheLimit_IsRefusedWhenTheSettingsAreRead(string lifetime, string maxLifetime, string expected)
+    {
+        var settings = ValidSettings();
+        settings["RefreshToken:LifetimeDays"] = lifetime;
+        settings["RefreshToken:MaxLifetimeDays"] = maxLifetime;
+        using var provider = Build(settings);
+
+        var exception = Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IRefreshTokenPolicy>());
+
+        Assert.Contains(expected, exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

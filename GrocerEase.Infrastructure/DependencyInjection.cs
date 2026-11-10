@@ -26,6 +26,11 @@ public static class DependencyInjection
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        services.AddOptions<RefreshTokenSettings>()
+            .Bind(configuration.GetSection(RefreshTokenSettings.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
         services.AddSingleton(TimeProvider.System);
 
         // The connection string is read when the settings are first needed (not here), and checked when the app starts.
@@ -46,6 +51,8 @@ public static class DependencyInjection
             "database", failureStatus: HealthStatus.Unhealthy, timeout: TimeSpan.FromSeconds(5));
         services.AddSingleton<IPasswordHasher, IdentityPasswordHasher>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
+        services.AddSingleton<IRefreshTokenGenerator, RefreshTokenGenerator>();
+        services.AddSingleton<IRefreshTokenPolicy>(provider => provider.GetRequiredService<IOptions<RefreshTokenSettings>>().Value);
 
         return services;
     }

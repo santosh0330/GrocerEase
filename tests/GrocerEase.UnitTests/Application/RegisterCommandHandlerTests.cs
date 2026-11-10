@@ -25,6 +25,8 @@ public class RegisterCommandHandlerTests
     {
         public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken) => Task.FromResult<User?>(null);
 
+        public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult<User?>(null);
+
         public Task<bool> TryAddAsync(User user, CancellationToken cancellationToken) => Task.FromResult(false);
     }
 

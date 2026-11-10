@@ -53,6 +53,8 @@ public class ApplicationDependencyInjectionTests
             scope.ServiceProvider.GetRequiredService<ICommandHandler<RegisterCommand, Result<AuthenticationResult>>>());
         Assert.IsType<ValidationDecorator<LoginCommand, Result<AuthenticationResult>>>(
             scope.ServiceProvider.GetRequiredService<ICommandHandler<LoginCommand, Result<AuthenticationResult>>>());
+        Assert.IsType<ValidationDecorator<RefreshCommand, Result<AuthenticationResult>>>(
+            scope.ServiceProvider.GetRequiredService<ICommandHandler<RefreshCommand, Result<AuthenticationResult>>>());
     }
 
     [Fact]
@@ -73,6 +75,7 @@ public class ApplicationDependencyInjectionTests
 
         Assert.NotNull(scope.ServiceProvider.GetService<IValidator<RegisterCommand>>());
         Assert.NotNull(scope.ServiceProvider.GetService<IValidator<LoginCommand>>());
+        Assert.NotNull(scope.ServiceProvider.GetService<IValidator<RefreshCommand>>());
     }
 
     [Fact]

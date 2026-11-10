@@ -26,6 +26,7 @@ public static class DependencyInjection
 
         services.AddValidatedCommandHandler<RegisterCommand, Result<AuthenticationResult>, RegisterCommandHandler>();
         services.AddValidatedCommandHandler<LoginCommand, Result<AuthenticationResult>, LoginCommandHandler>();
+        services.AddValidatedCommandHandler<RefreshCommand, Result<AuthenticationResult>, RefreshCommandHandler>();
 
         return services;
     }

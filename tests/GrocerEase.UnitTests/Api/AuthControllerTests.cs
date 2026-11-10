@@ -17,10 +17,13 @@ public class AuthControllerTests
 
     private readonly SpyHandler<RegisterCommand> _registerHandler = new(CannedResult);
     private readonly SpyHandler<LoginCommand> _loginHandler = new(CannedResult);
+    private readonly SpyHandler<RefreshCommand> _refreshHandler = new(CannedResult);
 
     private AuthController CreateController(
-        SpyHandler<RegisterCommand>? registerHandler = null, SpyHandler<LoginCommand>? loginHandler = null) =>
-        new(registerHandler ?? _registerHandler, loginHandler ?? _loginHandler)
+        SpyHandler<RegisterCommand>? registerHandler = null,
+        SpyHandler<LoginCommand>? loginHandler = null,
+        SpyHandler<RefreshCommand>? refreshHandler = null) =>
+        new(registerHandler ?? _registerHandler, loginHandler ?? _loginHandler, refreshHandler ?? _refreshHandler)
         {
             ProblemDetailsFactory = new StubProblemDetailsFactory(),
         };
@@ -88,6 +91,36 @@ public class AuthControllerTests
         var problem = Assert.IsType<ObjectResult>(result);
         Assert.Equal(StatusCodes.Status401Unauthorized, problem.StatusCode);
         Assert.Equal("Authentication.InvalidCredentials", Assert.IsType<ProblemDetails>(problem.Value).Extensions["code"]);
+    }
+
+    [Fact]
+    public async Task Refresh_SendsTheRequestAsACommandToTheHandler()
+    {
+        await CreateController().Refresh(new RefreshRequest("the-refresh-token"), CancellationToken.None);
+
+        Assert.Equal(new RefreshCommand("the-refresh-token"), _refreshHandler.ReceivedCommand);
+    }
+
+    [Fact]
+    public async Task Refresh_ReturnsOkWithTheResultMappedToAResponse_IncludingTheNewRefreshToken()
+    {
+        var result = await CreateController().Refresh(new RefreshRequest("the-refresh-token"), CancellationToken.None);
+
+        var response = Assert.IsType<AuthenticationResponse>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal(new AuthenticationResponse(UserId, "Grace", "Hopper", "grace@example.com", "jwt", "refresh"), response);
+    }
+
+    [Fact]
+    public async Task Refresh_WhenTheHandlerFails_ReturnsAProblemForThatError()
+    {
+        var failing = new SpyHandler<RefreshCommand>(Result.Failure<AuthenticationResult>(
+            new ResultError("Authentication.InvalidRefreshToken", "The refresh token is invalid, expired or already used. Sign in again.", ErrorType.Unauthorized)));
+
+        var result = await CreateController(refreshHandler: failing).Refresh(new RefreshRequest("old"), CancellationToken.None);
+
+        var problem = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status401Unauthorized, problem.StatusCode);
+        Assert.Equal("Authentication.InvalidRefreshToken", Assert.IsType<ProblemDetails>(problem.Value).Extensions["code"]);
     }
 
     /// <summary>Records the command it receives and returns a canned result.</summary>

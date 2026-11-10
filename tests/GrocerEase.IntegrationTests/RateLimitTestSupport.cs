@@ -43,6 +43,8 @@ internal static class RateLimitTestSupport
         string? loginWindow = null,
         string? registerLimit = null,
         string? registerWindow = null,
+        string? refreshLimit = null,
+        string? refreshWindow = null,
         string? healthLimit = null,
         string? healthWindow = null) =>
         factory.WithWebHostBuilder(builder =>
@@ -52,6 +54,8 @@ internal static class RateLimitTestSupport
             Add(settings, "RateLimiting:Login:WindowSeconds", loginWindow);
             Add(settings, "RateLimiting:Register:PermitLimit", registerLimit);
             Add(settings, "RateLimiting:Register:WindowSeconds", registerWindow);
+            Add(settings, "RateLimiting:Refresh:PermitLimit", refreshLimit);
+            Add(settings, "RateLimiting:Refresh:WindowSeconds", refreshWindow);
             Add(settings, "RateLimiting:Health:PermitLimit", healthLimit);
             Add(settings, "RateLimiting:Health:WindowSeconds", healthWindow);
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(settings));
@@ -85,6 +89,16 @@ internal static class RateLimitTestSupport
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri("/auth/register", UriKind.Relative))
         {
             Content = JsonContent.Create(new RegisterRequest("Ada", "Lovelace", email ?? UniqueEmail(), password)),
+        };
+        request.Headers.Add(ClientIpHeader, ip);
+        return await client.SendAsync(request);
+    }
+
+    public static async Task<HttpResponseMessage> RefreshAsync(HttpClient client, string ip, string refreshToken = "not-a-real-token")
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri("/auth/refresh", UriKind.Relative))
+        {
+            Content = JsonContent.Create(new RefreshRequest(refreshToken)),
         };
         request.Headers.Add(ClientIpHeader, ip);
         return await client.SendAsync(request);

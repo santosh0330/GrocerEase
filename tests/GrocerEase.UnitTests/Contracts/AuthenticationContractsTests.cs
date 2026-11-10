@@ -56,4 +56,23 @@ public class AuthenticationContractsTests
         Assert.DoesNotContain("jwt-value", text, StringComparison.Ordinal);
         Assert.DoesNotContain("refresh-value", text, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void RefreshRequest_DeserializesFromCamelCaseJson()
+    {
+        const string json = """{"refreshToken":"the-token"}""";
+
+        var request = JsonSerializer.Deserialize<RefreshRequest>(json, Web);
+
+        Assert.Equal(new RefreshRequest("the-token"), request);
+    }
+
+    [Fact]
+    public void RefreshRequest_ToString_DoesNotContainTheRefreshToken()
+    {
+        var text = new RefreshRequest("refresh-value").ToString();
+
+        Assert.DoesNotContain("refresh-value", text, StringComparison.Ordinal);
+        Assert.Contains("RefreshToken = ***", text, StringComparison.Ordinal);
+    }
 }

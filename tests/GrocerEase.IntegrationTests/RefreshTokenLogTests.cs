@@ -6,7 +6,6 @@ using GrocerEase.Application.Authentication.Commands;
 using GrocerEase.Application.Authentication.Common;
 using GrocerEase.Application.Common;
 using GrocerEase.Contracts.Authentication;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,7 +15,7 @@ namespace GrocerEase.IntegrationTests;
 
 /// <summary>
 /// A refresh token is a credential: whoever reads it can be the user. These tests run every path that touches one (success, reuse,
-/// unknown, malformed, a crash) with logging turned up to Trace for every category, EF Core and ASP.NET included, and then search
+/// unknown, malformed, a crash) with logging turned up to the lowest level for every category, EF Core and ASP.NET included, and then search
 /// everything that was written for the tokens, and for their hashes in every common encoding.
 /// </summary>
 public class RefreshTokenLogTests(ApiFactory factory) : IClassFixture<ApiFactory>
@@ -30,24 +29,18 @@ public class RefreshTokenLogTests(ApiFactory factory) : IClassFixture<ApiFactory
             throw new InvalidOperationException($"could not refresh {command}");
     }
 
-    private static WebApplicationFactory<Program> Logging(ApiFactory factory, CapturingLoggerProvider logs, bool crashingHandler = false) =>
-        factory.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureLogging(logging =>
-            {
-                logging.AddProvider(logs);
-                logging.AddFilter<CapturingLoggerProvider>(null, LogLevel.Trace); // everything, whatever appsettings.json says
-            });
-            if (crashingHandler)
-            {
-                builder.ConfigureTestServices(services =>
-                    services.AddScoped<ICommandHandler<RefreshCommand, Result<AuthenticationResult>>, ThrowingRefreshHandler>());
-            }
-        });
+    private static WebApplicationFactory<Program> Logging(ApiFactory factory, CapturingLogSink logs, bool crashingHandler = false)
+    {
+        // Every category at the lowest level, whatever appsettings.json says.
+        var app = factory.WithCapturedLogs(logs, everything: true);
+        return crashingHandler
+            ? app.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+                services.AddScoped<ICommandHandler<RefreshCommand, Result<AuthenticationResult>>, ThrowingRefreshHandler>()))
+            : app;
+    }
 
-    /// <summary>Everything that was logged, message and exception, as one text per entry.</summary>
-    private static List<string> Written(CapturingLoggerProvider logs) =>
-        [.. logs.Entries.Select(entry => $"{entry.Category} {entry.Level} {entry.Message} {entry.Exception}")];
+    /// <summary>Everything that was logged, as one text per event: message, exception and every structured property (a file or Seq would receive those too).</summary>
+    private static List<string> Written(CapturingLogSink logs) => [.. logs.Texts()];
 
     /// <summary>A token as it could show up: as is, and its SHA-256 as hex (either case), base64 and base64url.</summary>
     private static IEnumerable<string> Forms(string token)
@@ -60,7 +53,7 @@ public class RefreshTokenLogTests(ApiFactory factory) : IClassFixture<ApiFactory
         yield return System.Buffers.Text.Base64Url.EncodeToString(hash);
     }
 
-    private static void AssertNeverLogged(CapturingLoggerProvider logs, params string[] tokens)
+    private static void AssertNeverLogged(CapturingLogSink logs, params string[] tokens)
     {
         var written = Written(logs);
         Assert.NotEmpty(written); // the capture works: an empty log would "pass" every search
@@ -76,7 +69,7 @@ public class RefreshTokenLogTests(ApiFactory factory) : IClassFixture<ApiFactory
     [Fact]
     public async Task NoPathThatTouchesARefreshToken_WritesItOrItsHashToAnyLog()
     {
-        var logs = new CapturingLoggerProvider();
+        var logs = new CapturingLogSink();
         using var app = Logging(factory, logs);
         using var client = app.CreateClient();
         var email = $"ada-{Guid.NewGuid():N}@example.com";
@@ -101,7 +94,7 @@ public class RefreshTokenLogTests(ApiFactory factory) : IClassFixture<ApiFactory
     [Fact]
     public async Task TheLogsOfThatRun_DoShowThatTheFamilyWasRevoked_ByIdAndCountOnly()
     {
-        var logs = new CapturingLoggerProvider();
+        var logs = new CapturingLogSink();
         using var app = Logging(factory, logs);
         using var client = app.CreateClient();
         var registered = (await (await client.PostAsJsonAsync(
@@ -120,7 +113,7 @@ public class RefreshTokenLogTests(ApiFactory factory) : IClassFixture<ApiFactory
     [Fact]
     public async Task ACrashWhileRefreshing_LogsTheException_WithoutTheToken()
     {
-        var logs = new CapturingLoggerProvider();
+        var logs = new CapturingLogSink();
         using var app = Logging(factory, logs, crashingHandler: true);
         using var client = app.CreateClient();
         const string token = "token-in-a-crashing-request-canary-77aa";
@@ -136,7 +129,7 @@ public class RefreshTokenLogTests(ApiFactory factory) : IClassFixture<ApiFactory
     [Fact]
     public async Task TheRequestsBodyIsNotLogged_AndTheTokenIsNotInTheUrl()
     {
-        var logs = new CapturingLoggerProvider();
+        var logs = new CapturingLogSink();
         using var app = Logging(factory, logs);
         using var client = app.CreateClient();
         const string token = "token-in-the-body-canary-5d2e";

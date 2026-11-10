@@ -1,11 +1,13 @@
 using GrocerEase.Api.Authentication;
 using GrocerEase.Api.ExceptionHandling;
 using GrocerEase.Api.Health;
+using GrocerEase.Api.Logging;
 using GrocerEase.Api.RateLimiting;
 using GrocerEase.Application;
 using GrocerEase.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddStructuredLogging();
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi

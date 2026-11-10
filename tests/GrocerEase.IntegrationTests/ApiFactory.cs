@@ -13,6 +13,9 @@ public class ApiFactory : WebApplicationFactory<Program>
     /// <summary>A key for tests only. It is not a secret: it signs tokens nobody trusts outside the test run.</summary>
     public const string JwtSecretKey = "integration-tests-only-signing-key-0123456789";
 
+    /// <summary>Where the app under test writes its log files, unless a test chooses its own.</summary>
+    public static readonly string TestLogDirectory = Path.Combine(Path.GetTempPath(), "grocerease-integration-test-logs");
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -27,6 +30,9 @@ public class ApiFactory : WebApplicationFactory<Program>
             {
                 ["Jwt:SecretKey"] = JwtSecretKey,
                 ["ConnectionStrings:Default"] = connectionString,
+
+                // Tests must not write log files into the source tree. One folder for the whole run, outside the repository.
+                ["LogFiles:Directory"] = TestLogDirectory,
 
                 // Tests share one client and log in and register many times; the real limits would block them.
                 // The rate limit's own tests set small limits on their own app instance.

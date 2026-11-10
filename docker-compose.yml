@@ -1,4 +1,4 @@
-# Local development stack: the API and its PostgreSQL database.
+# Local development stack: the API, its PostgreSQL database, and Seq for searching the API's logs.
 #   cp .env.example .env     (then set the passwords and JWT_SECRET_KEY)
 #   docker compose up --build
 services:
@@ -31,6 +31,13 @@ services:
       # Becomes the Jwt:SecretKey setting ("__" is how an environment variable names a nested key). The API refuses
       # to start if it is missing or shorter than 32 characters. It lives in .env, never in a committed file.
       Jwt__SecretKey: ${JWT_SECRET_KEY:?set JWT_SECRET_KEY in .env}
+      # Logs go to the console, to daily JSON files in /app/logs (the api-logs volume below), and to Seq. Seq is not in depends_on on
+      # purpose: logging must never be a reason for the API not to start, and the API keeps answering if Seq is stopped. Seq only
+      # receives what is sent while it is up; the files have everything.
+      Seq__ServerUrl: http://seq:5341
+      LogFiles__Directory: /app/logs
+    volumes:
+      - api-logs:/app/logs
     depends_on:
       db:
         condition: service_healthy
@@ -49,6 +56,27 @@ services:
     # The image already runs as the non-root "app" user; these two limit what it could do anyway.
     cap_drop:
       - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  # Seq: search and filter the API's structured logs at http://localhost:5341 (see "Logging" in the README).
+  # LOCAL DEVELOPMENT ONLY. It has no login (SEQ_FIRSTRUN_NOAUTHENTICATION: Seq will not start without either that or an admin
+  # password), so it listens on this machine only, like the database, and anyone who can reach the port can read every log.
+  # For anything shared, drop that variable and set SEQ_FIRSTRUN_ADMINPASSWORDHASH instead (README), and give the API a key (Seq__ApiKey).
+  seq:
+    image: datalust/seq:2026.1
+    environment:
+      # Seq's license agreement, which the image requires to be accepted before it starts. Free for individual use.
+      ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_NOAUTHENTICATION: "true"
+    ports:
+      # Loopback only. The UI and the ingestion API are both on container port 80; the API reaches ingestion on 5341 inside the network.
+      - "127.0.0.1:5341:80"
+    volumes:
+      - seq-data:/data
+    # The image runs as root, and does not start with its capabilities dropped (tried: "Operation not permitted"), so unlike the
+    # other services this is the one hardening that fits.
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
@@ -86,3 +114,6 @@ services:
 
 volumes:
   db-data:
+  # The API's log files, so they survive the container being recreated.
+  api-logs:
+  seq-data:

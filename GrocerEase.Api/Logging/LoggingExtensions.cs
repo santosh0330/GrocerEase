@@ -29,6 +29,7 @@ public static class LoggingExtensions
                 .ReadFrom.Configuration(context.Configuration)
                 .ReadFrom.Services(services)
                 .Enrich.FromLogContext() // properties pushed by the request pipeline (TraceId, RequestId) ride along on every event
+                .Enrich.With<ActivityEnricher>() // TraceId and SpanId, when there is a trace
                 .Enrich.WithProperty("Application", ApplicationName)
                 .Enrich.WithProperty("Environment", context.HostingEnvironment.EnvironmentName)
                 .Enrich.WithProperty("MachineName", Environment.MachineName)

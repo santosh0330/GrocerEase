@@ -63,5 +63,9 @@ public static class LoggingExtensions
             retainedFileCountLimit: null, // retention is by age below, not by how many files there happen to be
             retainedFileTimeLimit: TimeSpan.FromDays(settings.RetainedDays),
             fileSizeLimitBytes: settings.MaxFileSizeKilobytes * 1024L,
-            rollOnFileSizeLimit: true);
+            rollOnFileSizeLimit: true,
+            // Several writers can share one file without cutting each other's lines in half: two API instances on one volume, or
+            // (as in the tests) several hosts in one process. Each event is written with one append. Without it, their lines interleave
+            // and a line that is not JSON ends up in the file, which breaks every tool that reads one document per line.
+            shared: true);
 }

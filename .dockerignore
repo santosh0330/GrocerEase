@@ -4,6 +4,9 @@
 **/bin/
 **/obj/
 
+# Log files written when running the API on the host
+**/logs/
+
 # Source control and editors
 .git/
 .gitignore

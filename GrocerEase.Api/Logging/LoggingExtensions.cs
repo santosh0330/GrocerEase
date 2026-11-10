@@ -1,5 +1,7 @@
 using System.Globalization;
 using Serilog;
+using Serilog.Formatting.Json;
+using Microsoft.Extensions.Options;
 
 namespace GrocerEase.Api.Logging;
 
@@ -24,6 +26,12 @@ public static class LoggingExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
+        // Checked when the app starts, like every other setting: a bad value stops the app instead of silently losing the logs.
+        builder.Services.AddOptions<LogFileSettings>()
+            .Bind(builder.Configuration.GetSection(LogFileSettings.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
         builder.Host.UseSerilog(
             (context, services, logger) => logger
                 .ReadFrom.Configuration(context.Configuration)
@@ -33,11 +41,27 @@ public static class LoggingExtensions
                 .Enrich.WithProperty("Application", ApplicationName)
                 .Enrich.WithProperty("Environment", context.HostingEnvironment.EnvironmentName)
                 .Enrich.WithProperty("MachineName", Environment.MachineName)
-                .WriteTo.Console(outputTemplate: ConsoleTemplate, formatProvider: CultureInfo.InvariantCulture), // numbers and dates read the same on every machine
+                .WriteTo.Console(outputTemplate: ConsoleTemplate, formatProvider: CultureInfo.InvariantCulture) // numbers and dates read the same on every machine
+                .WriteToFile(services.GetRequiredService<IOptions<LogFileSettings>>().Value),
             // Several hosts can live in one process (every integration test starts its own). Each keeps its own logger and none
             // of them takes over the shared static Log.Logger, so one host's events can never land in another's sinks.
             preserveStaticLogger: true);
 
         return builder;
     }
+
+    /// <summary>
+    /// One JSON document per line, in a new file every day. A line carries the timestamp (with its offset), the level, the message
+    /// template and the rendered message, every property, and the exception with its stack trace as a JSON string, so a stack trace
+    /// is still one line and <c>jq</c>, <c>grep</c> and Seq read it the same way.
+    /// </summary>
+    private static LoggerConfiguration WriteToFile(this LoggerConfiguration logger, LogFileSettings settings) =>
+        logger.WriteTo.File(
+            new JsonFormatter(renderMessage: true, formatProvider: CultureInfo.InvariantCulture),
+            Path.Combine(settings.Directory, LogFileSettings.FileNamePrefix + LogFileSettings.FileNameSuffix),
+            rollingInterval: RollingInterval.Day, // grocerease-20261110.log: the file name carries the date, and a new day starts a new file
+            retainedFileCountLimit: null, // retention is by age below, not by how many files there happen to be
+            retainedFileTimeLimit: TimeSpan.FromDays(settings.RetainedDays),
+            fileSizeLimitBytes: settings.MaxFileSizeKilobytes * 1024L,
+            rollOnFileSizeLimit: true);
 }

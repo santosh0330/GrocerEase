@@ -22,6 +22,10 @@ public sealed class UserRepository(AppDbContext db) : IUserRepository
         return db.Users.AsNoTracking().SingleOrDefaultAsync(user => user.Email == normalized, cancellationToken);
     }
 
+    public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
+        // The primary key lookup. No tracking, for the same reason as above.
+        db.Users.AsNoTracking().SingleOrDefaultAsync(user => user.Id == id, cancellationToken);
+
     public async Task<bool> TryAddAsync(User user, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(user);

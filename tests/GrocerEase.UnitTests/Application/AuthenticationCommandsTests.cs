@@ -40,4 +40,20 @@ public class AuthenticationCommandsTests
     [Fact]
     public void LoginCommand_ToString_DoesNotContainPassword() =>
         Assert.DoesNotContain("s3cret!", new LoginCommand("ada@example.com", "s3cret!").ToString(), StringComparison.Ordinal);
+
+    [Fact]
+    public void RefreshCommand_ToString_DoesNotContainTheRefreshToken()
+    {
+        var text = new RefreshCommand("refresh-token-value").ToString();
+
+        Assert.DoesNotContain("refresh-token-value", text, StringComparison.Ordinal);
+        Assert.Contains("RefreshToken = ***", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RefreshCommand_IsEqualWhenTheTokensAreEqual()
+    {
+        Assert.Equal(new RefreshCommand("a"), new RefreshCommand("a"));
+        Assert.NotEqual(new RefreshCommand("a"), new RefreshCommand("b"));
+    }
 }

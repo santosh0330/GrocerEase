@@ -50,6 +50,29 @@ public class UserRepositoryTests
     }
 
     [Fact]
+    public async Task AUserThatWasAdded_IsFoundById()
+    {
+        var user = NewUser();
+        await using var db = await NewContextAsync();
+        var repository = new UserRepository(db);
+        await repository.TryAddAsync(user, CancellationToken.None);
+
+        await using var other = await NewContextAsync();
+        var found = await new UserRepository(other).GetByIdAsync(user.Id, CancellationToken.None);
+
+        Assert.NotNull(found);
+        Assert.Equal((user.Email, user.FirstName, user.PasswordHash), (found.Email, found.FirstName, found.PasswordHash));
+    }
+
+    [Fact]
+    public async Task AnUnknownId_IsNull()
+    {
+        await using var db = await NewContextAsync();
+
+        Assert.Null(await new UserRepository(db).GetByIdAsync(Guid.CreateVersion7(), CancellationToken.None));
+    }
+
+    [Fact]
     public async Task AnUnknownEmail_IsNull()
     {
         await using var db = await NewContextAsync();

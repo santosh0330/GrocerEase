@@ -16,6 +16,9 @@ internal sealed class FakeUserRepository : IUserRepository
         return Task.FromResult(user);
     }
 
+    public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
+        Task.FromResult(_usersByEmail.Values.SingleOrDefault(user => user.Id == id));
+
     public Task<bool> TryAddAsync(User user, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(user);

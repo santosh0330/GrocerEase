@@ -30,6 +30,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+app.UseRequestLogging(); // first, so it times everything and sees the final status
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseRateLimiter();

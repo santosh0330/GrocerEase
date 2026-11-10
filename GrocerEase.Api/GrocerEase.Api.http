@@ -12,7 +12,8 @@ Content-Type: application/json
 
 ###
 
-# The name lets the requests below reuse this response: {{login.response.body.$.token}} is the token it returns.
+# The name lets the requests below reuse this response: {{login.response.body.$.token}} is the access token it returns,
+# {{login.response.body.$.refreshToken}} the refresh token.
 # @name login
 POST {{GrocerEase.Api_HostAddress}}/auth/login
 Content-Type: application/json
@@ -20,6 +21,18 @@ Content-Type: application/json
 {
   "email": "ada@example.com",
   "password": "s3cret!!"
+}
+
+###
+
+# Exchange the refresh token for a new pair. 200 with a new "token" and a NEW "refreshToken": the one sent is used up, so the second
+# send of this request (without logging in again) is 401 "Authentication.InvalidRefreshToken", and revokes the whole session.
+# @name refresh
+POST {{GrocerEase.Api_HostAddress}}/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{login.response.body.$.refreshToken}}"
 }
 
 ###

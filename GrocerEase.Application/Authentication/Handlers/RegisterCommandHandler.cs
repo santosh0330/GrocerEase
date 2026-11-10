@@ -9,7 +9,8 @@ namespace GrocerEase.Application.Authentication.Handlers;
 public sealed class RegisterCommandHandler(
     IUserRepository userRepository,
     IPasswordHasher passwordHasher,
-    IJwtTokenGenerator jwtTokenGenerator) : ICommandHandler<RegisterCommand, Result<AuthenticationResult>>
+    IJwtTokenGenerator jwtTokenGenerator,
+    RefreshTokenIssuer refreshTokenIssuer) : ICommandHandler<RegisterCommand, Result<AuthenticationResult>>
 {
     public async Task<Result<AuthenticationResult>> Handle(RegisterCommand command, CancellationToken cancellationToken)
     {
@@ -31,6 +32,7 @@ public sealed class RegisterCommandHandler(
         }
 
         var token = jwtTokenGenerator.GenerateToken(user);
-        return Result.Success(new AuthenticationResult(user.Id, user.FirstName, user.LastName, user.Email, token));
+        var refreshToken = await refreshTokenIssuer.StartSessionAsync(user.Id, cancellationToken);
+        return Result.Success(new AuthenticationResult(user.Id, user.FirstName, user.LastName, user.Email, token, refreshToken));
     }
 }

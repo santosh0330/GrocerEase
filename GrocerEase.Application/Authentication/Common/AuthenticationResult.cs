@@ -8,16 +8,18 @@ public sealed record AuthenticationResult(
     string FirstName,
     string LastName,
     string Email,
-    string Token)
+    string Token,
+    string RefreshToken)
 {
-    // The token is a credential: keep it out of the generated ToString.
+    // Both tokens are credentials: keep them out of the generated ToString.
     private bool PrintMembers(StringBuilder builder)
     {
         builder.Append("Id = ").Append(Id)
             .Append(", FirstName = ").Append(FirstName)
             .Append(", LastName = ").Append(LastName)
             .Append(", Email = ").Append(Email)
-            .Append(", Token = ***");
+            .Append(", Token = ***")
+            .Append(", RefreshToken = ***");
         return true;
     }
 }

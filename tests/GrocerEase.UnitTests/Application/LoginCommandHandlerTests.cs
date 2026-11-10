@@ -14,13 +14,15 @@ public class LoginCommandHandlerTests
         public string GenerateToken(User user) => $"token-for-{user.Email}";
     }
 
-    private static async Task<(LoginCommandHandler Handler, User Ada, FakePasswordHasher Hasher)> HandlerWithAdaAsync()
+    private readonly RefreshTestKit _refresh = new();
+
+    private async Task<(LoginCommandHandler Handler, User Ada, FakePasswordHasher Hasher)> HandlerWithAdaAsync()
     {
         var repository = new FakeUserRepository();
         var hasher = new FakePasswordHasher();
         var ada = new User(Guid.CreateVersion7(), "Ada", "Lovelace", "ada@example.com", hasher.Hash("s3cret!"));
         Assert.True(await repository.TryAddAsync(ada, CancellationToken.None));
-        return (new LoginCommandHandler(repository, hasher, new StubTokenGenerator()), ada, hasher);
+        return (new LoginCommandHandler(repository, hasher, new StubTokenGenerator(), _refresh.Issuer), ada, hasher);
     }
 
     [Fact]
@@ -35,6 +37,44 @@ public class LoginCommandHandlerTests
         Assert.Equal(ada.Id, user.Id);
         Assert.Equal(("Ada", "Lovelace", "ada@example.com"), (user.FirstName, user.LastName, user.Email));
         Assert.Equal("token-for-ada@example.com", user.Token);
+    }
+
+    [Fact]
+    public async Task Handle_WithTheRightPassword_ReturnsARefreshToken_WhoseHashIsStoredForTheUser()
+    {
+        var (handler, ada, _) = await HandlerWithAdaAsync();
+
+        var result = await handler.Handle(new LoginCommand("ada@example.com", "s3cret!"), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.False(string.IsNullOrEmpty(result.Value.RefreshToken));
+        var stored = Assert.Single(_refresh.Tokens.Tokens);
+        Assert.Equal(ada.Id, stored.UserId);
+        Assert.Equal(_refresh.Generator.Hash(result.Value.RefreshToken), stored.TokenHash);
+    }
+
+    [Fact]
+    public async Task Handle_EachLogin_StartsItsOwnSession()
+    {
+        var (handler, _, _) = await HandlerWithAdaAsync();
+
+        var first = await handler.Handle(new LoginCommand("ada@example.com", "s3cret!"), CancellationToken.None);
+        var second = await handler.Handle(new LoginCommand("ada@example.com", "s3cret!"), CancellationToken.None);
+
+        Assert.NotEqual(first.Value.RefreshToken, second.Value.RefreshToken, StringComparer.Ordinal);
+        Assert.Equal(2, _refresh.Tokens.Tokens.Select(token => token.FamilyId).Distinct().Count());
+    }
+
+    [Theory]
+    [InlineData("ada@example.com", "wrong")]
+    [InlineData("nobody@example.com", "s3cret!")]
+    public async Task Handle_WithBadCredentials_StoresNoRefreshToken(string email, string password)
+    {
+        var (handler, _, _) = await HandlerWithAdaAsync();
+
+        await handler.Handle(new LoginCommand(email, password), CancellationToken.None);
+
+        Assert.Empty(_refresh.Tokens.Tokens);
     }
 
     [Fact]

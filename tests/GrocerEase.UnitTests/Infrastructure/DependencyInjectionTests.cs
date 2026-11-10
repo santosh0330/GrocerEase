@@ -13,7 +13,8 @@ public class DependencyInjectionTests
     private static ServiceProvider Build(Dictionary<string, string?> settings)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
-        return new ServiceCollection().AddInfrastructure(configuration).BuildServiceProvider(validateScopes: true);
+        // The web host always provides logging; a bare container does not, and the refresh token repository logs.
+        return new ServiceCollection().AddLogging().AddInfrastructure(configuration).BuildServiceProvider(validateScopes: true);
     }
 
     private static Dictionary<string, string?> ValidSettings() => new(StringComparer.OrdinalIgnoreCase)
@@ -34,6 +35,7 @@ public class DependencyInjectionTests
         using var scope = provider.CreateScope(); // the repository is scoped, like the context behind it
 
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IUserRepository>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IRefreshTokenRepository>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IPasswordHasher>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IJwtTokenGenerator>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IRefreshTokenGenerator>());

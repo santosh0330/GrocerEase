@@ -7,10 +7,12 @@ namespace GrocerEase.Api.RateLimiting;
 
 public static class RateLimitingExtensions
 {
-    /// <summary>The policy names, used by <c>[EnableRateLimiting]</c> on the login and register actions.</summary>
+    /// <summary>The policy names, used by <c>[EnableRateLimiting]</c> on the login, register and refresh actions.</summary>
     public const string LoginPolicy = "login";
 
     public const string RegisterPolicy = "register";
+
+    public const string RefreshPolicy = "refresh";
 
     public const string HealthPolicy = "health";
 
@@ -32,6 +34,7 @@ public static class RateLimitingExtensions
 
         AddPolicySettings(services, configuration, LoginPolicy, "RateLimiting:Login");
         AddPolicySettings(services, configuration, RegisterPolicy, "RateLimiting:Register");
+        AddPolicySettings(services, configuration, RefreshPolicy, "RateLimiting:Refresh");
         AddPolicySettings(services, configuration, HealthPolicy, "RateLimiting:Health");
 
         services.AddRateLimiter(_ => { });
@@ -40,6 +43,7 @@ public static class RateLimitingExtensions
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             AddSlidingWindowPolicy(options, LoginPolicy, settingsByPolicy.Get(LoginPolicy));
             AddSlidingWindowPolicy(options, RegisterPolicy, settingsByPolicy.Get(RegisterPolicy));
+            AddSlidingWindowPolicy(options, RefreshPolicy, settingsByPolicy.Get(RefreshPolicy));
             AddSlidingWindowPolicy(options, HealthPolicy, settingsByPolicy.Get(HealthPolicy));
             options.OnRejected = (context, _) => WriteRejectionAsync(context, settingsByPolicy);
         });

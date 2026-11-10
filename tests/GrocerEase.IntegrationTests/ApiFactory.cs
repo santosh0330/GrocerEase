@@ -32,6 +32,7 @@ public class ApiFactory : WebApplicationFactory<Program>
                 // The rate limit's own tests set small limits on their own app instance.
                 ["RateLimiting:Login:PermitLimit"] = "1000",
                 ["RateLimiting:Register:PermitLimit"] = "1000",
+                ["RateLimiting:Refresh:PermitLimit"] = "1000",
                 ["RateLimiting:Health:PermitLimit"] = "1000",
             }));
     }

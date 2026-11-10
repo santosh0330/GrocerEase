@@ -19,6 +19,12 @@ public static class AuthenticationMappings
         return new LoginCommand(request.Email, request.Password);
     }
 
+    public static RefreshCommand ToCommand(this RefreshRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return new RefreshCommand(request.RefreshToken);
+    }
+
     public static AuthenticationResponse ToResponse(this AuthenticationResult result)
     {
         ArgumentNullException.ThrowIfNull(result);

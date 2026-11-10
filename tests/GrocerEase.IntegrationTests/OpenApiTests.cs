@@ -28,6 +28,10 @@ public class OpenApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(["200", "400", "401", "429"], Statuses(await ResponsesOfAsync("/auth/login")));
 
     [Fact]
+    public async Task Refresh_DeclaresSuccessValidationFailureInvalidRefreshTokenAndTooManyAttempts() =>
+        Assert.Equal(["200", "400", "401", "429"], Statuses(await ResponsesOfAsync("/auth/refresh")));
+
+    [Fact]
     public async Task Me_DeclaresSuccessAndUnauthorized()
     {
         using var client = factory.CreateClient();
@@ -45,6 +49,8 @@ public class OpenApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
     [InlineData("/auth/register", "429")]
     [InlineData("/auth/login", "401")]
     [InlineData("/auth/login", "429")]
+    [InlineData("/auth/refresh", "401")]
+    [InlineData("/auth/refresh", "429")]
     public async Task TheFailureResponses_AreProblemJson(string path, string status)
     {
         var responses = await ResponsesOfAsync(path);

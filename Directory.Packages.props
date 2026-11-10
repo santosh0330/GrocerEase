@@ -13,6 +13,8 @@
   <ItemGroup Label="Logging">
     <!-- Brings Serilog itself, the console and file sinks, the compact JSON formatter and configuration support. -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
+    <!-- Sends events to a Seq server over HTTP, in batches, without blocking the request that logged them. -->
+    <PackageVersion Include="Serilog.Sinks.Seq" Version="9.1.0" />
   </ItemGroup>
 
   <ItemGroup Label="Validation">

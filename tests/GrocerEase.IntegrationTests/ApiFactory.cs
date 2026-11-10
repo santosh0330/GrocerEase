@@ -34,6 +34,9 @@ public class ApiFactory : WebApplicationFactory<Program>
                 // Tests must not write log files into the source tree. One folder for the whole run, outside the repository.
                 ["LogFiles:Directory"] = TestLogDirectory,
 
+                // Nothing in the tests may send logs to a Seq that happens to be running on the developer's machine.
+                ["Seq:ServerUrl"] = string.Empty,
+
                 // Tests share one client and log in and register many times; the real limits would block them.
                 // The rate limit's own tests set small limits on their own app instance.
                 ["RateLimiting:Login:PermitLimit"] = "1000",

@@ -32,6 +32,14 @@ public static class LoggingExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        builder.Services.AddOptions<SeqSettings>()
+            .Bind(builder.Configuration.GetSection(SeqSettings.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        // First, so it is the last to stop: the final events are posted after everything else has finished logging.
+        builder.Services.AddHostedService<LoggerFlushService>();
+
         builder.Host.UseSerilog(
             (context, services, logger) => logger
                 .ReadFrom.Configuration(context.Configuration)
@@ -42,7 +50,8 @@ public static class LoggingExtensions
                 .Enrich.WithProperty("Environment", context.HostingEnvironment.EnvironmentName)
                 .Enrich.WithProperty("MachineName", Environment.MachineName)
                 .WriteTo.Console(outputTemplate: ConsoleTemplate, formatProvider: CultureInfo.InvariantCulture) // numbers and dates read the same on every machine
-                .WriteToFile(services.GetRequiredService<IOptions<LogFileSettings>>().Value),
+                .WriteToFile(services.GetRequiredService<IOptions<LogFileSettings>>().Value)
+                .WriteToSeq(services.GetRequiredService<IOptions<SeqSettings>>().Value),
             // Several hosts can live in one process (every integration test starts its own). Each keeps its own logger and none
             // of them takes over the shared static Log.Logger, so one host's events can never land in another's sinks.
             preserveStaticLogger: true);
@@ -64,4 +73,14 @@ public static class LoggingExtensions
             retainedFileTimeLimit: TimeSpan.FromDays(settings.RetainedDays),
             fileSizeLimitBytes: settings.MaxFileSizeKilobytes * 1024L,
             rollOnFileSizeLimit: true);
+
+    /// <summary>
+    /// Sends events to Seq in batches from a background task, so a slow or unreachable Seq never delays a request. If Seq cannot be
+    /// reached the sink keeps trying and, past its in-memory limit, drops the oldest events: logging must never be the reason an
+    /// API stops answering. The console and the files still have everything.
+    /// </summary>
+    private static LoggerConfiguration WriteToSeq(this LoggerConfiguration logger, SeqSettings settings) =>
+        settings.IsEnabled
+            ? logger.WriteTo.Seq(settings.ServerUrl, apiKey: string.IsNullOrWhiteSpace(settings.ApiKey) ? null : settings.ApiKey, formatProvider: CultureInfo.InvariantCulture)
+            : logger;
 }

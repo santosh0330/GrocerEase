@@ -24,9 +24,12 @@ public class ApplicationDependencyInjectionTests
                 ["Jwt:Issuer"] = "issuer-x",
                 ["Jwt:Audience"] = "audience-x",
                 ["Jwt:ExpiryMinutes"] = "15",
+                ["RefreshToken:LifetimeDays"] = "3",
+                ["RefreshToken:MaxLifetimeDays"] = "30",
             })
             .Build();
         return new ServiceCollection()
+            .AddLogging() // the web host provides it; the refresh token repository logs
             .AddApplication()
             .AddInfrastructure(configuration)
             .BuildServiceProvider(validateScopes: true);
@@ -83,6 +86,19 @@ public class ApplicationDependencyInjectionTests
 
         Assert.Same(inFirst, first.ServiceProvider.GetRequiredService<ICommandHandler<LoginCommand, Result<AuthenticationResult>>>());
         Assert.NotSame(inFirst, second.ServiceProvider.GetRequiredService<ICommandHandler<LoginCommand, Result<AuthenticationResult>>>());
+    }
+
+    [Fact]
+    public void TheRefreshTokenIssuer_IsScoped_BecauseItWritesThroughAScopedRepository()
+    {
+        using var provider = Build();
+        using var first = provider.CreateScope();
+        using var second = provider.CreateScope();
+
+        var inFirst = first.ServiceProvider.GetRequiredService<RefreshTokenIssuer>();
+
+        Assert.Same(inFirst, first.ServiceProvider.GetRequiredService<RefreshTokenIssuer>());
+        Assert.NotSame(inFirst, second.ServiceProvider.GetRequiredService<RefreshTokenIssuer>());
     }
 
     [Fact]

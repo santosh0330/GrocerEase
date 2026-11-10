@@ -22,6 +22,6 @@ public static class AuthenticationMappings
     public static AuthenticationResponse ToResponse(this AuthenticationResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
-        return new AuthenticationResponse(result.Id, result.FirstName, result.LastName, result.Email, result.Token);
+        return new AuthenticationResponse(result.Id, result.FirstName, result.LastName, result.Email, result.Token, result.RefreshToken);
     }
 }

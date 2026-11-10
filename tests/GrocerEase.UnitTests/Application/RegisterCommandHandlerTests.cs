@@ -28,14 +28,43 @@ public class RegisterCommandHandlerTests
         public Task<bool> TryAddAsync(User user, CancellationToken cancellationToken) => Task.FromResult(false);
     }
 
+    private readonly RefreshTestKit _refresh = new();
+
     private static readonly RegisterCommand Ada = new("Ada", "Lovelace", "ada@example.com", "s3cret!");
+
+    [Fact]
+    public async Task Handle_ReturnsARefreshToken_WhoseHashIsStoredForTheNewUser()
+    {
+        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
+
+        var result = await handler.Handle(Ada, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.False(string.IsNullOrEmpty(result.Value.RefreshToken));
+        var stored = Assert.Single(_refresh.Tokens.Tokens);
+        Assert.Equal(result.Value.Id, stored.UserId);
+        Assert.Equal(_refresh.Generator.Hash(result.Value.RefreshToken), stored.TokenHash);
+    }
+
+    [Fact]
+    public async Task Handle_WhenTheEmailIsTaken_StoresNoRefreshToken()
+    {
+        var repository = new FakeUserRepository();
+        var handler = new RegisterCommandHandler(repository, new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
+        await handler.Handle(Ada, CancellationToken.None);
+
+        var second = await handler.Handle(Ada, CancellationToken.None);
+
+        Assert.True(second.IsFailure);
+        Assert.Single(_refresh.Tokens.Tokens); // only the first registration started a session
+    }
 
     [Fact]
     public async Task Handle_StoresTheUserAndReturnsItWithAToken()
     {
         var repository = new FakeUserRepository();
         var tokens = new StubTokenGenerator();
-        var handler = new RegisterCommandHandler(repository, new FakePasswordHasher(), tokens);
+        var handler = new RegisterCommandHandler(repository, new FakePasswordHasher(), tokens, _refresh.Issuer);
 
         var result = await handler.Handle(Ada, CancellationToken.None);
 
@@ -55,7 +84,7 @@ public class RegisterCommandHandlerTests
     public async Task Handle_WhenAnotherRegistrationWinsTheRace_ReturnsADuplicateEmailConflictAndNoToken()
     {
         var tokens = new StubTokenGenerator();
-        var handler = new RegisterCommandHandler(new RaceLosingRepository(), new FakePasswordHasher(), tokens);
+        var handler = new RegisterCommandHandler(new RaceLosingRepository(), new FakePasswordHasher(), tokens, _refresh.Issuer);
 
         var result = await handler.Handle(Ada, CancellationToken.None);
 
@@ -67,7 +96,7 @@ public class RegisterCommandHandlerTests
     [Fact]
     public async Task Handle_ReturnsTheEmailInTheFormItWasStoredIn_LowerCase()
     {
-        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakePasswordHasher(), new StubTokenGenerator());
+        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
 
         var result = await handler.Handle(Ada with { Email = "Ada@Example.COM" }, CancellationToken.None);
 
@@ -77,7 +106,7 @@ public class RegisterCommandHandlerTests
     [Fact]
     public async Task Handle_GivesTheNewUserAVersion7Id()
     {
-        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakePasswordHasher(), new StubTokenGenerator());
+        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
 
         var result = await handler.Handle(Ada, CancellationToken.None);
 
@@ -88,7 +117,7 @@ public class RegisterCommandHandlerTests
     public async Task Handle_StoresTheHashOfThePassword_NotThePassword()
     {
         var repository = new FakeUserRepository();
-        var handler = new RegisterCommandHandler(repository, new FakePasswordHasher(), new StubTokenGenerator());
+        var handler = new RegisterCommandHandler(repository, new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
 
         await handler.Handle(Ada, CancellationToken.None);
 
@@ -102,7 +131,7 @@ public class RegisterCommandHandlerTests
     public async Task Handle_WhenTheEmailIsTaken_ReturnsADuplicateEmailConflictAndStoresNothingNew()
     {
         var repository = new FakeUserRepository();
-        var handler = new RegisterCommandHandler(repository, new FakePasswordHasher(), new StubTokenGenerator());
+        var handler = new RegisterCommandHandler(repository, new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
         await handler.Handle(Ada, CancellationToken.None);
         var original = await repository.GetByEmailAsync("ada@example.com", CancellationToken.None);
 
@@ -117,7 +146,7 @@ public class RegisterCommandHandlerTests
     [Fact]
     public async Task Handle_RejectsNull()
     {
-        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakePasswordHasher(), new StubTokenGenerator());
+        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
 
         await Assert.ThrowsAsync<ArgumentNullException>(() => handler.Handle(null!, CancellationToken.None));
     }

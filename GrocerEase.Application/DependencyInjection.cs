@@ -22,6 +22,8 @@ public static class DependencyInjection
         // Every AbstractValidator<T> in this assembly, so a new validator needs no registration line.
         services.AddValidatorsFromAssembly(typeof(AssemblyReference).Assembly);
 
+        services.AddScoped<RefreshTokenIssuer>(); // scoped, like the repository it writes through
+
         services.AddValidatedCommandHandler<RegisterCommand, Result<AuthenticationResult>, RegisterCommandHandler>();
         services.AddValidatedCommandHandler<LoginCommand, Result<AuthenticationResult>, LoginCommandHandler>();
 

@@ -13,7 +13,7 @@ public class AuthControllerTests
 {
     private static readonly Guid UserId = Guid.Parse("11111111-2222-3333-4444-555555555555");
     private static readonly Result<AuthenticationResult> CannedResult =
-        Result.Success(new AuthenticationResult(UserId, "Grace", "Hopper", "grace@example.com", "jwt"));
+        Result.Success(new AuthenticationResult(UserId, "Grace", "Hopper", "grace@example.com", "jwt", "refresh"));
 
     private readonly SpyHandler<RegisterCommand> _registerHandler = new(CannedResult);
     private readonly SpyHandler<LoginCommand> _loginHandler = new(CannedResult);
@@ -41,7 +41,7 @@ public class AuthControllerTests
             new RegisterRequest("Ada", "Lovelace", "ada@example.com", "s3cret!"), CancellationToken.None);
 
         var response = Assert.IsType<AuthenticationResponse>(Assert.IsType<OkObjectResult>(result).Value);
-        Assert.Equal(new AuthenticationResponse(UserId, "Grace", "Hopper", "grace@example.com", "jwt"), response);
+        Assert.Equal(new AuthenticationResponse(UserId, "Grace", "Hopper", "grace@example.com", "jwt", "refresh"), response);
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public class AuthControllerTests
             new LoginRequest("ada@example.com", "s3cret!"), CancellationToken.None);
 
         var response = Assert.IsType<AuthenticationResponse>(Assert.IsType<OkObjectResult>(result).Value);
-        Assert.Equal(new AuthenticationResponse(UserId, "Grace", "Hopper", "grace@example.com", "jwt"), response);
+        Assert.Equal(new AuthenticationResponse(UserId, "Grace", "Hopper", "grace@example.com", "jwt", "refresh"), response);
     }
 
     [Fact]

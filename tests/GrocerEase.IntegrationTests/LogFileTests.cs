@@ -94,6 +94,39 @@ public sealed class LogFileTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task TwoAppsWritingTheSameFileAtOnce_NeverCutEachOthersLinesInHalf()
+    {
+        // Two instances on one volume, or several hosts in one process: every line must still be one whole JSON document.
+        using (var first = WithFiles())
+        using (var second = WithFiles())
+        {
+            using var firstClient = first.CreateClient();
+            using var secondClient = second.CreateClient();
+            var traffic = Enumerable.Range(0, 60).Select(i => Task.Run(async () =>
+            {
+                var client = i % 2 == 0 ? firstClient : secondClient;
+                await client.GetAsync(new Uri($"/no-such-route-{i}", UriKind.Relative));
+            }));
+            await Task.WhenAll(traffic);
+        }
+
+        var lines = LogFiles(_directory).SelectMany(LinesOf).ToList();
+        Assert.True(lines.Count >= 60, $"expected a line for each of the 60 requests at least, found {lines.Count}");
+        foreach (var line in lines)
+        {
+            using var document = JsonDocument.Parse(line); // throws on a line that was cut or interleaved
+            Assert.Equal(JsonValueKind.Object, document.RootElement.ValueKind);
+        }
+
+        // One request event for each of the 60 requests: none lost, none doubled. (Other events of a request, such as a middleware's
+        // warning, carry the path too; only request events have this template.)
+        Assert.Equal(
+            60,
+            lines.Count(line => line.Contains("\"MessageTemplate\":\"HTTP {RequestMethod}", StringComparison.Ordinal)
+                && line.Contains("/no-such-route-", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task TheDirectory_IsCreatedWhenItDoesNotExist()
     {
         var nested = Path.Combine(_directory, "a", "b");

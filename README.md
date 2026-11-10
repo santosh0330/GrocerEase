@@ -87,7 +87,7 @@ The API also needs a PostgreSQL connection string, as the least-privilege role: 
 
 ## Authentication
 
-`POST /auth/register` and `POST /auth/login` return a JWT in `token`. Send it on every request to a protected route:
+`POST /auth/register` and `POST /auth/login` return a JWT in `token` and a refresh token in `refreshToken`. Send the JWT on every request to a protected route:
 
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8080/auth/login -H 'Content-Type: application/json' \
@@ -110,6 +110,25 @@ A token lives 60 minutes (`Jwt:ExpiryMinutes`). A request without a valid token 
 
 A token is accepted up to 30 seconds past its expiry, to forgive small clock differences between servers. Only HMAC-SHA256 tokens signed with this API's key, for this API's issuer and audience, are accepted. `GrocerEase.Api/GrocerEase.Api.http` has ready-made requests (run `login` first).
 
+### Refresh tokens
+
+A JWT lives 60 minutes. To stay signed in without asking for the password again, exchange the **refresh token** for a new pair:
+
+```bash
+curl -s -X POST http://localhost:8080/auth/refresh -H 'Content-Type: application/json' \
+  -d "{\"refreshToken\":\"$REFRESH_TOKEN\"}"
+```
+
+The response has the same shape as login: a new `token` and a **new** `refreshToken`. The one you sent is now used up, so store the new one and discard the old.
+
+- **In the JSON body, never the URL.** A URL is written to access logs and proxies; a body is not. `GET /auth/refresh` is `405`.
+- **Lives 3 days** (`RefreshToken:LifetimeDays`), counted from when it was issued. Each refresh starts a new 3-day window.
+- **A session ends after 30 days at most** (`RefreshToken:MaxLifetimeDays`), however often it is refreshed: the token issued near the end is cut short to the 30th day, and after that the user signs in again. Neither setting may be above 30 (the API refuses to start), and the database refuses a row that lives longer.
+- **One use each.** A token that is presented a second time means someone kept a copy. The server then **revokes the whole session** (every token descended from that sign-in), so the thief and the owner are both signed out and the owner signs in again. Other sessions of the same user (another device) are not touched. An access token that was already issued stays valid until it expires (at most 60 minutes): it is a signed token the server does not look up.
+- **Two requests with the same token at once:** exactly one succeeds. The other is treated as a reuse, so a client must not refresh from two places in parallel with the same token.
+- **Only a SHA-256 hash is stored.** A copy of the database cannot be used to refresh a session. The token itself (32 random bytes, 43 base64url characters) is never stored or logged.
+- **Failures** are `application/problem+json`: `401` with code `Authentication.InvalidRefreshToken` for a token that is unknown, expired, used or revoked (one answer for all, so nothing is learned from the difference); `400` for an empty or oversized token; `429` over the limit (30 per minute per address, `RateLimiting:Refresh`).
+
 ## Health checks
 
 Two endpoints, open to anyone (a probe has no token):
@@ -129,14 +148,15 @@ Use `/health/live` for a probe that **restarts** the app: restarting does not fi
 
 ## Rate limits
 
-Two endpoints are limited per client address, each with its own counter:
+Three endpoints are limited per client address, each with its own counter:
 
 | Endpoint | Limit | Why |
 |---|---|---|
 | `POST /auth/login` | 5 per minute | Stops password guessing, and stops guesses from costing the server a slow hash each |
 | `POST /auth/register` | 10 per hour | Stops mass account creation and probing for registered emails (the `409`) |
+| `POST /auth/refresh` | 30 per minute | Stops guessing and replaying refresh tokens |
 
-The next request over a limit gets `429 Too Many Requests` as `application/problem+json`, with a `Retry-After` header (seconds, the length of that endpoint's window) and the code `RateLimit.TooManyRequests`. Every request counts, whether it succeeded, was refused, or had an invalid body. IPv6 clients are grouped by their `/64` prefix. Change the numbers in `GrocerEase.Api/appsettings.json` (`RateLimiting:Login` and `RateLimiting:Register`, each with `PermitLimit` and `WindowSeconds`); the API refuses to start with a value outside 1-1000 requests or 1-3600 seconds.
+The next request over a limit gets `429 Too Many Requests` as `application/problem+json`, with a `Retry-After` header (seconds, the length of that endpoint's window) and the code `RateLimit.TooManyRequests`. Every request counts, whether it succeeded, was refused, or had an invalid body. IPv6 clients are grouped by their `/64` prefix. Change the numbers in `GrocerEase.Api/appsettings.json` (`RateLimiting:Login`, `RateLimiting:Register` and `RateLimiting:Refresh`, each with `PermitLimit` and `WindowSeconds`); the API refuses to start with a value outside 1-1000 requests or 1-3600 seconds.
 
 The limit is per client **address**. Behind a reverse proxy or load balancer every request arrives from the proxy's address, so everyone would share one limit until forwarded headers are configured for the known proxy.
 

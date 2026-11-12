@@ -62,10 +62,11 @@ public static class LoggingExtensions
     /// <summary>
     /// One JSON document per line, in a new file every day. A line carries the timestamp (with its offset), the level, the message
     /// template and the rendered message, every property, and the exception with its stack trace as a JSON string, so a stack trace
-    /// is still one line and <c>jq</c>, <c>grep</c> and Seq read it the same way.
+    /// is still one line and <c>jq</c>, <c>grep</c> and Seq read it the same way. With <c>LogFiles:Enabled</c> off nothing is added:
+    /// no file and no folder is created, and the console and Seq are unaffected.
     /// </summary>
     private static LoggerConfiguration WriteToFile(this LoggerConfiguration logger, LogFileSettings settings) =>
-        logger.WriteTo.File(
+        !settings.Enabled ? logger : logger.WriteTo.File(
             new JsonFormatter(renderMessage: true, formatProvider: CultureInfo.InvariantCulture),
             Path.Combine(settings.Directory, LogFileSettings.FileNamePrefix + LogFileSettings.FileNameSuffix),
             rollingInterval: RollingInterval.Day, // grocerease-20261110.log: the file name carries the date, and a new day starts a new file

@@ -3,8 +3,8 @@ using System.ComponentModel.DataAnnotations;
 namespace GrocerEase.Api.Logging;
 
 /// <summary>
-/// The <c>LogFiles</c> section: where the log files go and how long they stay. Validated when the app starts, so a typo cannot
-/// silently turn off retention (and fill a disk) or write nowhere.
+/// The <c>LogFiles</c> section: whether to write log files, where they go and how long they stay. Validated when the app starts, so
+/// a typo cannot silently turn off retention (and fill a disk) or write nowhere.
 /// </summary>
 public sealed class LogFileSettings
 {
@@ -19,6 +19,13 @@ public sealed class LogFileSettings
     public const int MaxRetainedDays = 365;
     public const int MinimumFileSizeKilobytes = 64;
     public const int MaximumFileSizeKilobytes = 1_048_576; // 1 GiB
+
+    /// <summary>
+    /// Whether log files are written at all. On by default, for running the API directly (<c>dotnet run</c>) or on a server. The
+    /// container image turns it off: a container logs to the console and the platform keeps and rotates that output. When it is
+    /// off no file or folder is created, so a folder that cannot be written does not matter.
+    /// </summary>
+    public bool Enabled { get; init; } = true;
 
     /// <summary>Where files are written. A relative path is relative to the working directory (<c>/app</c> in the image). It is created if missing.</summary>
     [Required(ErrorMessage = "LogFiles:Directory is required.")]

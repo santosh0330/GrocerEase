@@ -195,6 +195,66 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                             RoleId = new Guid("019e0000-0000-7000-8000-000000000003"),
                             Type = "permission",
                             Value = "profile.read"
+                        },
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000105"),
+                            RoleId = new Guid("019e0000-0000-7000-8000-000000000002"),
+                            Type = "permission",
+                            Value = "stores.manage"
+                        },
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000106"),
+                            RoleId = new Guid("019e0000-0000-7000-8000-000000000002"),
+                            Type = "permission",
+                            Value = "stores.read"
+                        },
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000107"),
+                            RoleId = new Guid("019e0000-0000-7000-8000-000000000001"),
+                            Type = "permission",
+                            Value = "stores.read"
+                        },
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000108"),
+                            RoleId = new Guid("019e0000-0000-7000-8000-000000000003"),
+                            Type = "permission",
+                            Value = "stores.read"
+                        });
+                });
+
+            modelBuilder.Entity("GrocerEase.Domain.Entities.Store", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuidv7()");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("address");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_stores");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_stores_name");
+
+                    b.ToTable("stores", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_stores_id_is_uuid_v7", "uuid_extract_version(id) = 7");
                         });
                 });
 

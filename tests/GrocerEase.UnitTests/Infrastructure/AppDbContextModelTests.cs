@@ -52,15 +52,20 @@ public class AppDbContextModelTests
             .ToList();
 
         Assert.Equal(
-            [(RoleIds.Customer, Permissions.ClaimType, Permissions.ProfileRead)],
-            claims.Where(claim => claim.RoleId == RoleIds.Customer));
+            [(RoleIds.Customer, Permissions.ClaimType, Permissions.ProfileRead), (RoleIds.Customer, Permissions.ClaimType, Permissions.StoresRead)],
+            claims.Where(claim => claim.RoleId == RoleIds.Customer).OrderBy(claim => claim.Value, StringComparer.Ordinal));
         Assert.Equal(
-            [(RoleIds.Admin, Permissions.ClaimType, Permissions.ProfileRead), (RoleIds.Admin, Permissions.ClaimType, Permissions.RolesRead)],
+            [
+                (RoleIds.Admin, Permissions.ClaimType, Permissions.ProfileRead),
+                (RoleIds.Admin, Permissions.ClaimType, Permissions.RolesRead),
+                (RoleIds.Admin, Permissions.ClaimType, Permissions.StoresManage),
+                (RoleIds.Admin, Permissions.ClaimType, Permissions.StoresRead),
+            ],
             claims.Where(claim => claim.RoleId == RoleIds.Admin).OrderBy(claim => claim.Value, StringComparer.Ordinal));
         Assert.Equal(
-            [(RoleIds.StoreUser, Permissions.ClaimType, Permissions.ProfileRead)],
-            claims.Where(claim => claim.RoleId == RoleIds.StoreUser));
-        Assert.Equal(4, claims.Count);
+            [(RoleIds.StoreUser, Permissions.ClaimType, Permissions.ProfileRead), (RoleIds.StoreUser, Permissions.ClaimType, Permissions.StoresRead)],
+            claims.Where(claim => claim.RoleId == RoleIds.StoreUser).OrderBy(claim => claim.Value, StringComparer.Ordinal));
+        Assert.Equal(8, claims.Count);
     }
 
     [Fact]

@@ -12,9 +12,10 @@ public sealed class User
     // The longest an email address can be, by RFC 5321 (254 characters).
     public const int MaxEmailLength = 254;
 
-    public User(Guid id, string firstName, string lastName, string email, string passwordHash)
+    public User(Guid id, string firstName, string lastName, string email, string passwordHash, Guid roleId)
     {
         ArgumentOutOfRangeException.ThrowIfEqual(id, Guid.Empty);
+        ArgumentOutOfRangeException.ThrowIfEqual(roleId, Guid.Empty); // every user has a role, and Guid.Empty is no role
         if (id.Version != RequiredIdVersion)
         {
             // A version 7 UUID starts with a millisecond timestamp, so new ids sort after older ones. In a database index
@@ -36,6 +37,7 @@ public sealed class User
         LastName = lastName;
         Email = normalizedEmail;
         PasswordHash = passwordHash;
+        RoleId = roleId;
     }
 
     /// <summary>
@@ -67,4 +69,7 @@ public sealed class User
 
     /// <summary>The output of <c>IPasswordHasher.Hash</c>, never the password itself.</summary>
     public string PasswordHash { get; }
+
+    /// <summary>The id of the one role this user holds. It decides what the user may do; the user does not hold the role itself.</summary>
+    public Guid RoleId { get; }
 }

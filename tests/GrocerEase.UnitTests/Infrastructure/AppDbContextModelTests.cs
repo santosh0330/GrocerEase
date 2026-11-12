@@ -38,6 +38,19 @@ public class AppDbContextModelTests
     }
 
     [Fact]
+    public void EveryUserHoldsOneRole_AndARoleThatIsHeldCannotBeDeleted()
+    {
+        using var db = Context();
+
+        var foreignKey = Assert.Single(
+            db.Model.FindEntityType(typeof(User))!.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(Role));
+
+        Assert.True(foreignKey.IsRequired);
+        Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior);
+        Assert.Equal([nameof(User.RoleId)], foreignKey.Properties.Select(property => property.Name), StringComparer.Ordinal);
+    }
+
+    [Fact]
     public void Configure_RejectsABlankConnectionString() =>
         Assert.Throws<ArgumentException>(() => new DbContextOptionsBuilder<AppDbContext>().Configure(" "));
 }

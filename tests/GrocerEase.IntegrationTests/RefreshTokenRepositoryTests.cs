@@ -25,7 +25,7 @@ public class RefreshTokenRepositoryTests
 
     private static async Task<Guid> NewUserAsync()
     {
-        var user = new User(Guid.CreateVersion7(), "Ada", "Lovelace", $"ada-{Guid.NewGuid():N}@example.com", "a-password-hash");
+        var user = new User(Guid.CreateVersion7(), "Ada", "Lovelace", $"ada-{Guid.NewGuid():N}@example.com", "a-password-hash", RoleIds.Customer);
         await using var db = await NewContextAsync();
         Assert.True(await new UserRepository(db).TryAddAsync(user, CancellationToken.None));
         return user.Id;

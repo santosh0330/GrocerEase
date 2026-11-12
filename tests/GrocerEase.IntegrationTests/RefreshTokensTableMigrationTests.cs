@@ -1,3 +1,4 @@
+using GrocerEase.Domain.Entities;
 using Npgsql;
 using static GrocerEase.IntegrationTests.MigrationTestSupport;
 
@@ -19,7 +20,7 @@ public class RefreshTokensTableMigrationTests
         var database = await MigratedDatabaseAsync();
         await PostgresServer.ExecuteAsync(
             database,
-            $"insert into users (id, first_name, last_name, email, password_hash) values ('{UserId}', 'Ada', 'Lovelace', 'ada@example.com', 'hash')");
+            $"insert into users (id, first_name, last_name, email, password_hash, role_id) values ('{UserId}', 'Ada', 'Lovelace', 'ada@example.com', 'hash', '{RoleIds.Customer}')");
         return database;
     }
 

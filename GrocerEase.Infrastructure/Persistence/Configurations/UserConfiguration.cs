@@ -57,5 +57,16 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
             .ValueGeneratedOnAddOrUpdate();
 
         builder.Property(user => user.PasswordHash).HasColumnName("password_hash").HasMaxLength(PasswordHashMaxLength).IsRequired();
+
+        // Every user holds exactly one role. RESTRICT: a role that users still hold cannot be deleted, so it is never left
+        // dangling, and nothing is deleted silently along with it. The index serves "which users hold this role".
+        builder.Property(user => user.RoleId).HasColumnName("role_id").IsRequired();
+        builder.HasOne<Role>()
+            .WithMany()
+            .HasForeignKey(user => user.RoleId)
+            .HasConstraintName("fk_users_roles_role_id")
+            .OnDelete(DeleteBehavior.Restrict)
+            .IsRequired();
+        builder.HasIndex(user => user.RoleId).HasDatabaseName("ix_users_role_id");
     }
 }

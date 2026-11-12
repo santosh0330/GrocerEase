@@ -164,6 +164,10 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(256)")
                         .HasColumnName("password_hash");
 
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("role_id");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("timestamp with time zone")
@@ -176,6 +180,9 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                     b.HasIndex("Email")
                         .IsUnique()
                         .HasDatabaseName("ix_users_email");
+
+                    b.HasIndex("RoleId")
+                        .HasDatabaseName("ix_users_role_id");
 
                     b.ToTable("users", null, t =>
                         {
@@ -191,6 +198,16 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_refresh_tokens_users_user_id");
+                });
+
+            modelBuilder.Entity("GrocerEase.Domain.Entities.User", b =>
+                {
+                    b.HasOne("GrocerEase.Domain.Entities.Role", null)
+                        .WithMany()
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_users_roles_role_id");
                 });
 #pragma warning restore 612, 618
         }

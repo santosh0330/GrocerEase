@@ -37,7 +37,7 @@ public class RefreshCommandHandlerTests
 
     private readonly RefreshTestKit _kit = new();
     private readonly FakeUserRepository _users = new();
-    private readonly User _ada = new(Guid.CreateVersion7(), "Ada", "Lovelace", "ada@example.com", "hashed:s3cret!");
+    private readonly User _ada = new(Guid.CreateVersion7(), "Ada", "Lovelace", "ada@example.com", "hashed:s3cret!", RoleIds.Customer);
 
     private RefreshCommandHandler Handler(IRefreshTokenRepository? tokens = null, IUserRepository? users = null) =>
         new(tokens ?? _kit.Tokens, _kit.Generator, _kit.Policy, users ?? _users, new StubTokenGenerator(), _kit.Clock);

@@ -99,6 +99,10 @@ curl -s http://localhost:8080/me -H "Authorization: Bearer $TOKEN"
 |---|---|---|
 | `GET /me` | a valid bearer token | `{ id, firstName, lastName, email, role, permissions }` of the signed-in user |
 | `GET /roles` | a valid bearer token with the `roles.read` permission | every role and what it grants, `[{ id, name, permissions }]` (see [Roles and permissions](#roles-and-permissions)) |
+| `POST /stores` | the `stores.manage` permission (the admin) | `201` and the new store, `{ id, name, address }`; `409 Store.DuplicateName` if the name is taken (see [Stores and store users](#stores-and-store-users)) |
+| `GET /stores`, `GET /stores/{storeId}` | the `stores.read` permission (every role) | every store ordered by name, or one; `404 Store.NotFound` |
+| `POST /stores/{storeId}/members` | the `stores.manage` permission | assigns the customer whose email is in the body to the store, which makes them a store user |
+| `DELETE /stores/{storeId}/members/{userId}` | the `stores.manage` permission | takes the store user out of the store, which makes them a customer again; `204` |
 
 An access token lives 10 minutes (`Jwt:ExpiryMinutes`); the refresh token keeps the session going. A request without a valid token never reaches the route. It gets `application/problem+json` with a `code` to switch on, plus a `WWW-Authenticate` header:
 
@@ -132,23 +136,26 @@ The response has the same shape as login: a new `token` and a **new** `refreshTo
 
 ### Roles and permissions
 
-Every user holds **exactly one role**, stored in `users.role_id`. A role **grants permissions**, stored as claims in `role_claims` (`claim_type` is `permission`). Two roles and what they grant are created by a migration, with fixed ids:
+Every user holds **exactly one role**, stored in `users.role_id`. A role **grants permissions**, stored as claims in `role_claims` (`claim_type` is `permission`). Three roles and what they grant are created by a migration, with fixed ids:
 
 | Role | Id | Who | May do |
 |---|---|---|---|
-| `Customer` | `019e0000-0000-7000-8000-000000000001` | everyone who registers | `profile.read` |
-| `Admin` | `019e0000-0000-7000-8000-000000000002` | made by hand, see below | `profile.read`, `roles.read` |
+| `Customer` | `019e0000-0000-7000-8000-000000000001` | everyone who registers | `profile.read`, `stores.read` |
+| `Admin` | `019e0000-0000-7000-8000-000000000002` | made by hand, see below | `profile.read`, `roles.read`, `stores.read`, `stores.manage` |
+| `StoreUser` | `019e0000-0000-7000-8000-000000000003` | a customer an admin assigned to a store | `profile.read`, `stores.read` |
 
 | Permission | Needed by |
 |---|---|
 | `profile.read` | reading one's own profile (`GET /me` needs only a signed-in user for now) |
 | `roles.read` | `GET /roles` |
+| `stores.read` | `GET /stores`, `GET /stores/{storeId}` |
+| `stores.manage` | `POST /stores`, and assigning or removing a store's users |
 
-The token carries the role's name as `role` and the permissions as a `permission` array (`["profile.read","roles.read"]`). A route names the permission it needs, `[Authorize(Policy = "roles.read")]`, not a role: the policy checks the `permission` claims of the token, so giving the permission to another role changes no endpoint. `GET /me` shows the role and the permissions the token carries.
+The token carries the role's name as `role` and the permissions as a `permission` array (`["profile.read","stores.read"]`). A route names the permission it needs, `[Authorize(Policy = "roles.read")]`, not a role: the policy checks the `permission` claims of the token, so giving the permission to another role changes no endpoint. `GET /me` shows the role and the permissions the token carries.
 
 - **They are read when a token is made** (register, login, refresh), not on every request. So a changed role, or a changed permission, applies from the **next token**: an access token lives up to 10 minutes (`Jwt:ExpiryMinutes`), and until then it keeps saying what it said. Logging in, or refreshing, gives a token with the current ones. A token made before permissions existed has a role and no permissions, so it is refused by `GET /roles` until its owner logs in or refreshes.
 - **The token grows with the permissions.** A handful is fine; the refresh endpoint accepts up to 2048 characters so an access token sent there by mistake still gets the usual single `401`.
-- **No endpoint changes a role or a permission yet.** To make the first admin, update the row, then log in again (the stack from `docker compose up` must be running):
+- **Only one thing changes a role: assigning a customer to a store** (below). **Nothing changes a permission, and nothing makes an admin.** To make the first admin, update the row, then log in again (the stack from `docker compose up` must be running):
 
   ```bash
   docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
@@ -166,6 +173,30 @@ The token carries the role's name as `role` and the permissions as a `permission
   ```
 
 - **A role in use cannot be deleted** (the foreign key restricts it), but deleting a role deletes its claims. A user cannot be saved without a role, and a role cannot state the same claim twice. A user who registers while the `Customer` row is missing gets a generic `500`, not a business error: that is a broken database, and the cause is in the log.
+
+### Stores and store users
+
+An admin creates stores, and **makes a customer a store user by assigning them to a store**: one call, no separate role change.
+
+```bash
+curl -s -X POST http://localhost:8080/stores -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"Fresh Mart","address":"1 High Street"}'                       # 201, { "id": "...", ... }
+curl -s -X POST http://localhost:8080/stores/$STORE_ID/members -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"email":"asha@example.com"}'      # 200: asha is now a StoreUser of that store
+curl -s -X DELETE http://localhost:8080/stores/$STORE_ID/members/$USER_ID -H "Authorization: Bearer $ADMIN_TOKEN"   # 204: a customer again
+```
+
+| Status | `code` | When |
+|---|---|---|
+| `404` | `Store.NotFound` | no store with that id |
+| `404` | `User.NotFound` | no user with that email (the admin may learn which addresses are registered) |
+| `404` | `Store.MemberNotFound` | the user does not run that store (a member of another store is not touched) |
+| `409` | `User.NotACustomer` | the user is an admin, or already runs a store |
+| `409` | `Store.DuplicateName` | a store with that name exists (exact match, after trimming) |
+
+- **The membership and the role are written together or not at all** (a transaction), and each write is guarded in the database: the unique index on `store_members.user_id` allows one store per user, and the role changes only if the user still holds the role it is changing from. So two admins assigning the same customer at once cannot both win.
+- **Access follows the database, the token follows later.** The new store user's access to a store is checked against `store_members` on every request, so it starts, and ends, at once. Their *token* still says `Customer` until it is refreshed or they sign in again, which is at most 10 minutes (`Jwt:ExpiryMinutes`); after a removal it keeps saying `StoreUser` for that long, which opens nothing.
+- A store user belongs to **one** store. A store cannot be deleted, or renamed, through the API yet, and `GET /stores` is not paged yet.
 
 ## Health checks
 

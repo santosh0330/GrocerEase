@@ -26,14 +26,14 @@ public class RolesTableMigrationTests
     }
 
     [Fact]
-    public async Task TheRolesTable_StartsWithCustomerAndAdmin_UnderTheirFixedIds()
+    public async Task TheRolesTable_StartsWithTheThreeRoles_UnderTheirFixedIds()
     {
         var database = await MigratedDatabaseAsync();
 
         var rows = await PostgresServer.ScalarAsync<string>(
             database, "select string_agg(id || ':' || name, ', ' order by name) from roles");
 
-        Assert.Equal($"{RoleIds.Admin}:Admin, {RoleIds.Customer}:Customer", rows);
+        Assert.Equal($"{RoleIds.Admin}:Admin, {RoleIds.Customer}:Customer, {RoleIds.StoreUser}:StoreUser", rows);
     }
 
     [Fact]

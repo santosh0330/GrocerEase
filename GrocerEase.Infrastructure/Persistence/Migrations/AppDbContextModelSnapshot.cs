@@ -124,6 +124,11 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                         {
                             Id = new Guid("019e0000-0000-7000-8000-000000000002"),
                             Name = "Admin"
+                        },
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000003"),
+                            Name = "StoreUser"
                         });
                 });
 
@@ -183,6 +188,13 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                             RoleId = new Guid("019e0000-0000-7000-8000-000000000002"),
                             Type = "permission",
                             Value = "roles.read"
+                        },
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000104"),
+                            RoleId = new Guid("019e0000-0000-7000-8000-000000000003"),
+                            Type = "permission",
+                            Value = "profile.read"
                         });
                 });
 

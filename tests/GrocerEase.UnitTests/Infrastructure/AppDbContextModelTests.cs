@@ -32,7 +32,12 @@ public class AppDbContextModelTests
             .ToDictionary(row => (Guid)row[nameof(Role.Id)]!, row => (string)row[nameof(Role.Name)]!);
 
         Assert.Equal(
-            new Dictionary<Guid, string> { [RoleIds.Customer] = RoleNames.Customer, [RoleIds.Admin] = RoleNames.Admin },
+            new Dictionary<Guid, string>
+            {
+                [RoleIds.Customer] = RoleNames.Customer,
+                [RoleIds.Admin] = RoleNames.Admin,
+                [RoleIds.StoreUser] = RoleNames.StoreUser,
+            },
             seeded);
         Assert.Equal(RoleNames.All.Order(StringComparer.Ordinal), seeded.Values.Order(StringComparer.Ordinal));
     }
@@ -52,7 +57,10 @@ public class AppDbContextModelTests
         Assert.Equal(
             [(RoleIds.Admin, Permissions.ClaimType, Permissions.ProfileRead), (RoleIds.Admin, Permissions.ClaimType, Permissions.RolesRead)],
             claims.Where(claim => claim.RoleId == RoleIds.Admin).OrderBy(claim => claim.Value, StringComparer.Ordinal));
-        Assert.Equal(3, claims.Count);
+        Assert.Equal(
+            [(RoleIds.StoreUser, Permissions.ClaimType, Permissions.ProfileRead)],
+            claims.Where(claim => claim.RoleId == RoleIds.StoreUser));
+        Assert.Equal(4, claims.Count);
     }
 
     [Fact]

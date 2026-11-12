@@ -11,5 +11,8 @@ public static class RoleNames
 
     public const string Admin = "Admin";
 
-    public static IReadOnlyList<string> All { get; } = [Customer, Admin];
+    /// <summary>A person who runs a store: the admin assigns a customer to a store, and that is what makes them one.</summary>
+    public const string StoreUser = "StoreUser";
+
+    public static IReadOnlyList<string> All { get; } = [Customer, Admin, StoreUser];
 }

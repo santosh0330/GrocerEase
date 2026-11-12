@@ -18,6 +18,7 @@ public sealed class RoleClaimConfiguration : IEntityTypeConfiguration<RoleClaim>
     private static readonly Guid CustomerProfileRead = new("019e0000-0000-7000-8000-000000000101");
     private static readonly Guid AdminProfileRead = new("019e0000-0000-7000-8000-000000000102");
     private static readonly Guid AdminRolesRead = new("019e0000-0000-7000-8000-000000000103");
+    private static readonly Guid StoreUserProfileRead = new("019e0000-0000-7000-8000-000000000104");
 
     public void Configure(EntityTypeBuilder<RoleClaim> builder)
     {
@@ -50,10 +51,11 @@ public sealed class RoleClaimConfiguration : IEntityTypeConfiguration<RoleClaim>
             .OnDelete(DeleteBehavior.Cascade)
             .IsRequired();
 
-        // What each role may do. Customer: read the own profile. Admin: that, and read the roles.
+        // What each role may do. Customer: read the own profile. Admin: that, and read the roles. StoreUser: read the own profile.
         builder.HasData(
             new RoleClaim(CustomerProfileRead, RoleIds.Customer, Permissions.ClaimType, Permissions.ProfileRead),
             new RoleClaim(AdminProfileRead, RoleIds.Admin, Permissions.ClaimType, Permissions.ProfileRead),
-            new RoleClaim(AdminRolesRead, RoleIds.Admin, Permissions.ClaimType, Permissions.RolesRead));
+            new RoleClaim(AdminRolesRead, RoleIds.Admin, Permissions.ClaimType, Permissions.RolesRead),
+            new RoleClaim(StoreUserProfileRead, RoleIds.StoreUser, Permissions.ClaimType, Permissions.ProfileRead));
     }
 }

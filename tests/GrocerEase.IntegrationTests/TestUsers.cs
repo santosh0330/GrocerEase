@@ -13,4 +13,13 @@ internal static class TestUsers
         await PostgresServer.ExecuteAsync(
             await PostgresServer.ConnectionStringAsync(PostgresServer.AdminUser, PostgresServer.AdminPassword),
             $"update users set role_id = '{RoleIds.Admin}' where email = '{email}'");
+
+    /// <summary>
+    /// Gives the user the StoreUser role, by SQL, without assigning them to a store: for tests of the role itself. (Assigning a customer
+    /// to a store, which does both, is what the application does.) A token the user already holds keeps saying Customer.
+    /// </summary>
+    public static async Task MakeStoreUserAsync(string email) =>
+        await PostgresServer.ExecuteAsync(
+            await PostgresServer.ConnectionStringAsync(PostgresServer.AdminUser, PostgresServer.AdminPassword),
+            $"update users set role_id = '{RoleIds.StoreUser}' where email = '{email}'");
 }

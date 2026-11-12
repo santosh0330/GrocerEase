@@ -79,9 +79,33 @@ public class RolesEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var roles = await response.Content.ReadFromJsonAsync<List<RoleResponse>>();
         Assert.NotNull(roles);
-        Assert.Equal([(RoleIds.Admin, RoleNames.Admin), (RoleIds.Customer, RoleNames.Customer)], roles.Select(role => (role.Id, role.Name)));
+        Assert.Equal(
+            [(RoleIds.Admin, RoleNames.Admin), (RoleIds.Customer, RoleNames.Customer), (RoleIds.StoreUser, RoleNames.StoreUser)],
+            roles.Select(role => (role.Id, role.Name)));
         Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead], roles[0].Permissions, StringComparer.Ordinal);
         Assert.Equal([Permissions.ProfileRead], roles[1].Permissions, StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProfileRead], roles[2].Permissions, StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public async Task AStoreUser_HasTheirOwnRoleAndPermissionsInTheToken_AndIs403OnRoles()
+    {
+        using var client = factory.CreateClient();
+        var email = UniqueEmail();
+        await RegisterAsync(client, email);
+        await TestUsers.MakeStoreUserAsync(email);
+        var storeUser = await LoginAsync(client, email);
+
+        var token = new Microsoft.IdentityModel.JsonWebTokens.JsonWebToken(storeUser.Token);
+        using var request = GetWithToken("/roles", storeUser.Token);
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(RoleNames.StoreUser, token.GetClaim(JwtClaims.Role).Value);
+        Assert.Equal(
+            [Permissions.ProfileRead],
+            token.Claims.Where(claim => string.Equals(claim.Type, JwtClaims.Permission, StringComparison.Ordinal)).Select(claim => claim.Value),
+            StringComparer.Ordinal);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]

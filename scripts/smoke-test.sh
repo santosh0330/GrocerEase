@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Starts the whole Compose stack with throwaway passwords and checks it end to end, over HTTP and inside the database:
 # migrations applied by the migrate service, the API working against PostgreSQL, data surviving a restart of the stack,
-# the API's logs reaching Seq and the log files, and nothing running as root or connecting as more than it needs.
+# the API's logs reaching Seq and the console (the container writes no log files), and nothing running as root or connecting as more than it needs.
 #
 # Needs: Docker with the Compose plugin, curl, jq, openssl, and the host ports 8080, 5341 and 5432 free.
 # Leaves nothing behind: it uses its own Compose project and volume and removes them at the end, pass or fail.
@@ -95,8 +95,8 @@ wait_for_seq_events() {
   fail "Seq has $found event(s) for [$filter], expected at least $wanted"
 }
 
-# The API's log files, read from inside the container (they live in the api-logs volume).
-log_files() { compose exec -T api sh -c 'cat /app/logs/grocerease-*.log' | tr -d '\r'; }
+# What the API wrote to its console, as Docker kept it.
+console_logs() { compose logs --no-color --no-log-prefix api | tr -d '\r'; }
 
 # POST JSON, print the HTTP status, keep the body in $work/body.json.
 post() { curl -sS -o "$work/body.json" -w '%{http_code}' -X POST "http://localhost:8080$1" -H 'Content-Type: application/json' -d "$2"; }
@@ -151,17 +151,16 @@ expect "a refused request is a Warning" "$(curl -sS -G http://localhost:5341/api
 # Only request events have a RequestMethod: other events of the same request (a warning from the middleware) also carry the path.
 expect "healthy probes are not logged at Information (Docker probes /health every 10 seconds)" "$(seq_count "RequestMethod is not null and StartsWith(RequestPath, '/health')")" "0"
 
-step "logs: the API's files hold the same events, one JSON document per line, and no secret"
-expect "the file is named after the day" "$(compose exec -T api sh -c 'ls /app/logs' | tr -d '\r' | grep -cE '^grocerease-[0-9]{8}\.log$')" "1"
-log_files | jq -c . > /dev/null || fail "a line of the log file is not valid JSON"
-log_files | jq -e 'select(.Properties.RequestPath == "/auth/login" and .Properties.StatusCode == 200) | .Level == "Information" and (.Timestamp | length > 0) and (.RenderedMessage | startswith("HTTP"))' | grep -q true \
-  || fail "the login event is not in the log file with its timestamp, level and message"
-expect "the log directory is owned by the user the API runs as" "$(compose exec -T api sh -c 'stat -c %u /app/logs')" "$(compose exec -T api id -u | tr -d '\r')"
+step "logs: the container writes no log files, and its console output has the request event and no secret"
+expect "the image turns the log files off" "$(compose exec -T api printenv LogFiles__Enabled | tr -d '\r')" "false"
+expect "the container has no log folder" "$(compose exec -T api sh -c 'test -e /app/logs && echo yes || echo no' | tr -d '\r')" "no"
+console_logs | grep 'HTTP POST /auth/login responded 200 in' | grep -q '"ResponseBytes"' \
+  || fail "the login event is not on the console with its message and properties"
 for secret in 'Sup3r-s3cret' "$registered_refresh_token" "$refreshed_token"; do
-  expect "the log file does not contain a secret" "$(log_files | grep -cF -- "$secret" || true)" "0"
+  expect "the console output does not contain a secret" "$(console_logs | grep -cF -- "$secret" || true)" "0"
   expect "Seq does not contain a secret" "$(curl -sS -G http://localhost:5341/api/events --data-urlencode "count=1000" | grep -cF -- "$secret" || true)" "0"
 done
-log_lines_before_restart="$(log_files | wc -l)"
+seq_logins_before_restart="$(seq_count "RequestPath = '/auth/login'")"
 
 step "what is stored in the database"
 expect "users" "$(admin_sql 'select count(*) from users')" "1"
@@ -279,7 +278,6 @@ expect "migrate runs again without error" "$(docker inspect --format '{{.State.E
 expect "login after the restart" "$(post /auth/login "$login_body")" "200"
 expect "same user after the restart" "$(jq -r .id "$work/body.json")" "$registered_id"
 wait_for_seq
-[ "$(log_files | wc -l)" -gt "$log_lines_before_restart" ] || fail "the log files did not survive the restart and keep growing (api-logs volume)"
-log_files | jq -c . > /dev/null || fail "a line of the log file is not valid JSON after the restart"
+wait_for_seq_events "RequestPath = '/auth/login'" "$seq_logins_before_restart"
 
 echo "ALL CHECKS PASSED"

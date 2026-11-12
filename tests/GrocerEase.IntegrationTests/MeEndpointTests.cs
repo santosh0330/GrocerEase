@@ -42,7 +42,7 @@ public class MeEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var me = await response.Content.ReadFromJsonAsync<CurrentUserResponse>();
-        Assert.Equal((registered.Id, "Ada", "Lovelace", email), (me!.Id, me.FirstName, me.LastName, me.Email));
+        Assert.Equal((registered.Id, "Ada", "Lovelace", email, "Customer"), (me!.Id, me.FirstName, me.LastName, me.Email, me.Role));
     }
 
     [Fact]
@@ -60,7 +60,38 @@ public class MeEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task TheResponse_HasExactlyTheFourFields_AndNeverATokenOrAPasswordHash()
+    public async Task AnAdminsNewToken_ShowsTheAdminRole()
+    {
+        using var client = factory.CreateClient();
+        var email = UniqueEmail();
+        await RegisterAsync(client, "203.0.113.85", email);
+        await TestUsers.MakeAdminAsync(email);
+        var login = await (await LoginAsync(client, "203.0.113.86", email, "Sup3r-s3cret!")).Content.ReadFromJsonAsync<AuthenticationResponse>();
+
+        using var request = GetWithToken("/me", login!.Token);
+        var me = await (await client.SendAsync(request)).Content.ReadFromJsonAsync<CurrentUserResponse>();
+
+        Assert.Equal("Admin", me!.Role);
+    }
+
+    [Fact]
+    public async Task ATokenWithNoRole_Is401_BecauseNoCodeOfOursMadeIt()
+    {
+        using var client = factory.CreateClient();
+        var extra = new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            ["given_name"] = "Ada", ["family_name"] = "Lovelace", ["email"] = "ada@example.com",
+        };
+
+        using var request = GetWithToken("/me", TestTokens.Create(extraClaims: extra)); // a name and an email, but no role
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("Authentication.InvalidToken", (await ProblemAsync(response)).GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task TheResponse_HasExactlyTheFiveFields_AndNeverATokenOrAPasswordHash()
     {
         using var client = factory.CreateClient();
         var registered = await (await RegisterAsync(client, "203.0.113.83")).Content.ReadFromJsonAsync<AuthenticationResponse>();
@@ -69,7 +100,7 @@ public class MeEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         using var body = JsonDocument.Parse(await (await client.SendAsync(request)).Content.ReadAsStringAsync());
 
         Assert.Equal(
-            ["email", "firstName", "id", "lastName"],
+            ["email", "firstName", "id", "lastName", "role"],
             body.RootElement.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal).ToArray(),
             StringComparer.Ordinal);
     }

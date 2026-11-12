@@ -25,6 +25,7 @@ public class MeControllerTests
         new("given_name", "Ada"),
         new("family_name", "Lovelace"),
         new("email", "ada@example.com"),
+        new("role", "Customer"),
     ];
 
     [Fact]
@@ -33,7 +34,7 @@ public class MeControllerTests
         var result = ControllerFor(AdaClaims()).Get();
 
         var body = Assert.IsType<CurrentUserResponse>(Assert.IsType<OkObjectResult>(result).Value);
-        Assert.Equal(("Ada", "Lovelace", "ada@example.com"), (body.FirstName, body.LastName, body.Email));
+        Assert.Equal(("Ada", "Lovelace", "ada@example.com", "Customer"), (body.FirstName, body.LastName, body.Email, body.Role));
         Assert.Equal(Guid.Parse("018f3b1c-7a2e-7d11-8c3f-2b6d5e4a9c10"), body.Id);
     }
 

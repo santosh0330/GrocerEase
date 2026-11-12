@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using GrocerEase.Contracts.Users;
+using GrocerEase.Infrastructure.Authentication;
 using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace GrocerEase.Api.Mapping;
@@ -21,15 +22,17 @@ public static class CurrentUserMappings
         var firstName = principal.FindFirstValue(JwtRegisteredClaimNames.GivenName);
         var lastName = principal.FindFirstValue(JwtRegisteredClaimNames.FamilyName);
         var email = principal.FindFirstValue(JwtRegisteredClaimNames.Email);
+        var role = principal.FindFirstValue(JwtClaims.Role);
 
         if (!Guid.TryParse(subject, out var id)
             || string.IsNullOrWhiteSpace(firstName)
             || string.IsNullOrWhiteSpace(lastName)
-            || string.IsNullOrWhiteSpace(email))
+            || string.IsNullOrWhiteSpace(email)
+            || string.IsNullOrWhiteSpace(role)) // every token made now carries a role; one without is not ours
         {
             return null;
         }
 
-        return new CurrentUserResponse(id, firstName, lastName, email);
+        return new CurrentUserResponse(id, firstName, lastName, email, role);
     }
 }

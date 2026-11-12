@@ -59,11 +59,12 @@ public class RolesControllerTests
     }
 
     [Fact]
-    public void TheController_OnlyLetsAnAdminIn()
+    public void TheController_NeedsThePermissionToReadRoles_NotARoleName()
     {
         var authorize = typeof(RolesController).GetCustomAttribute<AuthorizeAttribute>();
 
-        Assert.Equal(RoleNames.Admin, authorize?.Roles);
+        Assert.Equal(Permissions.RolesRead, authorize?.Policy);
+        Assert.Null(authorize?.Roles);
     }
 
     [Fact]

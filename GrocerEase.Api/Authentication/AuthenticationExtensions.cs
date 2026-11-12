@@ -1,3 +1,4 @@
+using GrocerEase.Domain.Entities;
 using GrocerEase.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
@@ -18,7 +19,8 @@ public static class AuthenticationExtensions
     /// <summary>
     /// Authenticates requests that carry a bearer token. What a valid token is comes from <see cref="JwtSettings"/>, the same
     /// settings the token generator signs with, so the two cannot disagree. Pair it with <c>app.UseAuthentication()</c> and
-    /// <c>app.UseAuthorization()</c>. A route is then protected with <c>[Authorize]</c>.
+    /// <c>app.UseAuthorization()</c>. A route is then protected with <c>[Authorize]</c>, and one that needs a permission names it:
+    /// <c>[Authorize(Policy = Permissions.RolesRead)]</c>.
     /// </summary>
     public static IServiceCollection AddJwtAuthentication(this IServiceCollection services)
     {
@@ -40,7 +42,16 @@ public static class AuthenticationExtensions
                 };
             });
 
-        services.AddAuthorization();
+        // One policy per permission, named after it: [Authorize(Policy = Permissions.RolesRead)] asks "does the token carry the
+        // permission roles.read?". The endpoint names what it needs, not which roles happen to have it, so giving the permission to
+        // another role later changes no endpoint. A caller who fails a policy gets the same 403 problem as any other (OnForbidden).
+        services.AddAuthorization(options =>
+        {
+            foreach (var permission in Permissions.All)
+            {
+                options.AddPolicy(permission, policy => policy.RequireClaim(JwtClaims.Permission, permission));
+            }
+        });
         return services;
     }
 

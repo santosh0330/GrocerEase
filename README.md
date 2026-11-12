@@ -100,7 +100,7 @@ curl -s http://localhost:8080/me -H "Authorization: Bearer $TOKEN"
 | `GET /me` | a valid bearer token | `{ id, firstName, lastName, email, role, permissions }` of the signed-in user |
 | `GET /roles` | a valid bearer token with the `roles.read` permission | every role and what it grants, `[{ id, name, permissions }]` (see [Roles and permissions](#roles-and-permissions)) |
 
-A token lives 60 minutes (`Jwt:ExpiryMinutes`). A request without a valid token never reaches the route. It gets `application/problem+json` with a `code` to switch on, plus a `WWW-Authenticate` header:
+An access token lives 10 minutes (`Jwt:ExpiryMinutes`); the refresh token keeps the session going. A request without a valid token never reaches the route. It gets `application/problem+json` with a `code` to switch on, plus a `WWW-Authenticate` header:
 
 | Status | `code` | When |
 |---|---|---|
@@ -146,7 +146,7 @@ Every user holds **exactly one role**, stored in `users.role_id`. A role **grant
 
 The token carries the role's name as `role` and the permissions as a `permission` array (`["profile.read","roles.read"]`). A route names the permission it needs, `[Authorize(Policy = "roles.read")]`, not a role: the policy checks the `permission` claims of the token, so giving the permission to another role changes no endpoint. `GET /me` shows the role and the permissions the token carries.
 
-- **They are read when a token is made** (register, login, refresh), not on every request. So a changed role, or a changed permission, applies from the **next token**: an access token lives up to 60 minutes (`Jwt:ExpiryMinutes`), and until then it keeps saying what it said. Logging in, or refreshing, gives a token with the current ones. A token made before permissions existed has a role and no permissions, so it is refused by `GET /roles` until its owner logs in or refreshes.
+- **They are read when a token is made** (register, login, refresh), not on every request. So a changed role, or a changed permission, applies from the **next token**: an access token lives up to 10 minutes (`Jwt:ExpiryMinutes`), and until then it keeps saying what it said. Logging in, or refreshing, gives a token with the current ones. A token made before permissions existed has a role and no permissions, so it is refused by `GET /roles` until its owner logs in or refreshes.
 - **The token grows with the permissions.** A handful is fine; the refresh endpoint accepts up to 2048 characters so an access token sent there by mistake still gets the usual single `401`.
 - **No endpoint changes a role or a permission yet.** To make the first admin, update the row, then log in again (the stack from `docker compose up` must be running):
 

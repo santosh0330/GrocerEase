@@ -97,7 +97,8 @@ curl -s http://localhost:8080/me -H "Authorization: Bearer $TOKEN"
 
 | Route | Needs | Returns |
 |---|---|---|
-| `GET /me` | a valid bearer token | `{ id, firstName, lastName, email }` of the signed-in user |
+| `GET /me` | a valid bearer token | `{ id, firstName, lastName, email, role }` of the signed-in user |
+| `GET /roles` | a valid bearer token with the `Admin` role | every role, `[{ id, name }]` (see [Roles](#roles)) |
 
 A token lives 60 minutes (`Jwt:ExpiryMinutes`). A request without a valid token never reaches the route. It gets `application/problem+json` with a `code` to switch on, plus a `WWW-Authenticate` header:
 
@@ -106,7 +107,7 @@ A token lives 60 minutes (`Jwt:ExpiryMinutes`). A request without a valid token 
 | `401` | `Authentication.Required` | no token, or not a bearer one (`Basic ...`) |
 | `401` | `Authentication.InvalidToken` | garbage, wrong signature, wrong issuer or audience, no signature, no expiry |
 | `401` | `Authentication.TokenExpired` | a real token that has expired: sign in again |
-| `403` | `Authorization.Forbidden` | signed in, but not allowed to do this (no route needs a permission yet) |
+| `403` | `Authorization.Forbidden` | signed in, but not allowed to do this (a `Customer` calling `GET /roles`) |
 
 A token is accepted up to 30 seconds past its expiry, to forgive small clock differences between servers. Only HMAC-SHA256 tokens signed with this API's key, for this API's issuer and audience, are accepted. `GrocerEase.Api/GrocerEase.Api.http` has ready-made requests (run `login` first).
 
@@ -128,6 +129,28 @@ The response has the same shape as login: a new `token` and a **new** `refreshTo
 - **Two requests with the same token at once:** exactly one succeeds. The other is treated as a reuse, so a client must not refresh from two places in parallel with the same token.
 - **Only a SHA-256 hash is stored.** A copy of the database cannot be used to refresh a session. The token itself (32 random bytes, 43 base64url characters) is never stored or logged.
 - **Failures** are `application/problem+json`: `401` with code `Authentication.InvalidRefreshToken` for a token that is unknown, expired, used or revoked (one answer for all, so nothing is learned from the difference); `400` for an empty or oversized token; `429` over the limit (30 per minute per address, `RateLimiting:Refresh`).
+
+### Roles
+
+Every user holds **exactly one role**, stored in `users.role_id`. Two roles are created by a migration, with fixed ids:
+
+| Role | Id | Who |
+|---|---|---|
+| `Customer` | `019e0000-0000-7000-8000-000000000001` | everyone who registers |
+| `Admin` | `019e0000-0000-7000-8000-000000000002` | made by hand, see below |
+
+The role's name is in the token as the `role` claim, and `[Authorize(Roles = "Admin")]` checks it: `GET /roles` is the one route that needs it. `GET /me` shows the role the token carries.
+
+- **A role is read when a token is made** (register, login, refresh), not on every request. So a role that was changed applies from the **next token**: an access token lives up to 60 minutes (`Jwt:ExpiryMinutes`), and until then it keeps saying what it said. Logging in, or refreshing, gives a token with the current role.
+- **No endpoint changes a role yet.** To make the first admin, update the row, then log in again (the stack from `docker compose up` must be running):
+
+  ```bash
+  docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+  update users set role_id = '019e0000-0000-7000-8000-000000000002' where email = 'ada@example.com';
+  SQL
+  ```
+
+- **A role in use cannot be deleted** (the foreign key restricts it), and a user cannot be saved without one. A user who registers while the `Customer` row is missing gets a generic `500`, not a business error: that is a broken database, and the cause is in the log.
 
 ## Health checks
 

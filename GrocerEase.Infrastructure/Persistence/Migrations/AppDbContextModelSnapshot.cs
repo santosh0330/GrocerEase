@@ -127,6 +127,65 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GrocerEase.Domain.Entities.RoleClaim", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuidv7()");
+
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("role_id");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("claim_type");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("claim_value");
+
+                    b.HasKey("Id")
+                        .HasName("pk_role_claims");
+
+                    b.HasIndex("RoleId", "Type", "Value")
+                        .IsUnique()
+                        .HasDatabaseName("ix_role_claims_role_id_claim_type_claim_value");
+
+                    b.ToTable("role_claims", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_role_claims_id_is_uuid_v7", "uuid_extract_version(id) = 7");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000101"),
+                            RoleId = new Guid("019e0000-0000-7000-8000-000000000001"),
+                            Type = "permission",
+                            Value = "profile.read"
+                        },
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000102"),
+                            RoleId = new Guid("019e0000-0000-7000-8000-000000000002"),
+                            Type = "permission",
+                            Value = "profile.read"
+                        },
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000103"),
+                            RoleId = new Guid("019e0000-0000-7000-8000-000000000002"),
+                            Type = "permission",
+                            Value = "roles.read"
+                        });
+                });
+
             modelBuilder.Entity("GrocerEase.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -200,6 +259,16 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_refresh_tokens_users_user_id");
                 });
 
+            modelBuilder.Entity("GrocerEase.Domain.Entities.RoleClaim", b =>
+                {
+                    b.HasOne("GrocerEase.Domain.Entities.Role", null)
+                        .WithMany("Claims")
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_role_claims_roles_role_id");
+                });
+
             modelBuilder.Entity("GrocerEase.Domain.Entities.User", b =>
                 {
                     b.HasOne("GrocerEase.Domain.Entities.Role", null)
@@ -208,6 +277,11 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_users_roles_role_id");
+                });
+
+            modelBuilder.Entity("GrocerEase.Domain.Entities.Role", b =>
+                {
+                    b.Navigation("Claims");
                 });
 #pragma warning restore 612, 618
         }

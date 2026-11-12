@@ -38,6 +38,37 @@ public class AppDbContextModelTests
     }
 
     [Fact]
+    public void TheRoleClaimsTable_IsSeededWithWhatEachRoleMayDo()
+    {
+        using var db = Context();
+
+        var claims = db.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(RoleClaim))!.GetSeedData()
+            .Select(row => (RoleId: (Guid)row[nameof(RoleClaim.RoleId)]!, Type: (string)row[nameof(RoleClaim.Type)]!, Value: (string)row[nameof(RoleClaim.Value)]!))
+            .ToList();
+
+        Assert.Equal(
+            [(RoleIds.Customer, Permissions.ClaimType, Permissions.ProfileRead)],
+            claims.Where(claim => claim.RoleId == RoleIds.Customer));
+        Assert.Equal(
+            [(RoleIds.Admin, Permissions.ClaimType, Permissions.ProfileRead), (RoleIds.Admin, Permissions.ClaimType, Permissions.RolesRead)],
+            claims.Where(claim => claim.RoleId == RoleIds.Admin).OrderBy(claim => claim.Value, StringComparer.Ordinal));
+        Assert.Equal(3, claims.Count);
+    }
+
+    [Fact]
+    public void ARolesClaims_AreDeletedWithTheRole()
+    {
+        using var db = Context();
+
+        var foreignKey = Assert.Single(
+            db.Model.FindEntityType(typeof(RoleClaim))!.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(Role));
+
+        Assert.True(foreignKey.IsRequired);
+        Assert.Equal(DeleteBehavior.Cascade, foreignKey.DeleteBehavior);
+        Assert.Equal([nameof(RoleClaim.RoleId)], foreignKey.Properties.Select(property => property.Name), StringComparer.Ordinal);
+    }
+
+    [Fact]
     public void EveryUserHoldsOneRole_AndARoleThatIsHeldCannotBeDeleted()
     {
         using var db = Context();

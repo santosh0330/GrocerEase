@@ -13,7 +13,13 @@ public class RefreshCommandHandlerTests
     {
         private int _count;
 
-        public string GenerateToken(User user) => $"access-{Interlocked.Increment(ref _count)}-for-{user.Email}";
+        public Role? LastRole { get; private set; }
+
+        public string GenerateToken(User user, Role role)
+        {
+            LastRole = role;
+            return $"access-{Interlocked.Increment(ref _count)}-for-{user.Email}";
+        }
     }
 
     /// <summary>Another request consumes the token between the handler's read and its rotation: the rotation comes back refused.</summary>
@@ -37,10 +43,11 @@ public class RefreshCommandHandlerTests
 
     private readonly RefreshTestKit _kit = new();
     private readonly FakeUserRepository _users = new();
+    private readonly StubTokenGenerator _tokens = new();
     private readonly User _ada = new(Guid.CreateVersion7(), "Ada", "Lovelace", "ada@example.com", "hashed:s3cret!", RoleIds.Customer);
 
-    private RefreshCommandHandler Handler(IRefreshTokenRepository? tokens = null, IUserRepository? users = null) =>
-        new(tokens ?? _kit.Tokens, _kit.Generator, _kit.Policy, users ?? _users, new StubTokenGenerator(), _kit.Clock);
+    private RefreshCommandHandler Handler(IRefreshTokenRepository? tokens = null, IUserRepository? users = null, IRoleRepository? roles = null) =>
+        new(tokens ?? _kit.Tokens, _kit.Generator, _kit.Policy, users ?? _users, roles ?? new FakeRoleRepository(), _tokens, _kit.Clock);
 
     /// <summary>Ada exists and has signed in: her first refresh token is returned.</summary>
     private async Task<string> SignedInAsync()
@@ -68,6 +75,25 @@ public class RefreshCommandHandlerTests
         Assert.Equal("access-1-for-ada@example.com", result.Value.Token);
         Assert.False(string.IsNullOrEmpty(result.Value.RefreshToken));
         Assert.NotEqual(token, result.Value.RefreshToken, StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public async Task Handle_PutsTheRoleTheUserHoldsNow_InTheNewAccessToken()
+    {
+        var token = await SignedInAsync();
+
+        await Handler().Handle(new RefreshCommand(token), CancellationToken.None);
+
+        Assert.Equal((RoleIds.Customer, RoleNames.Customer), (_tokens.LastRole?.Id, _tokens.LastRole?.Name));
+    }
+
+    [Fact]
+    public async Task Handle_WhenTheUsersRoleDoesNotExist_ThrowsBecauseTheDatabaseIsBroken()
+    {
+        var token = await SignedInAsync();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => Handler(roles: new FakeRoleRepository(seeded: false)).Handle(new RefreshCommand(token), CancellationToken.None));
     }
 
     [Fact]

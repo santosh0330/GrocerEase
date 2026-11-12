@@ -13,9 +13,12 @@ public class RegisterCommandHandlerTests
     {
         public User? LastUser { get; private set; }
 
-        public string GenerateToken(User user)
+        public Role? LastRole { get; private set; }
+
+        public string GenerateToken(User user, Role role)
         {
             LastUser = user;
+            LastRole = role;
             return $"token-for-{user.Email}";
         }
     }
@@ -115,6 +118,18 @@ public class RegisterCommandHandlerTests
 
         var stored = await repository.GetByEmailAsync("ada@example.com", CancellationToken.None);
         Assert.Equal(RoleIds.Customer, stored?.RoleId);
+    }
+
+    [Fact]
+    public async Task Handle_PutsTheCustomerRoleInTheToken()
+    {
+        var tokens = new StubTokenGenerator();
+        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakeRoleRepository(), new FakePasswordHasher(), tokens, _refresh.Issuer);
+
+        await handler.Handle(Ada, CancellationToken.None);
+
+        Assert.Equal((RoleIds.Customer, RoleNames.Customer), (tokens.LastRole?.Id, tokens.LastRole?.Name));
+        Assert.Equal(tokens.LastUser?.RoleId, tokens.LastRole?.Id); // the role in the token is the one the user was stored with
     }
 
     [Fact]

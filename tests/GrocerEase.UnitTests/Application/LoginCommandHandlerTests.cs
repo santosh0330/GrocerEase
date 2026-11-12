@@ -11,18 +11,27 @@ public class LoginCommandHandlerTests
 {
     private sealed class StubTokenGenerator : IJwtTokenGenerator
     {
-        public string GenerateToken(User user) => $"token-for-{user.Email}";
+        public Role? LastRole { get; private set; }
+
+        public string GenerateToken(User user, Role role)
+        {
+            LastRole = role;
+            return $"token-for-{user.Email}";
+        }
     }
 
     private readonly RefreshTestKit _refresh = new();
 
-    private async Task<(LoginCommandHandler Handler, User Ada, FakePasswordHasher Hasher)> HandlerWithAdaAsync()
+    private readonly StubTokenGenerator _tokens = new();
+
+    private async Task<(LoginCommandHandler Handler, User Ada, FakePasswordHasher Hasher)> HandlerWithAdaAsync(
+        Guid? roleId = null, bool rolesSeeded = true)
     {
         var repository = new FakeUserRepository();
         var hasher = new FakePasswordHasher();
-        var ada = new User(Guid.CreateVersion7(), "Ada", "Lovelace", "ada@example.com", hasher.Hash("s3cret!"), RoleIds.Customer);
+        var ada = new User(Guid.CreateVersion7(), "Ada", "Lovelace", "ada@example.com", hasher.Hash("s3cret!"), roleId ?? RoleIds.Customer);
         Assert.True(await repository.TryAddAsync(ada, CancellationToken.None));
-        return (new LoginCommandHandler(repository, hasher, new StubTokenGenerator(), _refresh.Issuer), ada, hasher);
+        return (new LoginCommandHandler(repository, new FakeRoleRepository(rolesSeeded), hasher, _tokens, _refresh.Issuer), ada, hasher);
     }
 
     [Fact]
@@ -37,6 +46,40 @@ public class LoginCommandHandlerTests
         Assert.Equal(ada.Id, user.Id);
         Assert.Equal(("Ada", "Lovelace", "ada@example.com"), (user.FirstName, user.LastName, user.Email));
         Assert.Equal("token-for-ada@example.com", user.Token);
+    }
+
+    [Theory]
+    [InlineData("Customer")]
+    [InlineData("Admin")]
+    public async Task Handle_PutsTheRoleTheUserHolds_InTheToken(string roleName)
+    {
+        var roleId = string.Equals(roleName, RoleNames.Admin, StringComparison.Ordinal) ? RoleIds.Admin : RoleIds.Customer;
+        var (handler, _, _) = await HandlerWithAdaAsync(roleId);
+
+        await handler.Handle(new LoginCommand("ada@example.com", "s3cret!"), CancellationToken.None);
+
+        Assert.Equal((roleId, roleName), (_tokens.LastRole?.Id, _tokens.LastRole?.Name));
+    }
+
+    [Fact]
+    public async Task Handle_WhenTheUsersRoleDoesNotExist_ThrowsBecauseTheDatabaseIsBroken_AndStartsNoSession()
+    {
+        var (handler, _, _) = await HandlerWithAdaAsync(rolesSeeded: false);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => handler.Handle(new LoginCommand("ada@example.com", "s3cret!"), CancellationToken.None));
+
+        Assert.Empty(_refresh.Tokens.Tokens);
+    }
+
+    [Fact]
+    public async Task Handle_WithAWrongPassword_DoesNotLookUpTheRole_SoTheFailureCostsNothingExtra()
+    {
+        var (handler, _, _) = await HandlerWithAdaAsync(rolesSeeded: false); // a role lookup would throw
+
+        var result = await handler.Handle(new LoginCommand("ada@example.com", "wrong"), CancellationToken.None);
+
+        Assert.Equal(AuthenticationErrors.InvalidCredentials, result.Error);
     }
 
     [Fact]

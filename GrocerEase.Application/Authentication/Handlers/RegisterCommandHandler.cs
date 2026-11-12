@@ -26,8 +26,7 @@ public sealed class RegisterCommandHandler(
 
         // A new user is always a customer. The role is seeded by a migration, so a missing one is a broken database, not something
         // the caller did wrong: it is an exception (a generic 500 that is logged), not a Result error.
-        var customer = await roleRepository.GetByNameAsync(RoleNames.Customer, cancellationToken)
-            ?? throw new InvalidOperationException($"The seeded role '{RoleNames.Customer}' is missing. Has the database been migrated?");
+        var customer = await roleRepository.GetRequiredByNameAsync(RoleNames.Customer, cancellationToken);
 
         var user = new User(
             Guid.CreateVersion7(), command.FirstName, command.LastName, command.Email, passwordHasher.Hash(command.Password), customer.Id);
@@ -37,7 +36,7 @@ public sealed class RegisterCommandHandler(
             return Result.Failure<AuthenticationResult>(AuthenticationErrors.DuplicateEmail);
         }
 
-        var token = jwtTokenGenerator.GenerateToken(user);
+        var token = jwtTokenGenerator.GenerateToken(user, customer);
         var refreshToken = await refreshTokenIssuer.StartSessionAsync(user.Id, cancellationToken);
         return Result.Success(new AuthenticationResult(user.Id, user.FirstName, user.LastName, user.Email, token, refreshToken));
     }

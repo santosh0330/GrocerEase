@@ -30,7 +30,9 @@ public class JwtValidationParametersTests
 
     private static string TokenIssuedAt(DateTimeOffset now) =>
         new JwtTokenGenerator(Options.Create(Settings), new FixedTimeProvider(now))
-            .GenerateToken(new User(Guid.CreateVersion7(), "Ada", "Lovelace", "ada@example.com", "hash", RoleIds.Customer));
+            .GenerateToken(
+                new User(Guid.CreateVersion7(), "Ada", "Lovelace", "ada@example.com", "hash", RoleIds.Customer),
+                new Role(RoleIds.Customer, RoleNames.Customer));
 
     private static async Task<TokenValidationResult> ValidateAsync(string token) =>
         await new JsonWebTokenHandler().ValidateTokenAsync(token, JwtValidationParameters.From(Settings));
@@ -54,6 +56,16 @@ public class JwtValidationParametersTests
         var result = await ValidateAsync(TokenIssuedAt(DateTimeOffset.UtcNow));
 
         Assert.True(result.IsValid, result.Exception?.Message);
+    }
+
+    [Fact]
+    public async Task TheRoleClaimOfAValidToken_IsWhatIsInRoleChecks()
+    {
+        var result = await ValidateAsync(TokenIssuedAt(DateTimeOffset.UtcNow));
+
+        var principal = new System.Security.Claims.ClaimsPrincipal(result.ClaimsIdentity);
+        Assert.True(principal.IsInRole(RoleNames.Customer));
+        Assert.False(principal.IsInRole(RoleNames.Admin));
     }
 
     [Fact]

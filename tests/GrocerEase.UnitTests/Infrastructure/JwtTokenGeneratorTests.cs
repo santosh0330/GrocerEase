@@ -28,6 +28,9 @@ public class JwtTokenGeneratorTests
 
     private static User Ada() => new(Guid.CreateVersion7(), "Ada", "Lovelace", "ada@example.com", "a-password-hash", RoleIds.Customer);
 
+    private static readonly Role CustomerRole = new(RoleIds.Customer, RoleNames.Customer);
+    private static readonly Role AdminRole = new(RoleIds.Admin, RoleNames.Admin);
+
     private static TokenValidationParameters Rules(string key = Key, string issuer = "issuer-x", string audience = "audience-x") => new()
     {
         ValidIssuer = issuer,
@@ -43,7 +46,7 @@ public class JwtTokenGeneratorTests
     [Fact]
     public async Task GenerateToken_ReturnsATokenThatValidatesWithTheSameKeyIssuerAndAudience()
     {
-        var token = Generator().GenerateToken(Ada());
+        var token = Generator().GenerateToken(Ada(), CustomerRole);
 
         var result = await ValidateAsync(token, Rules());
 
@@ -53,7 +56,7 @@ public class JwtTokenGeneratorTests
     [Fact]
     public void GenerateToken_IsSignedWithHmacSha256()
     {
-        var jwt = new JsonWebToken(Generator().GenerateToken(Ada()));
+        var jwt = new JsonWebToken(Generator().GenerateToken(Ada(), CustomerRole));
 
         Assert.Equal("HS256", jwt.Alg);
     }
@@ -63,7 +66,7 @@ public class JwtTokenGeneratorTests
     {
         var user = Ada();
 
-        var jwt = new JsonWebToken(Generator().GenerateToken(user));
+        var jwt = new JsonWebToken(Generator().GenerateToken(user, CustomerRole));
 
         Assert.Equal(user.Id.ToString(), jwt.Subject);
         Assert.Equal("ada@example.com", jwt.GetClaim(JwtRegisteredClaimNames.Email).Value);
@@ -74,11 +77,36 @@ public class JwtTokenGeneratorTests
     }
 
     [Fact]
+    public void GenerateToken_CarriesTheNameOfTheRoleTheUserHolds()
+    {
+        var customer = new JsonWebToken(Generator().GenerateToken(Ada(), CustomerRole));
+        var admin = new JsonWebToken(Generator().GenerateToken(
+            new User(Guid.CreateVersion7(), "Grace", "Hopper", "grace@example.com", "hash", RoleIds.Admin), AdminRole));
+
+        Assert.Equal("Customer", customer.GetClaim(JwtClaims.Role).Value);
+        Assert.Equal("Admin", admin.GetClaim(JwtClaims.Role).Value);
+    }
+
+    [Fact]
+    public void GenerateToken_WritesTheRoleUnderTheNameTheValidationParametersReadItBy() =>
+        Assert.Equal(JwtClaims.Role, JwtValidationParameters.From(Settings()).RoleClaimType);
+
+    [Fact]
+    public void GenerateToken_RefusesARoleThatIsNotTheOneTheUserHolds()
+    {
+        var customer = Ada(); // holds Customer
+
+        var exception = Assert.Throws<ArgumentException>(() => Generator().GenerateToken(customer, AdminRole));
+
+        Assert.Contains("Admin", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void GenerateToken_NeverContainsThePasswordHash()
     {
         var user = Ada();
 
-        var jwt = new JsonWebToken(Generator().GenerateToken(user));
+        var jwt = new JsonWebToken(Generator().GenerateToken(user, CustomerRole));
 
         Assert.DoesNotContain(jwt.Claims, claim => claim.Value.Contains(user.PasswordHash, StringComparison.Ordinal));
         Assert.False(jwt.TryGetClaim("password", out _));
@@ -90,7 +118,7 @@ public class JwtTokenGeneratorTests
     {
         var now = new DateTimeOffset(2030, 1, 1, 12, 0, 0, TimeSpan.Zero);
 
-        var jwt = new JsonWebToken(Generator(now, Settings(expiryMinutes: 15)).GenerateToken(Ada()));
+        var jwt = new JsonWebToken(Generator(now, Settings(expiryMinutes: 15)).GenerateToken(Ada(), CustomerRole));
 
         Assert.Equal(now.AddMinutes(15).UtcDateTime, jwt.ValidTo);
         Assert.Equal(now.UtcDateTime, jwt.ValidFrom);
@@ -101,7 +129,7 @@ public class JwtTokenGeneratorTests
     {
         var issuedTwoHoursAgo = DateTimeOffset.UtcNow.AddHours(-2);
 
-        var token = Generator(issuedTwoHoursAgo, Settings(expiryMinutes: 60)).GenerateToken(Ada());
+        var token = Generator(issuedTwoHoursAgo, Settings(expiryMinutes: 60)).GenerateToken(Ada(), CustomerRole);
         var result = await ValidateAsync(token, Rules());
 
         Assert.False(result.IsValid);
@@ -111,7 +139,7 @@ public class JwtTokenGeneratorTests
     [Fact]
     public async Task GenerateToken_ProducesATokenThatIsRejectedWithAnotherKey()
     {
-        var token = Generator().GenerateToken(Ada());
+        var token = Generator().GenerateToken(Ada(), CustomerRole);
 
         var result = await ValidateAsync(token, Rules(key: "a-completely-different-signing-key-9876543210"));
 
@@ -121,7 +149,7 @@ public class JwtTokenGeneratorTests
     [Fact]
     public async Task GenerateToken_ProducesATokenThatIsRejectedForAnotherAudienceOrIssuer()
     {
-        var token = Generator().GenerateToken(Ada());
+        var token = Generator().GenerateToken(Ada(), CustomerRole);
 
         Assert.False((await ValidateAsync(token, Rules(audience: "someone-else"))).IsValid);
         Assert.False((await ValidateAsync(token, Rules(issuer: "someone-else"))).IsValid);
@@ -130,7 +158,7 @@ public class JwtTokenGeneratorTests
     [Fact]
     public async Task GenerateToken_ProducesATokenThatIsRejectedWhenItsPayloadIsTamperedWith()
     {
-        var token = Generator().GenerateToken(Ada());
+        var token = Generator().GenerateToken(Ada(), CustomerRole);
         var parts = token.Split('.');
         var forgedPayload = Base64UrlEncoder.Encode("""{"sub":"someone-else","iss":"issuer-x","aud":"audience-x","exp":9999999999}""");
 
@@ -145,8 +173,8 @@ public class JwtTokenGeneratorTests
         var generator = Generator();
         var user = Ada();
 
-        var first = new JsonWebToken(generator.GenerateToken(user));
-        var second = new JsonWebToken(generator.GenerateToken(user));
+        var first = new JsonWebToken(generator.GenerateToken(user, CustomerRole));
+        var second = new JsonWebToken(generator.GenerateToken(user, CustomerRole));
 
         Assert.NotEqual(first.Id, second.Id, StringComparer.Ordinal);
     }
@@ -156,6 +184,7 @@ public class JwtTokenGeneratorTests
     {
         Assert.Throws<ArgumentNullException>(() => new JwtTokenGenerator(null!, TimeProvider.System));
         Assert.Throws<ArgumentNullException>(() => new JwtTokenGenerator(Options.Create(Settings()), null!));
-        Assert.Throws<ArgumentNullException>(() => Generator().GenerateToken(null!));
+        Assert.Throws<ArgumentNullException>(() => Generator().GenerateToken(null!, CustomerRole));
+        Assert.Throws<ArgumentNullException>(() => Generator().GenerateToken(Ada(), null!));
     }
 }

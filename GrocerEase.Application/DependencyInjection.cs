@@ -41,6 +41,7 @@ public static class DependencyInjection
 
         // Writes a membership and a role, which must be kept together or not at all.
         services.AddTransactionalCommandHandler<AssignStoreMemberCommand, Result<StoreMemberResult>, AssignStoreMemberCommandHandler>();
+        services.AddTransactionalCommandHandler<RemoveStoreMemberCommand, Result<StoreMemberResult>, RemoveStoreMemberCommandHandler>();
 
         return services;
     }

@@ -25,6 +25,8 @@ public static class StoreMappings
         return new AssignStoreMemberCommand(storeId, request.Email);
     }
 
+    public static RemoveStoreMemberCommand ToRemoveCommand(this Guid userId, Guid storeId) => new(storeId, userId);
+
     public static StoreMemberResponse ToResponse(this StoreMemberResult result)
     {
         ArgumentNullException.ThrowIfNull(result);

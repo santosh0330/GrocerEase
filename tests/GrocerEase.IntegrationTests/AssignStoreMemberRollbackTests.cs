@@ -12,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace GrocerEase.IntegrationTests;
 
 /// <summary>
-/// Why assigning a customer to a store is a transactional handler. The membership is written first and the role changed second; if
+/// Why assigning a customer to a store, and taking one out, are transactional handlers. The membership is written first and the role changed second; if
 /// the role change is refused (another request changed the user in between), the membership must not stay behind. The real handler,
 /// repositories and unit of work run against PostgreSQL; only the role change is made to say "overtaken", the way the real
 /// compare-and-set does when it finds the user is no longer a customer.
@@ -91,6 +91,23 @@ public class AssignStoreMemberRollbackTests
 
         Assert.Equal("User.NotACustomer", result.Error.Code);
         Assert.Equal((RoleNames.Customer, 0L), await StateOfAsync(userId)); // no membership without the role
+    }
+
+    [Fact]
+    public async Task WhenTheRoleChangeIsOvertaken_OnRemoval_TheMembershipThatWasRemovedComesBack()
+    {
+        await using var provider = await BuildAsync(roleChangeIsOvertaken: false);
+        var (storeId, email, userId) = await AStoreAndACustomerAsync(provider);
+        Assert.True((await AssignAsync(provider, storeId, email)).IsSuccess);
+        await using var overtaken = await BuildAsync(roleChangeIsOvertaken: true);
+
+        using var scope = overtaken.CreateScope();
+        var handler = scope.ServiceProvider.GetRequiredService<ICommandHandler<RemoveStoreMemberCommand, Result<StoreMemberResult>>>();
+        // The removal runs first and the role change second; a role that cannot be changed back is broken data, an exception, and the
+        // removal that came before it must not stay.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(new RemoveStoreMemberCommand(storeId, userId), CancellationToken.None));
+
+        Assert.Equal((RoleNames.StoreUser, 1L), await StateOfAsync(userId)); // still a store user, still a member
     }
 
     [Fact]

@@ -6,7 +6,9 @@ namespace GrocerEase.Application.Authentication.Validators;
 public sealed class RefreshCommandValidator : AbstractValidator<RefreshCommand>
 {
     // A real token is 43 characters. The limit is generous, and exists so a huge body cannot make the server hash megabytes.
-    public const int MaxRefreshTokenLength = 512;
+    // It is also big enough for an access token (a JWT, which grows with the claims it carries): one presented here by mistake
+    // must reach the lookup and get the same single answer as every other wrong token, not a different one only because it is long.
+    public const int MaxRefreshTokenLength = 2048;
 
     public RefreshCommandValidator()
     {

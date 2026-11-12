@@ -8,7 +8,7 @@ namespace GrocerEase.Infrastructure.Authentication;
 
 /// <summary>
 /// Issues a signed JWT (HMAC-SHA256). The token proves who the caller is: anyone can read its claims, but only a holder of the
-/// signing key can produce or change one, so it carries the user's id, name and role but never anything secret such as the password hash.
+/// signing key can produce or change one, so it carries the user's id, name, role and the permissions of that role, but never anything secret such as the password hash.
 /// </summary>
 public sealed class JwtTokenGenerator : IJwtTokenGenerator
 {
@@ -40,6 +40,10 @@ public sealed class JwtTokenGenerator : IJwtTokenGenerator
 
         var now = _timeProvider.GetUtcNow().UtcDateTime;
 
+        // Copied into the token, so a request needs no database query to know what its caller may do. The cost is that a change to
+        // the role's permissions reaches a caller only with the next token.
+        var permissions = role.GrantedPermissions;
+
         var descriptor = new SecurityTokenDescriptor
         {
             // Registered claim names are used as written ("sub", "email", ...), so no mapping to .NET claim types is involved.
@@ -59,6 +63,12 @@ public sealed class JwtTokenGenerator : IJwtTokenGenerator
             Expires = now.AddMinutes(_settings.ExpiryMinutes),
             SigningCredentials = _credentials,
         };
+
+        if (permissions.Count > 0)
+        {
+            // An array, even for one permission, so a reader always finds the same shape. A role that grants nothing gets no claim.
+            descriptor.Claims[JwtClaims.Permission] = permissions.ToArray();
+        }
 
         return _handler.CreateToken(descriptor);
     }

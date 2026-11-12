@@ -62,6 +62,16 @@ public class LoginCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_HandsTheGeneratorTheRoleWithWhatItGrants()
+    {
+        var (handler, _, _) = await HandlerWithAdaAsync(RoleIds.Admin);
+
+        await handler.Handle(new LoginCommand("ada@example.com", "s3cret!"), CancellationToken.None);
+
+        Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead], _tokens.LastRole?.GrantedPermissions, StringComparer.Ordinal);
+    }
+
+    [Fact]
     public async Task Handle_WhenTheUsersRoleDoesNotExist_ThrowsBecauseTheDatabaseIsBroken_AndStartsNoSession()
     {
         var (handler, _, _) = await HandlerWithAdaAsync(rolesSeeded: false);

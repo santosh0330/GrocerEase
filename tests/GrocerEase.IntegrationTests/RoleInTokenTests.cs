@@ -19,6 +19,11 @@ public class RoleInTokenTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
     private static string RoleOf(AuthenticationResponse response) => new JsonWebToken(response.Token).GetClaim(JwtClaims.Role).Value;
 
+    private static string[] PermissionsOf(AuthenticationResponse response) =>
+        [.. new JsonWebToken(response.Token).Claims
+            .Where(claim => string.Equals(claim.Type, JwtClaims.Permission, StringComparison.Ordinal))
+            .Select(claim => claim.Value)];
+
     private static async Task<AuthenticationResponse> RegisterAsync(HttpClient client, string email)
     {
         var response = await client.PostAsJsonAsync(
@@ -50,6 +55,7 @@ public class RoleInTokenTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var registered = await RegisterAsync(client, email);
 
         Assert.Equal(RoleNames.Customer, RoleOf(registered));
+        Assert.Equal([Permissions.ProfileRead], PermissionsOf(registered), StringComparer.Ordinal);
         Assert.Equal(
             RoleIds.Customer,
             await PostgresServer.ScalarAsync<Guid>(await PostgresServer.AppConnectionStringAsync(), $"select role_id from users where email = '{email}'"));
@@ -66,6 +72,7 @@ public class RoleInTokenTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var loggedIn = await LoginAsync(client, email);
 
         Assert.Equal(RoleNames.Admin, RoleOf(loggedIn));
+        Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead], PermissionsOf(loggedIn), StringComparer.Ordinal);
     }
 
     [Fact]
@@ -79,6 +86,8 @@ public class RoleInTokenTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var refreshed = await RefreshAsync(client, registered.RefreshToken);
 
         Assert.Equal(RoleNames.Customer, RoleOf(registered)); // a token cannot change after it was signed: this is the staleness to expect
+        Assert.Equal([Permissions.ProfileRead], PermissionsOf(registered), StringComparer.Ordinal);
         Assert.Equal(RoleNames.Admin, RoleOf(refreshed));
+        Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead], PermissionsOf(refreshed), StringComparer.Ordinal);
     }
 }

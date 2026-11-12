@@ -212,8 +212,16 @@ jwt_claim() {
   while [ $(( ${#payload} % 4 )) -ne 0 ]; do payload="$payload="; done
   printf %s "$payload" | base64 -d | jq -r --arg name "$2" '.[$name]'
 }
+# The same claim as compact JSON, for the ones that are arrays (the permissions).
+jwt_claim_json() {
+  local payload
+  payload="$(printf %s "$1" | cut -d. -f2 | tr '_-' '/+')"
+  while [ $(( ${#payload} % 4 )) -ne 0 ]; do payload="$payload="; done
+  printf %s "$payload" | base64 -d | jq -c --arg name "$2" '.[$name]'
+}
 get() { curl -sS -o "$work/get.json" -w '%{http_code}' "http://localhost:8080$1" ${2:+-H "Authorization: Bearer $2"}; }
 expect "the token of a new user says Customer" "$(jwt_claim "$customer_token" role)" "Customer"
+expect "and carries what a customer may do" "$(jwt_claim_json "$customer_token" permission)" '["profile.read"]'
 expect "GET /me shows the role" "$(get /me "$customer_token" > /dev/null; jq -r .role "$work/get.json")" "Customer"
 expect "GET /roles with no token" "$(get /roles)" "401"
 expect "GET /roles as a customer" "$(get /roles "$customer_token")" "403"
@@ -224,6 +232,7 @@ expect "a token issued before the change keeps the old role" "$(get /roles "$cus
 expect "refreshing gives a token with the current role" "$(post /auth/refresh "{\"refreshToken\":\"$customer_refresh_token\"}")" "200"
 admin_token="$(jq -r .token "$work/body.json")"
 expect "the new token says Admin" "$(jwt_claim "$admin_token" role)" "Admin"
+expect "and carries what an admin may do" "$(jwt_claim_json "$admin_token" permission)" '["profile.read","roles.read"]'
 expect "GET /roles as an admin" "$(get /roles "$admin_token")" "200"
 expect "GET /roles lists both roles" "$(jq -r '[.[].name] | join(",")' "$work/get.json")" "Admin,Customer"
 expect "GET /me shows the new role" "$(get /me "$admin_token" > /dev/null; jq -r .role "$work/get.json")" "Admin"

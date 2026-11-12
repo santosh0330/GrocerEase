@@ -32,7 +32,14 @@ public class JwtValidationParametersTests
         new JwtTokenGenerator(Options.Create(Settings), new FixedTimeProvider(now))
             .GenerateToken(
                 new User(Guid.CreateVersion7(), "Ada", "Lovelace", "ada@example.com", "hash", RoleIds.Customer),
-                new Role(RoleIds.Customer, RoleNames.Customer));
+                CustomerWithItsPermission());
+
+    private static Role CustomerWithItsPermission()
+    {
+        var role = new Role(RoleIds.Customer, RoleNames.Customer);
+        role.Grant(Permissions.ProfileRead);
+        return role;
+    }
 
     private static async Task<TokenValidationResult> ValidateAsync(string token) =>
         await new JsonWebTokenHandler().ValidateTokenAsync(token, JwtValidationParameters.From(Settings));
@@ -66,6 +73,16 @@ public class JwtValidationParametersTests
         var principal = new System.Security.Claims.ClaimsPrincipal(result.ClaimsIdentity);
         Assert.True(principal.IsInRole(RoleNames.Customer));
         Assert.False(principal.IsInRole(RoleNames.Admin));
+    }
+
+    [Fact]
+    public async Task ThePermissionsOfAValidToken_AreOneClaimEach_SoRequireClaimCanCheckThem()
+    {
+        var result = await ValidateAsync(TokenIssuedAt(DateTimeOffset.UtcNow));
+
+        var principal = new System.Security.Claims.ClaimsPrincipal(result.ClaimsIdentity);
+        Assert.True(principal.HasClaim(JwtClaims.Permission, Permissions.ProfileRead));
+        Assert.False(principal.HasClaim(JwtClaims.Permission, Permissions.RolesRead));
     }
 
     [Fact]

@@ -28,8 +28,23 @@ public class JwtTokenGeneratorTests
 
     private static User Ada() => new(Guid.CreateVersion7(), "Ada", "Lovelace", "ada@example.com", "a-password-hash", RoleIds.Customer);
 
-    private static readonly Role CustomerRole = new(RoleIds.Customer, RoleNames.Customer);
-    private static readonly Role AdminRole = new(RoleIds.Admin, RoleNames.Admin);
+    private static Role RoleWith(Guid id, string name, params string[] permissions)
+    {
+        var role = new Role(id, name);
+        foreach (var permission in permissions)
+        {
+            role.Grant(permission);
+        }
+
+        return role;
+    }
+
+    // What the database is seeded with, written out: a customer reads its profile, an admin also reads the roles.
+    private static readonly Role CustomerRole = RoleWith(RoleIds.Customer, RoleNames.Customer, Permissions.ProfileRead);
+    private static readonly Role AdminRole = RoleWith(RoleIds.Admin, RoleNames.Admin, Permissions.RolesRead, Permissions.ProfileRead);
+
+    private static string[] PermissionsIn(JsonWebToken jwt) =>
+        [.. jwt.Claims.Where(claim => string.Equals(claim.Type, JwtClaims.Permission, StringComparison.Ordinal)).Select(claim => claim.Value)];
 
     private static TokenValidationParameters Rules(string key = Key, string issuer = "issuer-x", string audience = "audience-x") => new()
     {
@@ -86,6 +101,65 @@ public class JwtTokenGeneratorTests
         Assert.Equal("Customer", customer.GetClaim(JwtClaims.Role).Value);
         Assert.Equal("Admin", admin.GetClaim(JwtClaims.Role).Value);
     }
+
+    [Fact]
+    public void GenerateToken_CarriesWhatTheRoleMayDo_OneEntryPerPermission_InAStableOrder()
+    {
+        var customer = new JsonWebToken(Generator().GenerateToken(Ada(), CustomerRole));
+        var admin = new JsonWebToken(Generator().GenerateToken(
+            new User(Guid.CreateVersion7(), "Grace", "Hopper", "grace@example.com", "hash", RoleIds.Admin), AdminRole));
+
+        Assert.Equal([Permissions.ProfileRead], PermissionsIn(customer), StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead], PermissionsIn(admin), StringComparer.Ordinal); // sorted, though granted the other way round
+    }
+
+    [Fact]
+    public void GenerateToken_WritesThePermissionsAsAJsonArray_EvenForOne()
+    {
+        var jwt = new JsonWebToken(Generator().GenerateToken(Ada(), CustomerRole));
+
+        Assert.Equal(System.Text.Json.JsonValueKind.Array, jwt.GetPayloadValue<System.Text.Json.JsonElement>(JwtClaims.Permission).ValueKind);
+    }
+
+    [Fact]
+    public void GenerateToken_ForARoleThatGrantsNothing_HasNoPermissionClaim()
+    {
+        var nothing = RoleWith(RoleIds.Customer, RoleNames.Customer);
+
+        var jwt = new JsonWebToken(Generator().GenerateToken(Ada(), nothing));
+
+        Assert.False(jwt.TryGetClaim(JwtClaims.Permission, out _));
+        Assert.Equal("Customer", jwt.GetClaim(JwtClaims.Role).Value); // the role is still named
+    }
+
+    [Fact]
+    public void GenerateToken_LeavesOtherKindsOfClaimOutOfThePermissions()
+    {
+        var role = RoleWith(RoleIds.Customer, RoleNames.Customer, Permissions.ProfileRead);
+        role.AddClaim("department", "kitchen");
+
+        var jwt = new JsonWebToken(Generator().GenerateToken(Ada(), role));
+
+        Assert.Equal([Permissions.ProfileRead], PermissionsIn(jwt), StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public void GenerateToken_EvenForTheLongestEmailAndNames_FitsWhatTheRefreshEndpointAccepts()
+    {
+        // An access token sent as a refresh token must be turned away like any other wrong token, so it has to be short enough
+        // to reach the lookup. The longest values the entities allow give the longest token a user can have.
+        var user = new User(
+            Guid.CreateVersion7(), new string('a', User.MaxNameLength), new string('b', User.MaxNameLength),
+            new string('c', User.MaxEmailLength - 12) + "@example.com", "hash", RoleIds.Admin);
+
+        var token = Generator().GenerateToken(user, AdminRole);
+
+        Assert.InRange(token.Length, 1, GrocerEase.Application.Authentication.Validators.RefreshCommandValidator.MaxRefreshTokenLength);
+    }
+
+    [Fact]
+    public void GenerateToken_WritesThePermissionsUnderTheNameTheClaimsAreStoredAs() =>
+        Assert.Equal(Permissions.ClaimType, JwtClaims.Permission);
 
     [Fact]
     public void GenerateToken_WritesTheRoleUnderTheNameTheValidationParametersReadItBy() =>

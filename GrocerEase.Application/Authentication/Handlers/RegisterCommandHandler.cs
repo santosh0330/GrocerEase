@@ -8,6 +8,7 @@ namespace GrocerEase.Application.Authentication.Handlers;
 
 public sealed class RegisterCommandHandler(
     IUserRepository userRepository,
+    IRoleRepository roleRepository,
     IPasswordHasher passwordHasher,
     IJwtTokenGenerator jwtTokenGenerator,
     RefreshTokenIssuer refreshTokenIssuer) : ICommandHandler<RegisterCommand, Result<AuthenticationResult>>
@@ -23,8 +24,13 @@ public sealed class RegisterCommandHandler(
             return Result.Failure<AuthenticationResult>(AuthenticationErrors.DuplicateEmail);
         }
 
+        // A new user is always a customer. The role is seeded by a migration, so a missing one is a broken database, not something
+        // the caller did wrong: it is an exception (a generic 500 that is logged), not a Result error.
+        var customer = await roleRepository.GetByNameAsync(RoleNames.Customer, cancellationToken)
+            ?? throw new InvalidOperationException($"The seeded role '{RoleNames.Customer}' is missing. Has the database been migrated?");
+
         var user = new User(
-            Guid.CreateVersion7(), command.FirstName, command.LastName, command.Email, passwordHasher.Hash(command.Password));
+            Guid.CreateVersion7(), command.FirstName, command.LastName, command.Email, passwordHasher.Hash(command.Password), customer.Id);
         if (!await userRepository.TryAddAsync(user, cancellationToken))
         {
             // Another registration took the email between the check above and this add.

@@ -25,4 +25,17 @@ internal sealed class FakeUserRepository : IUserRepository
 
         return Task.FromResult(_usersByEmail.TryAdd(user.Email, user));
     }
+
+    public Task<bool> TryChangeRoleAsync(Guid userId, Guid fromRoleId, Guid toRoleId, CancellationToken cancellationToken)
+    {
+        var user = _usersByEmail.Values.SingleOrDefault(candidate => candidate.Id == userId && candidate.RoleId == fromRoleId);
+        if (user is null)
+        {
+            return Task.FromResult(false);
+        }
+
+        // A user is immutable, so the role is changed by replacing the user with one that holds the new role.
+        _usersByEmail[user.Email] = new User(user.Id, user.FirstName, user.LastName, user.Email, user.PasswordHash, toRoleId);
+        return Task.FromResult(true);
+    }
 }

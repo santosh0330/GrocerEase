@@ -20,4 +20,14 @@ public interface IUserRepository
     /// not an exception. Any other failure (the store being unreachable, say) is an exception.
     /// </summary>
     Task<bool> TryAddAsync(User user, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Changes the role a user holds from <paramref name="fromRoleId"/> to <paramref name="toRoleId"/>, and only if the user holds
+    /// <paramref name="fromRoleId"/> at that moment. Returns <c>false</c>, and changes nothing, when there is no such user or the user
+    /// holds another role. It is one statement with the condition inside it, not a read followed by a write, so two requests that
+    /// both saw a customer cannot both change them: the second finds the role already changed. A caller that reads the user first
+    /// is only choosing a good error message; this is what keeps the data right. The role is not an entity here: nothing in the
+    /// domain reads it, and the change must not be overtaken.
+    /// </summary>
+    Task<bool> TryChangeRoleAsync(Guid userId, Guid fromRoleId, Guid toRoleId, CancellationToken cancellationToken);
 }

@@ -59,7 +59,7 @@ public class RoleRepositoryTests
 
         var roles = await new RoleRepository(db).ListAsync(CancellationToken.None);
 
-        Assert.Equal([RoleNames.Admin, RoleNames.Customer], roles.Select(role => role.Name), StringComparer.Ordinal);
+        Assert.Equal([RoleNames.Admin, RoleNames.Customer, RoleNames.StoreUser], roles.Select(role => role.Name), StringComparer.Ordinal);
     }
 
     [Fact]

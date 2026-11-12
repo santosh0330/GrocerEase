@@ -48,9 +48,10 @@ public class RoleTests
     [Fact]
     public void TheSeededIds_AreDistinctVersion7Ids_ThatBuildTheSeededRoles()
     {
-        Assert.NotEqual(RoleIds.Customer, RoleIds.Admin);
+        Assert.Equal(3, new[] { RoleIds.Customer, RoleIds.Admin, RoleIds.StoreUser }.Distinct().Count());
         Assert.Equal(RoleNames.Customer, new Role(RoleIds.Customer, RoleNames.Customer).Name);
         Assert.Equal(RoleNames.Admin, new Role(RoleIds.Admin, RoleNames.Admin).Name);
+        Assert.Equal(RoleNames.StoreUser, new Role(RoleIds.StoreUser, RoleNames.StoreUser).Name);
     }
 
     [Fact]
@@ -115,7 +116,7 @@ public class RoleTests
     [Fact]
     public void RoleNames_All_ListsEveryRoleOnce()
     {
-        Assert.Equal([RoleNames.Customer, RoleNames.Admin], RoleNames.All);
+        Assert.Equal([RoleNames.Customer, RoleNames.Admin, RoleNames.StoreUser], RoleNames.All);
         Assert.All(RoleNames.All, name => Assert.True(name.Length <= Role.MaxNameLength));
     }
 }

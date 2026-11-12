@@ -10,4 +10,6 @@ public static class RoleIds
     public static readonly Guid Customer = new("019e0000-0000-7000-8000-000000000001");
 
     public static readonly Guid Admin = new("019e0000-0000-7000-8000-000000000002");
+
+    public static readonly Guid StoreUser = new("019e0000-0000-7000-8000-000000000003");
 }

@@ -6,7 +6,7 @@ namespace GrocerEase.Infrastructure.Persistence.Configurations;
 
 /// <summary>
 /// How a <see cref="Role"/> maps to the <c>roles</c> table, in the same style as the users table: snake_case, explicit
-/// constraint and index names. It also seeds the two roles the application knows, with fixed ids.
+/// constraint and index names. It also seeds the roles the application knows, with fixed ids.
 /// </summary>
 public sealed class RoleConfiguration : IEntityTypeConfiguration<Role>
 {
@@ -37,6 +37,7 @@ public sealed class RoleConfiguration : IEntityTypeConfiguration<Role>
         // Part of the migration that creates the table, so every database starts with the same two roles under the same ids.
         builder.HasData(
             new Role(RoleIds.Customer, RoleNames.Customer),
-            new Role(RoleIds.Admin, RoleNames.Admin));
+            new Role(RoleIds.Admin, RoleNames.Admin),
+            new Role(RoleIds.StoreUser, RoleNames.StoreUser));
     }
 }

@@ -47,7 +47,7 @@ public class RoleClaimsTableMigrationTests
             """);
 
         Assert.Equal(
-            "Admin:permission=profile.read, Admin:permission=roles.read, Customer:permission=profile.read", granted);
+            "Admin:permission=profile.read, Admin:permission=roles.read, Customer:permission=profile.read, StoreUser:permission=profile.read", granted);
     }
 
     [Fact]
@@ -55,7 +55,7 @@ public class RoleClaimsTableMigrationTests
     {
         var database = await MigratedDatabaseAsync();
 
-        Assert.Equal(3L, await PostgresServer.ScalarAsync<long>(database, "select count(*) from role_claims where uuid_extract_version(id) = 7"));
+        Assert.Equal(4L, await PostgresServer.ScalarAsync<long>(database, "select count(*) from role_claims where uuid_extract_version(id) = 7"));
     }
 
     [Fact]
@@ -137,7 +137,7 @@ public class RoleClaimsTableMigrationTests
         await PostgresServer.ExecuteAsync(database, $"delete from roles where id = '{Cook}'");
 
         Assert.Equal(0L, await PostgresServer.ScalarAsync<long>(database, $"select count(*) from role_claims where role_id = '{Cook}'"));
-        Assert.Equal(3L, await PostgresServer.ScalarAsync<long>(database, "select count(*) from role_claims"));
+        Assert.Equal(4L, await PostgresServer.ScalarAsync<long>(database, "select count(*) from role_claims"));
     }
 
     [Fact]

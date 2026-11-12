@@ -15,7 +15,7 @@ public class ListRolesQueryHandlerTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal(
-            [(RoleIds.Admin, RoleNames.Admin), (RoleIds.Customer, RoleNames.Customer)],
+            [(RoleIds.Admin, RoleNames.Admin), (RoleIds.Customer, RoleNames.Customer), (RoleIds.StoreUser, RoleNames.StoreUser)],
             result.Value.Select(role => (role.Id, role.Name)));
     }
 
@@ -29,6 +29,7 @@ public class ListRolesQueryHandlerTests
         var byName = result.Value.ToDictionary(role => role.Name, role => role.Permissions, StringComparer.Ordinal);
         Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead], byName[RoleNames.Admin], StringComparer.Ordinal);
         Assert.Equal([Permissions.ProfileRead], byName[RoleNames.Customer], StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProfileRead], byName[RoleNames.StoreUser], StringComparer.Ordinal);
     }
 
     [Fact]

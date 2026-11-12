@@ -99,7 +99,7 @@ public class UserRoleMigrationTests
 
         await PostgresServer.ExecuteAsync(database, $"delete from roles where id = '{RoleIds.Admin}'");
 
-        Assert.Equal(1L, await PostgresServer.ScalarAsync<long>(database, "select count(*) from roles"));
+        Assert.Equal(2L, await PostgresServer.ScalarAsync<long>(database, "select count(*) from roles")); // three seeded, one deleted
     }
 
     [Fact]

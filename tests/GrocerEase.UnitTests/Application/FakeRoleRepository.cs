@@ -9,7 +9,7 @@ namespace GrocerEase.UnitTests.Application;
 /// </summary>
 internal sealed class FakeRoleRepository(bool seeded = true) : IRoleRepository
 {
-    private readonly List<Role> _roles = seeded ? [Customer(), Admin()] : [];
+    private readonly List<Role> _roles = seeded ? [Customer(), Admin(), StoreUser()] : [];
 
     /// <summary>What the database is seeded with, written out here so a test says what it expects instead of reading the seed.</summary>
     public static Role Customer()
@@ -24,6 +24,13 @@ internal sealed class FakeRoleRepository(bool seeded = true) : IRoleRepository
         var role = new Role(RoleIds.Admin, RoleNames.Admin);
         role.Grant(Permissions.ProfileRead);
         role.Grant(Permissions.RolesRead);
+        return role;
+    }
+
+    public static Role StoreUser()
+    {
+        var role = new Role(RoleIds.StoreUser, RoleNames.StoreUser);
+        role.Grant(Permissions.ProfileRead);
         return role;
     }
 

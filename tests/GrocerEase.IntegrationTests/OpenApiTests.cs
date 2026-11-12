@@ -44,6 +44,19 @@ public class OpenApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.True(responses.GetProperty("401").GetProperty("content").TryGetProperty("application/problem+json", out _));
     }
 
+    [Fact]
+    public async Task Roles_DeclaresSuccessUnauthorizedAndForbidden_AsProblemJson()
+    {
+        using var client = factory.CreateClient();
+        var json = await client.GetStringAsync(new Uri("/openapi/v1.json", UriKind.Relative));
+        using var document = JsonDocument.Parse(json);
+
+        var responses = document.RootElement.GetProperty("paths").GetProperty("/roles").GetProperty("get").GetProperty("responses");
+
+        Assert.Equal(["200", "401", "403"], Statuses(responses));
+        Assert.True(responses.GetProperty("403").GetProperty("content").TryGetProperty("application/problem+json", out _));
+    }
+
     [Theory]
     [InlineData("/auth/register", "409")]
     [InlineData("/auth/register", "429")]

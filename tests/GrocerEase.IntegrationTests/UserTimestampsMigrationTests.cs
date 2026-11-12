@@ -13,8 +13,11 @@ public class UserTimestampsMigrationTests
 {
     private static string UniqueEmail() => $"ada-{Guid.NewGuid():N}@example.com";
 
-    private static string Insert(string email) =>
-        $"insert into users (first_name, last_name, email, password_hash) values ('Ada', 'Lovelace', '{email}', 'hash')";
+    // A user holds a role once the roles migration has run; before it, the column does not exist.
+    private static string Insert(string email, bool withRole = true) =>
+        withRole
+            ? $"insert into users (first_name, last_name, email, password_hash, role_id) values ('Ada', 'Lovelace', '{email}', 'hash', '{RoleIds.Customer}')"
+            : $"insert into users (first_name, last_name, email, password_hash) values ('Ada', 'Lovelace', '{email}', 'hash')";
 
     [Fact]
     public async Task TheTimestampColumns_AreRequired_HaveATimeZone_AndDefaultToNow()
@@ -78,7 +81,7 @@ public class UserTimestampsMigrationTests
     {
         var database = await PostgresServer.CreateEmptyDatabaseAsync();
         await MigrateAsync(database, AllMigrations()[0]);
-        await PostgresServer.ExecuteAsync(database, Insert("ada@example.com"));
+        await PostgresServer.ExecuteAsync(database, Insert("ada@example.com", withRole: false));
 
         await MigrateAsync(database); // now add the timestamp columns to a table that already holds a user
 
@@ -117,7 +120,7 @@ public class UserTimestampsMigrationTests
     [Fact]
     public async Task EfReadsTheTimestampsBackAfterAnInsert_WithoutTheUserEntityKnowingThem()
     {
-        var user = new User(Guid.CreateVersion7(), "Ada", "Lovelace", UniqueEmail(), "hash");
+        var user = new User(Guid.CreateVersion7(), "Ada", "Lovelace", UniqueEmail(), "hash", RoleIds.Customer);
         await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().Configure(await PostgresServer.ApplicationConnectionStringAsync()).Options);
 
         Assert.True(await new UserRepository(db).TryAddAsync(user, CancellationToken.None));

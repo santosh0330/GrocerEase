@@ -30,7 +30,7 @@ public class JwtValidationParametersTests
 
     private static string TokenIssuedAt(DateTimeOffset now) =>
         new JwtTokenGenerator(Options.Create(Settings), new FixedTimeProvider(now))
-            .GenerateToken(new User(Guid.CreateVersion7(), "Ada", "Lovelace", "ada@example.com", "hash"));
+            .GenerateToken(new User(Guid.CreateVersion7(), "Ada", "Lovelace", "ada@example.com", "hash", RoleIds.Customer));
 
     private static async Task<TokenValidationResult> ValidateAsync(string token) =>
         await new JsonWebTokenHandler().ValidateTokenAsync(token, JwtValidationParameters.From(Settings));

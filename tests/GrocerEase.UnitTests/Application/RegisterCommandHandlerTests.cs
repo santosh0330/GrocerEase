@@ -37,7 +37,7 @@ public class RegisterCommandHandlerTests
     [Fact]
     public async Task Handle_ReturnsARefreshToken_WhoseHashIsStoredForTheNewUser()
     {
-        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
+        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakeRoleRepository(), new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
 
         var result = await handler.Handle(Ada, CancellationToken.None);
 
@@ -52,7 +52,7 @@ public class RegisterCommandHandlerTests
     public async Task Handle_WhenTheEmailIsTaken_StoresNoRefreshToken()
     {
         var repository = new FakeUserRepository();
-        var handler = new RegisterCommandHandler(repository, new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
+        var handler = new RegisterCommandHandler(repository, new FakeRoleRepository(), new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
         await handler.Handle(Ada, CancellationToken.None);
 
         var second = await handler.Handle(Ada, CancellationToken.None);
@@ -66,7 +66,7 @@ public class RegisterCommandHandlerTests
     {
         var repository = new FakeUserRepository();
         var tokens = new StubTokenGenerator();
-        var handler = new RegisterCommandHandler(repository, new FakePasswordHasher(), tokens, _refresh.Issuer);
+        var handler = new RegisterCommandHandler(repository, new FakeRoleRepository(), new FakePasswordHasher(), tokens, _refresh.Issuer);
 
         var result = await handler.Handle(Ada, CancellationToken.None);
 
@@ -86,7 +86,7 @@ public class RegisterCommandHandlerTests
     public async Task Handle_WhenAnotherRegistrationWinsTheRace_ReturnsADuplicateEmailConflictAndNoToken()
     {
         var tokens = new StubTokenGenerator();
-        var handler = new RegisterCommandHandler(new RaceLosingRepository(), new FakePasswordHasher(), tokens, _refresh.Issuer);
+        var handler = new RegisterCommandHandler(new RaceLosingRepository(), new FakeRoleRepository(), new FakePasswordHasher(), tokens, _refresh.Issuer);
 
         var result = await handler.Handle(Ada, CancellationToken.None);
 
@@ -98,7 +98,7 @@ public class RegisterCommandHandlerTests
     [Fact]
     public async Task Handle_ReturnsTheEmailInTheFormItWasStoredIn_LowerCase()
     {
-        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
+        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakeRoleRepository(), new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
 
         var result = await handler.Handle(Ada with { Email = "Ada@Example.COM" }, CancellationToken.None);
 
@@ -106,9 +106,34 @@ public class RegisterCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_GivesTheNewUserTheCustomerRole_NotTheAdminRole()
+    {
+        var repository = new FakeUserRepository();
+        var handler = new RegisterCommandHandler(repository, new FakeRoleRepository(), new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
+
+        await handler.Handle(Ada, CancellationToken.None);
+
+        var stored = await repository.GetByEmailAsync("ada@example.com", CancellationToken.None);
+        Assert.Equal(RoleIds.Customer, stored?.RoleId);
+    }
+
+    [Fact]
+    public async Task Handle_WhenTheCustomerRoleIsMissing_ThrowsBecauseTheDatabaseIsBroken_AndStoresNothing()
+    {
+        var repository = new FakeUserRepository();
+        var handler = new RegisterCommandHandler(repository, new FakeRoleRepository(seeded: false), new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(Ada, CancellationToken.None));
+
+        Assert.Contains(RoleNames.Customer, exception.Message, StringComparison.Ordinal);
+        Assert.Null(await repository.GetByEmailAsync("ada@example.com", CancellationToken.None));
+        Assert.Empty(_refresh.Tokens.Tokens);
+    }
+
+    [Fact]
     public async Task Handle_GivesTheNewUserAVersion7Id()
     {
-        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
+        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakeRoleRepository(), new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
 
         var result = await handler.Handle(Ada, CancellationToken.None);
 
@@ -119,7 +144,7 @@ public class RegisterCommandHandlerTests
     public async Task Handle_StoresTheHashOfThePassword_NotThePassword()
     {
         var repository = new FakeUserRepository();
-        var handler = new RegisterCommandHandler(repository, new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
+        var handler = new RegisterCommandHandler(repository, new FakeRoleRepository(), new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
 
         await handler.Handle(Ada, CancellationToken.None);
 
@@ -133,7 +158,7 @@ public class RegisterCommandHandlerTests
     public async Task Handle_WhenTheEmailIsTaken_ReturnsADuplicateEmailConflictAndStoresNothingNew()
     {
         var repository = new FakeUserRepository();
-        var handler = new RegisterCommandHandler(repository, new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
+        var handler = new RegisterCommandHandler(repository, new FakeRoleRepository(), new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
         await handler.Handle(Ada, CancellationToken.None);
         var original = await repository.GetByEmailAsync("ada@example.com", CancellationToken.None);
 
@@ -148,7 +173,7 @@ public class RegisterCommandHandlerTests
     [Fact]
     public async Task Handle_RejectsNull()
     {
-        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
+        var handler = new RegisterCommandHandler(new FakeUserRepository(), new FakeRoleRepository(), new FakePasswordHasher(), new StubTokenGenerator(), _refresh.Issuer);
 
         await Assert.ThrowsAsync<ArgumentNullException>(() => handler.Handle(null!, CancellationToken.None));
     }

@@ -13,7 +13,7 @@ public class UserRepositoryTests
     private static string UniqueEmail() => $"ada-{Guid.NewGuid():N}@example.com";
 
     private static User NewUser(string? email = null, string firstName = "Ada") =>
-        new(Guid.CreateVersion7(), firstName, "Lovelace", email ?? UniqueEmail(), "a-password-hash");
+        new(Guid.CreateVersion7(), firstName, "Lovelace", email ?? UniqueEmail(), "a-password-hash", RoleIds.Customer);
 
     private static async Task<AppDbContext> NewContextAsync() =>
         new(new DbContextOptionsBuilder<AppDbContext>().Configure(await PostgresServer.ApplicationConnectionStringAsync()).Options);
@@ -32,8 +32,18 @@ public class UserRepositoryTests
 
         Assert.NotNull(found);
         Assert.Equal(
-            (user.Id, user.FirstName, user.LastName, user.Email, user.PasswordHash),
-            (found.Id, found.FirstName, found.LastName, found.Email, found.PasswordHash));
+            (user.Id, user.FirstName, user.LastName, user.Email, user.PasswordHash, user.RoleId),
+            (found.Id, found.FirstName, found.LastName, found.Email, found.PasswordHash, found.RoleId));
+    }
+
+    [Fact]
+    public async Task AUserWhoseRoleDoesNotExist_IsAnException_NotADuplicateEmail()
+    {
+        var user = new User(Guid.CreateVersion7(), "Ada", "Lovelace", UniqueEmail(), "a-password-hash", Guid.CreateVersion7());
+        await using var db = await NewContextAsync();
+
+        // The foreign key refuses the row. That is a bug, not "the email is taken", so it must not come back as false.
+        await Assert.ThrowsAsync<DbUpdateException>(() => new UserRepository(db).TryAddAsync(user, CancellationToken.None));
     }
 
     [Fact]
@@ -88,7 +98,7 @@ public class UserRepositoryTests
         var repository = new UserRepository(db);
         Assert.True(await repository.TryAddAsync(first, CancellationToken.None));
 
-        var second = new User(Guid.CreateVersion7(), "Other", "Person", first.Email.ToUpperInvariant(), "another-hash");
+        var second = new User(Guid.CreateVersion7(), "Other", "Person", first.Email.ToUpperInvariant(), "another-hash", RoleIds.Customer);
         Assert.False(await repository.TryAddAsync(second, CancellationToken.None));
 
         await using var check = await NewContextAsync();
@@ -130,7 +140,7 @@ public class UserRepositoryTests
     public async Task ADuplicateId_IsNotMistakenForADuplicateEmail_ItIsAnError()
     {
         var first = NewUser();
-        var sameIdOtherEmail = new User(first.Id, "Other", "Person", UniqueEmail(), "another-hash");
+        var sameIdOtherEmail = new User(first.Id, "Other", "Person", UniqueEmail(), "another-hash", RoleIds.Customer);
         await using (var db = await NewContextAsync())
         {
             await new UserRepository(db).TryAddAsync(first, CancellationToken.None);

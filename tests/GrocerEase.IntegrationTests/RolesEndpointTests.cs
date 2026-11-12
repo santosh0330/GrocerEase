@@ -82,9 +82,9 @@ public class RolesEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(
             [(RoleIds.Admin, RoleNames.Admin), (RoleIds.Customer, RoleNames.Customer), (RoleIds.StoreUser, RoleNames.StoreUser)],
             roles.Select(role => (role.Id, role.Name)));
-        Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead], roles[0].Permissions, StringComparer.Ordinal);
-        Assert.Equal([Permissions.ProfileRead], roles[1].Permissions, StringComparer.Ordinal);
-        Assert.Equal([Permissions.ProfileRead], roles[2].Permissions, StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresManage, Permissions.StoresRead], roles[0].Permissions, StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProfileRead, Permissions.StoresRead], roles[1].Permissions, StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProfileRead, Permissions.StoresRead], roles[2].Permissions, StringComparer.Ordinal);
     }
 
     [Fact]
@@ -102,7 +102,7 @@ public class RolesEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         Assert.Equal(RoleNames.StoreUser, token.GetClaim(JwtClaims.Role).Value);
         Assert.Equal(
-            [Permissions.ProfileRead],
+            [Permissions.ProfileRead, Permissions.StoresRead],
             token.Claims.Where(claim => string.Equals(claim.Type, JwtClaims.Permission, StringComparison.Ordinal)).Select(claim => claim.Value),
             StringComparer.Ordinal);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);

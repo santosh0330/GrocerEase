@@ -7,6 +7,9 @@ using GrocerEase.Application.Common;
 using GrocerEase.Application.Decorators;
 using GrocerEase.Application.Roles.Common;
 using GrocerEase.Application.Roles.Queries;
+using GrocerEase.Application.Stores.Commands;
+using GrocerEase.Application.Stores.Common;
+using GrocerEase.Application.Stores.Queries;
 using GrocerEase.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -59,6 +62,12 @@ public class ApplicationDependencyInjectionTests
             scope.ServiceProvider.GetRequiredService<ICommandHandler<RefreshCommand, Result<AuthenticationResult>>>());
         Assert.IsType<ValidationDecorator<ListRolesQuery, Result<IReadOnlyList<RoleResult>>>>(
             scope.ServiceProvider.GetRequiredService<ICommandHandler<ListRolesQuery, Result<IReadOnlyList<RoleResult>>>>());
+        Assert.IsType<ValidationDecorator<CreateStoreCommand, Result<StoreResult>>>(
+            scope.ServiceProvider.GetRequiredService<ICommandHandler<CreateStoreCommand, Result<StoreResult>>>());
+        Assert.IsType<ValidationDecorator<GetStoreQuery, Result<StoreResult>>>(
+            scope.ServiceProvider.GetRequiredService<ICommandHandler<GetStoreQuery, Result<StoreResult>>>());
+        Assert.IsType<ValidationDecorator<ListStoresQuery, Result<IReadOnlyList<StoreResult>>>>(
+            scope.ServiceProvider.GetRequiredService<ICommandHandler<ListStoresQuery, Result<IReadOnlyList<StoreResult>>>>());
     }
 
     [Fact]

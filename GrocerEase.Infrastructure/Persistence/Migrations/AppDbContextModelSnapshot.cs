@@ -89,6 +89,44 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GrocerEase.Domain.Entities.Role", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuidv7()");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_roles");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_roles_name");
+
+                    b.ToTable("roles", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_roles_id_is_uuid_v7", "uuid_extract_version(id) = 7");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000001"),
+                            Name = "Customer"
+                        },
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000002"),
+                            Name = "Admin"
+                        });
+                });
+
             modelBuilder.Entity("GrocerEase.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")

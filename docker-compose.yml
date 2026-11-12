@@ -31,13 +31,10 @@ services:
       # Becomes the Jwt:SecretKey setting ("__" is how an environment variable names a nested key). The API refuses
       # to start if it is missing or shorter than 32 characters. It lives in .env, never in a committed file.
       Jwt__SecretKey: ${JWT_SECRET_KEY:?set JWT_SECRET_KEY in .env}
-      # Logs go to the console, to daily JSON files in /app/logs (the api-logs volume below), and to Seq. Seq is not in depends_on on
-      # purpose: logging must never be a reason for the API not to start, and the API keeps answering if Seq is stopped. Seq only
-      # receives what is sent while it is up; the files have everything.
+      # Logs go to the console ("docker compose logs api") and to Seq. The image writes no log files (see its Dockerfile). Seq is not in
+      # depends_on on purpose: logging must never be a reason for the API not to start, and the API keeps answering if Seq is stopped.
+      # Seq only receives what is sent while it is up; the console output is what Docker kept meanwhile.
       Seq__ServerUrl: http://seq:5341
-      LogFiles__Directory: /app/logs
-    volumes:
-      - api-logs:/app/logs
     depends_on:
       db:
         condition: service_healthy
@@ -114,6 +111,4 @@ services:
 
 volumes:
   db-data:
-  # The API's log files, so they survive the container being recreated.
-  api-logs:
   seq-data:

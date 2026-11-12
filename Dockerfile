@@ -51,9 +51,11 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 COPY --from=build /app/publish .
 
-# Where the API writes its log files (LogFiles__Directory in docker-compose.yml). Created here, owned by the user the API runs as, so a
-# named volume mounted on it starts out writable by that user: the API never runs as root and cannot create folders in /app.
-RUN mkdir -p /app/logs && chown "$APP_UID" /app/logs
+# A container logs to its console (stdout) and the platform keeps, rotates and ships that output: Docker's logging driver, or whatever
+# runs the image later. The API runs as a user that can write nowhere in /app, so the image turns the log files off instead of
+# creating a folder and a volume for them. To get files anyway, run the image with LogFiles__Enabled=true and a LogFiles__Directory
+# on a volume the "app" user can write to.
+ENV LogFiles__Enabled=false
 
 # The base image ships a non-root user named "app" and exposes its id as $APP_UID.
 # Everything after this line runs as that user. Non-root cannot bind ports below

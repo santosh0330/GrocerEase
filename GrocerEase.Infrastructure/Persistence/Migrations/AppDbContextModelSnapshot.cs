@@ -258,6 +258,37 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GrocerEase.Domain.Entities.StoreMember", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuidv7()");
+
+                    b.Property<Guid>("StoreId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("store_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_store_members");
+
+                    b.HasIndex("StoreId")
+                        .HasDatabaseName("ix_store_members_store_id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_store_members_user_id");
+
+                    b.ToTable("store_members", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_store_members_id_is_uuid_v7", "uuid_extract_version(id) = 7");
+                        });
+                });
+
             modelBuilder.Entity("GrocerEase.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -339,6 +370,23 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_role_claims_roles_role_id");
+                });
+
+            modelBuilder.Entity("GrocerEase.Domain.Entities.StoreMember", b =>
+                {
+                    b.HasOne("GrocerEase.Domain.Entities.Store", null)
+                        .WithMany()
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_store_members_stores_store_id");
+
+                    b.HasOne("GrocerEase.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_store_members_users_user_id");
                 });
 
             modelBuilder.Entity("GrocerEase.Domain.Entities.User", b =>

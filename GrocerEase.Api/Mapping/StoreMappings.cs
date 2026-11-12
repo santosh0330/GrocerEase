@@ -18,4 +18,16 @@ public static class StoreMappings
         ArgumentNullException.ThrowIfNull(result);
         return new StoreResponse(result.Id, result.Name, result.Address);
     }
+
+    public static AssignStoreMemberCommand ToCommand(this AssignStoreMemberRequest request, Guid storeId)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return new AssignStoreMemberCommand(storeId, request.Email);
+    }
+
+    public static StoreMemberResponse ToResponse(this StoreMemberResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        return new StoreMemberResponse(result.StoreId, result.UserId, result.FirstName, result.LastName, result.Email);
+    }
 }

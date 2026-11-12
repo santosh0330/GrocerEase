@@ -39,6 +39,9 @@ public static class DependencyInjection
         services.AddValidatedCommandHandler<GetStoreQuery, Result<StoreResult>, GetStoreQueryHandler>();
         services.AddValidatedCommandHandler<ListStoresQuery, Result<IReadOnlyList<StoreResult>>, ListStoresQueryHandler>();
 
+        // Writes a membership and a role, which must be kept together or not at all.
+        services.AddTransactionalCommandHandler<AssignStoreMemberCommand, Result<StoreMemberResult>, AssignStoreMemberCommandHandler>();
+
         return services;
     }
 

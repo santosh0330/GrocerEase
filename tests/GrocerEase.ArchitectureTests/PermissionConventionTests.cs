@@ -6,9 +6,10 @@ using NetArchTest.Rules;
 namespace GrocerEase.ArchitectureTests;
 
 /// <summary>
-/// How a controller says who may call it. A policy that names a permission nobody holds (a typo, or a permission that was renamed)
-/// locks every caller out without a single error, and a role name in a guard brings back what permissions replaced: the endpoint
-/// would change whenever the roles are reshuffled.
+/// How a controller says who may call it. A policy name that matches no registered policy (a typo, or a permission that was
+/// renamed) makes ASP.NET Core throw: every request to that route becomes a <c>500</c>, even one with no token (tried it). The
+/// failure is loud, but it is found by someone calling the route, so it is better found here. And a role name in a guard brings back
+/// what permissions replaced: the endpoint would change whenever the roles are reshuffled.
 /// </summary>
 public class PermissionConventionTests
 {
@@ -35,7 +36,7 @@ public class PermissionConventionTests
 
         Assert.True(
             offenders.Count == 0,
-            $"[Authorize(Policy = ...)] must name a permission from Permissions.All, or no caller is ever let in: {string.Join(", ", offenders)}");
+            $"[Authorize(Policy = ...)] must name a permission from Permissions.All, or every request to that route fails with a 500: {string.Join(", ", offenders)}");
     }
 
     [Fact]

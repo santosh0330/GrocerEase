@@ -34,7 +34,7 @@ Check it: `curl http://localhost:8080/test` returns `test`.
 | `docker compose up --build -d` | Rebuild and start in the background |
 | `docker compose logs -f api` | Follow the API log |
 | `docker compose down` | Stop and remove the containers; **the database data is kept** |
-| `docker compose down -v` | Same, and **delete the volumes**: the database, the API's log files and Seq's data |
+| `docker compose down -v` | Same, and **delete the volumes**: the database and Seq's data |
 
 The API and database containers run as non-root users (`app` for the API, `postgres` for the database) with all Linux capabilities dropped, and CI checks it. The database port is published on loopback only. Seq, a third-party image, is the exception (see *Logging*): it runs as root, and only its port is limited to loopback.
 
@@ -203,12 +203,12 @@ The project changes is going to be documented as md files on `~/Documents/Guides
 
 ## Logging
 
-The API writes **structured** logs with [Serilog](https://serilog.net): every event keeps its values as named properties (`StatusCode`, `Elapsed`, ...), not only as a line of text, so they can be filtered and counted, not just read. Three places receive the same events:
+The API writes **structured** logs with [Serilog](https://serilog.net): every event keeps its values as named properties (`StatusCode`, `Elapsed`, ...), not only as a line of text, so they can be filtered and counted, not just read. Up to three places receive the same events:
 
 | Where | Form | For |
 |---|---|---|
-| **Console** (`docker compose logs api`) | one readable line per event, then its properties as JSON | watching the API run |
-| **Files** (`/app/logs` in the `api-logs` volume, or `logs/` when run with `dotnet run`) | one JSON document per line, **a new file every day**: `grocerease-20261110.log` | the record, and `jq` |
+| **Console** (`docker compose logs api`, or the terminal of `dotnet run`) | one readable line per event, then its properties as JSON | watching the API run. In Docker this is the record: Docker keeps the last 30 MB per service |
+| **Files** (`logs/`, **only when the API runs outside Docker**, for example `dotnet run`) | one JSON document per line, **a new file every day**: `grocerease-20261110.log` | `jq` and `grep` on a machine where nothing else collects the logs. The container writes none |
 | **Seq** (`http://localhost:5341`) | searchable events | finding things |
 
 Levels come from `Serilog:MinimumLevel` in `appsettings.json`: `Information`, with the framework's own chatter (`Microsoft`, `System`) at `Warning`. `appsettings.Development.json` lowers the default to `Debug`.
@@ -241,23 +241,36 @@ When a response has been sent, the API logs **one** event that says what was ask
 
 **What is never logged,** on purpose: request and response **bodies** (passwords, access tokens and refresh tokens are in them), the **`Authorization` header** and cookies, and the **query string** (a URL is where people put values they should not). Tests send canary secrets through every path and search the console, the files and what Seq receives for them. If a request needs more detail to debug, add the one property it needs: do not turn on body logging.
 
-`ClientIp`, `UserId` and `UserAgent` identify people. Treat the logs as personal data: files are kept 14 days by default (below), and Seq is for the developers of this API.
+`ClientIp`, `UserId` and `UserAgent` identify people. Treat the logs as personal data: files, when they are on, are kept 14 days by default (below), Docker keeps only the last 30 MB of console output, and Seq is for the developers of this API.
 
 ### Files
 
 | Setting (`LogFiles:`) | Default | Meaning |
 |---|---|---|
-| `Directory` | `logs` (`/app/logs` in Compose) | where the files go; created if missing. Relative paths are relative to the working directory |
+| `Enabled` | `true` (the container image sets `false`) | whether files are written at all. When `false` no file or folder is created |
+| `Directory` | `logs` | where the files go; created if missing. Relative paths are relative to the working directory |
 | `RetainedDays` | `14` | files older than this are deleted when the next file is opened. `1`-`365` |
 | `MaxFileSizeKilobytes` | `102400` (100 MB) | a day's file that reaches this is closed and a numbered one started (`grocerease-20261110_001.log`). `64`-`1048576` |
 
 The API refuses to start with a value outside these ranges. Several writers (two instances on one volume) can share a file; lines are never cut in half.
 
 ```bash
-# the failed requests of today, slowest first
-docker compose exec api sh -c 'cat /app/logs/grocerease-*.log' \
+# the failed requests so far, from the files of a `dotnet run` (the `logs/` folder of the directory you ran it in)
+cat logs/grocerease-*.log \
   | jq -c 'select(.Properties.StatusCode >= 400) | {t: .Timestamp, m: .Properties.RequestMethod, p: .Properties.RequestPath, s: .Properties.StatusCode, ms: .Properties.Elapsed}'
 ```
+
+### In Docker: the console, not files
+
+The container **writes no log files**. A container's job is to write to its console and leave keeping, rotating and shipping to whatever runs it, so the image sets `LogFiles__Enabled=false` and Compose has no log volume. What Docker keeps is bounded: every service in `docker-compose.yml` keeps at most **3 files of 10 MB** (`x-default-logging`), and CI checks that no service is left without it (Docker's default has no limit). That is also what you have while Seq is down:
+
+```bash
+docker compose logs api | grep -E '\[[^]]* (WRN|ERR|FTL)\]'     # warnings and errors, newest 30 MB at most
+```
+
+For a longer record use Seq. To get files from the image anyway, run it with `LogFiles__Enabled=true` and `LogFiles__Directory` on a volume that the `app` user can write to.
+
+If you ran an earlier version of this stack, its log volume is no longer used: `docker volume ls` shows it (named like `grocerease_api-logs`) and `docker volume rm` deletes it.
 
 ### Seq
 
@@ -275,6 +288,6 @@ docker compose up -d seq        # the UI is at http://localhost:5341
 | `UserId = '0192f1a2-...'` | everything one user did |
 | `TraceId = '80bf0f04...'` | one request, and everything the application logged while handling it |
 
-- **Seq never slows the API or stops it.** Events are sent in the background in batches. If Seq is stopped or unreachable the API keeps answering, and the console and files still have everything; events past the sink's in-memory limit are dropped. When the API stops it posts what it still holds, so the last events before a shutdown are not lost.
+- **Seq never slows the API or stops it.** Events are sent in the background in batches. If Seq is stopped or unreachable the API keeps answering, and the console still has the newest 30 MB of events in Docker (and the files too, when they are on); events past the sink's in-memory limit are dropped. When the API stops it posts what it still holds, so the last events before a shutdown are not lost.
 - **Local development only, as configured here.** The Compose `seq` service has **no login** (Seq 2026 refuses to start without either an admin password or an explicit opt-out; `SEQ_FIRSTRUN_NOAUTHENTICATION: "true"` is that opt-out) and its ports are on `127.0.0.1` only, like the database. CI checks that no Seq port is published on another address. The image runs as root and does not start with its capabilities dropped, so it has less hardening than the other services. For anything shared: remove the opt-out, set `SEQ_FIRSTRUN_ADMINPASSWORDHASH` (the hash: `echo 'a password' | docker run --rm -i datalust/seq config hash`), create an API key in Seq, and give it to the API as `Seq__ApiKey` (a secret: user-secrets or the environment, never a committed file). These settings apply only when the data volume is first created.
 - **`ACCEPT_EULA: "Y"`** in `docker-compose.yml` accepts Seq's license agreement, which the image requires; Seq is free for individual use.

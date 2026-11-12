@@ -162,3 +162,43 @@ The limit is per client **address**. Behind a reverse proxy or load balancer eve
 
 The project changes is going to be documented as md files on `~/Documents/Guides to Great SW/Better NCC DEV/Applications/GrocerEase`
 
+
+## Logging
+
+The API writes **structured** logs with [Serilog](https://serilog.net): every event keeps its values as named properties (`StatusCode`, `Elapsed`, ...), not only as a line of text, so they can be filtered and counted, not just read. For now they go to the **console** (`docker compose logs api`, or the terminal of `dotnet run`): one readable line per event, then its properties as JSON. Files and Seq come in the next steps.
+
+Levels come from `Serilog:MinimumLevel` in `appsettings.json`: `Information`, with the framework's own chatter (`Microsoft`, `System`) at `Warning`. `appsettings.Development.json` lowers the default to `Debug`.
+
+### One event per request
+
+When a response has been sent, the API logs **one** event that says what was asked and what was answered. A line of the console, from a real request (the properties are wrapped here to read them; the console prints them on the same line):
+
+```text
+[2026-11-13 01:38:39.327 +05:45 WRN] Serilog.AspNetCore.RequestLoggingMiddleware: HTTP POST /auth/login responded 400 in 263.8646 ms
+    {"RequestHost": "127.0.0.1:18084",
+     "RequestScheme": "http",
+     "Protocol": "HTTP/1.1",
+     "Endpoint": null,
+     "ClientIp": "127.0.0.1",
+     "UserAgent": "curl/8.18.0",
+     "RequestContentType": "application/json",
+     "RequestContentLength": 41,
+     "ResponseContentType": "application/problem+json",
+     "ResponseContentLength": null,
+     "ResponseBytes": 242,
+     "RequestId": "0HNQ0UQIKJUGP:00000001",
+     "ConnectionId": "0HNQ0UQIKJUGP",
+     "TraceId": "9ff5853f94959575da4340193597b686",
+     "SpanId": "c8a7c5560ac4edbf",
+     "Application": "GrocerEase.Api",
+     "Environment": "Development",
+     "MachineName": "SPC"}
+```
+
+- **When it was logged:** `Timestamp`, with its UTC offset. **What was asked:** `RequestMethod`, `RequestPath`, `RequestHost`, `RequestScheme`, `Protocol`, `Endpoint` (the controller action that handled it), `ClientIp`, `UserAgent`, `RequestContentType`, `RequestContentLength`. **Who:** `UserId` (the `sub` of the access token) for a signed-in request, absent for an anonymous one. **What was answered:** `StatusCode`, `ResponseContentType`, `ResponseBytes` (the bytes actually written; a streamed JSON answer has no `Content-Length`), `Elapsed` in milliseconds.
+- **The level says how it went:** `Information` for a success, `Warning` for a refused request (any `4xx`: bad input, wrong credentials, a rate limit), `Error` for a `5xx`. The health probes are `Debug` when healthy (Docker asks every 10 seconds) and `Warning` when not.
+- **A failure keeps its exception.** An unhandled exception is logged by its own event (`Level: Error`, the exception with its full stack trace), and the request's event is the `500`. Both carry the same **`RequestId`** and **`TraceId`**, and the `traceId` in the `500` response body contains the same trace id: a user's report leads to the exact log lines. Events the application writes while handling a request (a revoked refresh token family, say) carry them too.
+
+**What is never logged,** on purpose: request and response **bodies** (passwords, access tokens and refresh tokens are in them), the **`Authorization` header** and cookies, and the **query string** (a URL is where people put values they should not). Tests send canary secrets through every path and search everything the application wrote for them. If a request needs more detail to debug, add the one property it needs: do not turn on body logging.
+
+`ClientIp`, `UserId` and `UserAgent` identify people. Treat the logs as personal data.

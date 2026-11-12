@@ -36,6 +36,7 @@ public class DependencyInjectionTests
 
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IUserRepository>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IRefreshTokenRepository>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IPasswordHasher>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IJwtTokenGenerator>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IRefreshTokenGenerator>());
@@ -82,6 +83,20 @@ public class DependencyInjectionTests
 
         Assert.Same(inFirst, first.ServiceProvider.GetRequiredService<IUserRepository>());
         Assert.NotSame(inFirst, second.ServiceProvider.GetRequiredService<IUserRepository>());
+    }
+
+    [Fact]
+    public void TheUnitOfWorkIsScoped_SoItBeginsATransactionOnTheContextOfTheRequest()
+    {
+        using var provider = Build(ValidSettings());
+        using var first = provider.CreateScope();
+        using var second = provider.CreateScope();
+
+        var inFirst = first.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+        Assert.IsType<EfUnitOfWork>(inFirst);
+        Assert.Same(inFirst, first.ServiceProvider.GetRequiredService<IUnitOfWork>());
+        Assert.NotSame(inFirst, second.ServiceProvider.GetRequiredService<IUnitOfWork>());
     }
 
     [Fact]

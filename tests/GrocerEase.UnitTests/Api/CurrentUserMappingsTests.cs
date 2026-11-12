@@ -16,6 +16,7 @@ public class CurrentUserMappingsTests
         ("given_name", "Ada"),
         ("family_name", "Lovelace"),
         ("email", "ada@example.com"),
+        ("role", "Customer"),
     ];
 
     [Fact]
@@ -24,7 +25,17 @@ public class CurrentUserMappingsTests
         var response = Principal(AllClaims()).ToCurrentUserResponse();
 
         Assert.NotNull(response);
-        Assert.Equal((UserId, "Ada", "Lovelace", "ada@example.com"), (response.Id, response.FirstName, response.LastName, response.Email));
+        Assert.Equal(
+            (UserId, "Ada", "Lovelace", "ada@example.com", "Customer"),
+            (response.Id, response.FirstName, response.LastName, response.Email, response.Role));
+    }
+
+    [Fact]
+    public void TheRole_IsTheOneTheTokenNames()
+    {
+        var claims = AllClaims().Select(c => string.Equals(c.Item1, "role", StringComparison.Ordinal) ? (c.Item1, "Admin") : c).ToArray();
+
+        Assert.Equal("Admin", Principal(claims).ToCurrentUserResponse()?.Role);
     }
 
     [Theory]
@@ -32,6 +43,7 @@ public class CurrentUserMappingsTests
     [InlineData("given_name")]
     [InlineData("family_name")]
     [InlineData("email")]
+    [InlineData("role")]
     public void AMissingClaim_MeansTheTokenDoesNotIdentifyAUser(string missing)
     {
         var claims = AllClaims().Where(c => !string.Equals(c.Item1, missing, StringComparison.Ordinal)).ToArray();
@@ -49,10 +61,12 @@ public class CurrentUserMappingsTests
         Assert.Null(Principal(claims).ToCurrentUserResponse());
     }
 
-    [Fact]
-    public void ABlankClaim_MeansTheTokenDoesNotIdentifyAUser()
+    [Theory]
+    [InlineData("email")]
+    [InlineData("role")]
+    public void ABlankClaim_MeansTheTokenDoesNotIdentifyAUser(string blank)
     {
-        var claims = AllClaims().Select(c => string.Equals(c.Item1, "email", StringComparison.Ordinal) ? (c.Item1, " ") : c).ToArray();
+        var claims = AllClaims().Select(c => string.Equals(c.Item1, blank, StringComparison.Ordinal) ? (c.Item1, " ") : c).ToArray();
 
         Assert.Null(Principal(claims).ToCurrentUserResponse());
     }
@@ -62,7 +76,7 @@ public class CurrentUserMappingsTests
     {
         // With claim mapping off, "sub" stays "sub". A principal that only has the mapped URI would not be ours.
         var principal = Principal(
-            (ClaimTypes.NameIdentifier, UserId.ToString()), ("given_name", "Ada"), ("family_name", "Lovelace"), ("email", "ada@example.com"));
+            (ClaimTypes.NameIdentifier, UserId.ToString()), ("given_name", "Ada"), ("family_name", "Lovelace"), ("email", "ada@example.com"), ("role", "Customer"));
 
         Assert.Null(principal.ToCurrentUserResponse());
     }

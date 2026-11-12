@@ -18,6 +18,13 @@ public class LogFileSettingsTests
     [Fact]
     public void TheDefaults_AreValid() => Assert.Empty(Validate(Settings()));
 
+    [Fact]
+    public void FilesAreOnUnlessTheyAreTurnedOff() => Assert.True(new LogFileSettings().Enabled);
+
+    [Fact]
+    public void TurningFilesOff_DoesNotExcuseABadValue_SoSwitchingThemBackOnNeverFailsLater() =>
+        Assert.Single(Validate(new LogFileSettings { Enabled = false, Directory = "logs", RetainedDays = 0, MaxFileSizeKilobytes = 102_400 }));
+
     [Theory]
     [InlineData(1)]
     [InlineData(365)]

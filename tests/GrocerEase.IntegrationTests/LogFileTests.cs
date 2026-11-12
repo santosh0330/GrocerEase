@@ -35,10 +35,15 @@ public sealed class LogFileTests(ApiFactory factory) : IClassFixture<ApiFactory>
         }
     }
 
-    private WebApplicationFactory<Program> WithFiles(string? retainedDays = null, string? maxKilobytes = null, string? directory = null) =>
+    private WebApplicationFactory<Program> WithFiles(string? retainedDays = null, string? maxKilobytes = null, string? directory = null, string? enabled = null) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, config) =>
         {
             var settings = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["LogFiles:Directory"] = directory ?? _directory };
+            if (enabled is not null)
+            {
+                settings["LogFiles:Enabled"] = enabled;
+            }
+
             if (retainedDays is not null)
             {
                 settings["LogFiles:RetainedDays"] = retainedDays;
@@ -139,6 +144,41 @@ public sealed class LogFileTests(ApiFactory factory) : IClassFixture<ApiFactory>
         }
 
         Assert.Single(LogFiles(nested));
+    }
+
+    [Fact]
+    public async Task WithFilesTurnedOff_NoFileAndNoFolderIsCreated_AndTheOtherSinksStillReceiveEverything()
+    {
+        var nested = Path.Combine(_directory, "never-created");
+        var sink = new CapturingLogSink();
+
+        using (var app = WithFiles(directory: nested, enabled: "false").WithCapturedLogs(sink))
+        {
+            using var client = app.CreateClient();
+            await RegisterAsync(client);
+        }
+
+        Assert.False(Directory.Exists(nested));
+        Assert.Contains(sink.Events, e => string.Equals(CapturingLogSink.Text(e, "RequestPath"), "/auth/register", StringComparison.Ordinal)
+            && string.Equals(CapturingLogSink.Text(e, "StatusCode"), "200", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("true")]
+    [InlineData("false")]
+    public async Task AFolderThatCanNeverBeWritten_NeverStopsTheApp_WhetherFilesAreOnOrOff(string enabled)
+    {
+        // The situation in a container whose user can write nowhere. A folder under a file can never be created. With files on, the
+        // file sink fails quietly and drops its events; the API must keep answering either way. With files off, the path is not touched.
+        Directory.CreateDirectory(_directory);
+        var blocker = Path.Combine(_directory, "a-file");
+        await File.WriteAllTextAsync(blocker, "not a folder");
+
+        using var app = WithFiles(directory: Path.Combine(blocker, "logs"), enabled: enabled);
+        using var client = app.CreateClient();
+        var response = await client.GetAsync(new Uri("/health/live", UriKind.Relative));
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
@@ -282,6 +322,7 @@ public sealed class LogFileTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         var settings = app.Services.GetRequiredService<IOptions<GrocerEase.Api.Logging.LogFileSettings>>().Value;
 
+        Assert.True(settings.Enabled);
         Assert.Equal(ApiFactory.TestLogDirectory, settings.Directory); // the test factory's own folder
         Assert.Equal(14, settings.RetainedDays);
         Assert.Equal(102_400, settings.MaxFileSizeKilobytes);

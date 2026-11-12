@@ -223,6 +223,7 @@ get() { curl -sS -o "$work/get.json" -w '%{http_code}' "http://localhost:8080$1"
 expect "the token of a new user says Customer" "$(jwt_claim "$customer_token" role)" "Customer"
 expect "and carries what a customer may do" "$(jwt_claim_json "$customer_token" permission)" '["profile.read"]'
 expect "GET /me shows the role" "$(get /me "$customer_token" > /dev/null; jq -r .role "$work/get.json")" "Customer"
+expect "GET /me shows what the role may do" "$(jq -c .permissions "$work/get.json")" '["profile.read"]'
 expect "GET /roles with no token" "$(get /roles)" "401"
 expect "GET /roles as a customer" "$(get /roles "$customer_token")" "403"
 expect "the refusal has a stable code" "$(jq -r .code "$work/get.json")" "Authorization.Forbidden"
@@ -235,7 +236,9 @@ expect "the new token says Admin" "$(jwt_claim "$admin_token" role)" "Admin"
 expect "and carries what an admin may do" "$(jwt_claim_json "$admin_token" permission)" '["profile.read","roles.read"]'
 expect "GET /roles as an admin" "$(get /roles "$admin_token")" "200"
 expect "GET /roles lists both roles" "$(jq -r '[.[].name] | join(",")' "$work/get.json")" "Admin,Customer"
+expect "GET /roles says what each role may do" "$(jq -c '[.[] | {name, permissions}]' "$work/get.json")" '[{"name":"Admin","permissions":["profile.read","roles.read"]},{"name":"Customer","permissions":["profile.read"]}]'
 expect "GET /me shows the new role" "$(get /me "$admin_token" > /dev/null; jq -r .role "$work/get.json")" "Admin"
+expect "and the new permissions" "$(jq -c .permissions "$work/get.json")" '["profile.read","roles.read"]'
 
 step "health: /health includes the database, /health/live does not"
 expect "/health status" "$(curl -sS -o "$work/health.json" -w '%{http_code}' http://localhost:8080/health)" "200"

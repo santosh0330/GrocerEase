@@ -9,6 +9,6 @@ public static class RoleMappings
     public static RoleResponse ToResponse(this RoleResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
-        return new RoleResponse(result.Id, result.Name);
+        return new RoleResponse(result.Id, result.Name, result.Permissions);
     }
 }

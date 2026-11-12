@@ -17,7 +17,7 @@ public sealed class ListRolesQueryHandler(IRoleRepository roleRepository)
         ArgumentNullException.ThrowIfNull(command);
 
         var roles = await roleRepository.ListAsync(cancellationToken);
-        IReadOnlyList<RoleResult> results = [.. roles.Select(role => new RoleResult(role.Id, role.Name))];
+        IReadOnlyList<RoleResult> results = [.. roles.Select(role => new RoleResult(role.Id, role.Name, role.GrantedPermissions))];
         return Result.Success(results);
     }
 }

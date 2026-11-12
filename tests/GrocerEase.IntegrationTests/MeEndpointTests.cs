@@ -43,6 +43,7 @@ public class MeEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var me = await response.Content.ReadFromJsonAsync<CurrentUserResponse>();
         Assert.Equal((registered.Id, "Ada", "Lovelace", email, "Customer"), (me!.Id, me.FirstName, me.LastName, me.Email, me.Role));
+        Assert.Equal(["profile.read"], me.Permissions, StringComparer.Ordinal);
     }
 
     [Fact]
@@ -72,6 +73,7 @@ public class MeEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var me = await (await client.SendAsync(request)).Content.ReadFromJsonAsync<CurrentUserResponse>();
 
         Assert.Equal("Admin", me!.Role);
+        Assert.Equal(["profile.read", "roles.read"], me.Permissions, StringComparer.Ordinal);
     }
 
     [Fact]
@@ -91,7 +93,7 @@ public class MeEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task TheResponse_HasExactlyTheFiveFields_AndNeverATokenOrAPasswordHash()
+    public async Task TheResponse_HasExactlyTheSixFields_AndNeverATokenOrAPasswordHash()
     {
         using var client = factory.CreateClient();
         var registered = await (await RegisterAsync(client, "203.0.113.83")).Content.ReadFromJsonAsync<AuthenticationResponse>();
@@ -100,7 +102,7 @@ public class MeEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         using var body = JsonDocument.Parse(await (await client.SendAsync(request)).Content.ReadAsStringAsync());
 
         Assert.Equal(
-            ["email", "firstName", "id", "lastName", "role"],
+            ["email", "firstName", "id", "lastName", "permissions", "role"],
             body.RootElement.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal).ToArray(),
             StringComparer.Ordinal);
     }

@@ -1,6 +1,15 @@
 # Local development stack: the API, its PostgreSQL database, and Seq for searching the API's logs.
 #   cp .env.example .env     (then set the passwords and JWT_SECRET_KEY)
 #   docker compose up --build
+# What Docker keeps of every container's console output. The default driver (json-file) has NO size limit, so without this a chatty
+# service fills the disk. Each service keeps at most 3 files of 10 MB: about 30 MB, the newest lines. The API logs to the console and to
+# Seq and writes no files, so this is also what survives a Seq outage ("docker compose logs api").
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # Applies the database migrations, once, then exits. Migrations are never run when the API starts: a request-serving process
   # must not hold the power to change the schema, and two API instances starting together must not race to migrate.
@@ -18,6 +27,7 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    logging: *default-logging
     restart: "no"
 
   api:
@@ -55,6 +65,7 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    logging: *default-logging
     restart: unless-stopped
 
   # Seq: search and filter the API's structured logs at http://localhost:5341 (see "Logging" in the README).
@@ -76,6 +87,7 @@ services:
     # other services this is the one hardening that fits.
     security_opt:
       - no-new-privileges:true
+    logging: *default-logging
     restart: unless-stopped
 
   db:
@@ -107,6 +119,7 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    logging: *default-logging
     restart: unless-stopped
 
 volumes:

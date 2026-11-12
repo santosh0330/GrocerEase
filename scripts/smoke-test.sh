@@ -153,6 +153,7 @@ expect "healthy probes are not logged at Information (Docker probes /health ever
 
 step "logs: the container writes no log files, and its console output has the request event and no secret"
 expect "the image turns the log files off" "$(compose exec -T api printenv LogFiles__Enabled | tr -d '\r')" "false"
+expect "docker rotates the API's console output" "$(docker inspect --format '{{index .HostConfig.LogConfig.Config "max-size"}}/{{index .HostConfig.LogConfig.Config "max-file"}}' "$(compose ps --quiet api)")" "10m/3"
 expect "the container has no log folder" "$(compose exec -T api sh -c 'test -e /app/logs && echo yes || echo no' | tr -d '\r')" "no"
 console_logs | grep 'HTTP POST /auth/login responded 200 in' | grep -q '"ResponseBytes"' \
   || fail "the login event is not on the console with its message and properties"

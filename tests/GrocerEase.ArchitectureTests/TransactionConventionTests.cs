@@ -17,7 +17,7 @@ public class TransactionConventionTests
 
     // Reading the IL, not the source, so a call hidden in a lambda or an async method (the compiler moves those into a nested type) is
     // found too, and is credited to the type that wrote it.
-    private static List<string> TopLevelTypesThatBeginTransactions()
+    internal static List<string> TopLevelTypesThatBeginTransactions()
     {
         using var assembly = AssemblyDefinition.ReadAssembly(Infrastructure.Location);
 

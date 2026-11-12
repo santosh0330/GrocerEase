@@ -18,12 +18,14 @@ namespace GrocerEase.Api.Controllers;
 /// <remarks>
 /// The new store user's access to the store is immediate (every store route asks the database whether the caller is a member), but
 /// their token still says <c>Customer</c> until it is refreshed or they sign in again: a role is copied into a token when it is made.
+/// Removing them is the mirror image: their access to the store ends at once, and their token keeps saying <c>StoreUser</c> until it expires, which opens nothing.
 /// </remarks>
 [ApiController]
 [Route("stores/{storeId:guid}/members")]
 [Authorize(Policy = Permissions.StoresManage)]
 public sealed class StoreMembersController(
-    ICommandHandler<AssignStoreMemberCommand, Result<StoreMemberResult>> assignHandler) : ControllerBase
+    ICommandHandler<AssignStoreMemberCommand, Result<StoreMemberResult>> assignHandler,
+    ICommandHandler<RemoveStoreMemberCommand, Result<StoreMemberResult>> removeHandler) : ControllerBase
 {
     private const string ProblemJson = "application/problem+json";
 
@@ -38,5 +40,18 @@ public sealed class StoreMembersController(
     {
         var result = await assignHandler.Handle(request.ToCommand(storeId), cancellationToken);
         return result.Match<IActionResult>(member => Ok(member.ToResponse()), error => this.ToProblem(error));
+    }
+
+    // Takes the user out of this store and back to being a customer. 204: there is nothing left to return.
+    [HttpDelete("{userId:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, ProblemJson)]
+    public async Task<IActionResult> Remove(Guid storeId, Guid userId, CancellationToken cancellationToken)
+    {
+        var result = await removeHandler.Handle(userId.ToRemoveCommand(storeId), cancellationToken);
+        return result.Match<IActionResult>(_ => NoContent(), error => this.ToProblem(error));
     }
 }

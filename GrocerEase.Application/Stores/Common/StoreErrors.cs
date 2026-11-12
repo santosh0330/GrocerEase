@@ -11,6 +11,9 @@ public static class StoreErrors
     public static readonly ResultError NotFound = new(
         "Store.NotFound", "There is no store with that id.", ErrorType.NotFound);
 
+    public static readonly ResultError MemberNotFound = new(
+        "Store.MemberNotFound", "That user does not run this store.", ErrorType.NotFound);
+
     // An admin may learn whether an email is registered: this route is theirs alone (stores.manage).
     public static readonly ResultError UserNotFound = new(
         "User.NotFound", "There is no user with that email.", ErrorType.NotFound);

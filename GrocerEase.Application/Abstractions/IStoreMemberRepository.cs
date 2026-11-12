@@ -11,4 +11,11 @@ public interface IStoreMemberRepository
     /// the last word: this is an expected outcome, not an exception.
     /// </summary>
     Task<bool> TryAddAsync(StoreMember member, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Removes the membership of a user in a store. Returns <c>false</c>, and removes nothing, when that user is not a member of that
+    /// store: the membership of another store is never touched. One statement, so two requests removing the same member cannot both
+    /// succeed.
+    /// </summary>
+    Task<bool> TryRemoveAsync(Guid storeId, Guid userId, CancellationToken cancellationToken);
 }

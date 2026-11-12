@@ -73,6 +73,62 @@ public class StoreMemberRepositoryTests
         Assert.True(await repository.TryAddAsync(new StoreMember(Guid.CreateVersion7(), store, await StoredUserAsync()), CancellationToken.None));
     }
 
+    private static async Task<bool> RemoveAsync(Guid storeId, Guid userId)
+    {
+        await using var db = await NewContextAsync();
+        return await new StoreMemberRepository(db).TryRemoveAsync(storeId, userId, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task AMembership_IsRemoved_AndOnlyThatOne()
+    {
+        var store = await StoredStoreAsync();
+        var asha = await StoredUserAsync();
+        var ben = await StoredUserAsync();
+        await AddAsync(store, asha);
+        await AddAsync(store, ben);
+
+        Assert.True(await RemoveAsync(store, asha));
+
+        Assert.Equal((0L, 1L), (await MembershipsOfAsync(asha), await MembershipsOfAsync(ben)));
+    }
+
+    [Fact]
+    public async Task RemovingAUserWhoIsNotAMemberOfThatStore_RemovesNothing_NotEvenTheirMembershipOfAnotherStore()
+    {
+        var theirStore = await StoredStoreAsync();
+        var userId = await StoredUserAsync();
+        await AddAsync(theirStore, userId);
+
+        Assert.False(await RemoveAsync(await StoredStoreAsync(), userId));
+        Assert.False(await RemoveAsync(theirStore, await StoredUserAsync()));
+
+        Assert.Equal(1L, await MembershipsOfAsync(userId));
+    }
+
+    [Fact]
+    public async Task ManyRequestsRemovingTheSameMemberAtTheSameTime_OneWins()
+    {
+        var store = await StoredStoreAsync();
+        var userId = await StoredUserAsync();
+        await AddAsync(store, userId);
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => RemoveAsync(store, userId)));
+
+        Assert.Equal(1, results.Count(removed => removed));
+    }
+
+    [Fact]
+    public async Task AUserRemovedFromAStore_CanBeAddedAgain()
+    {
+        var store = await StoredStoreAsync();
+        var userId = await StoredUserAsync();
+        await AddAsync(store, userId);
+        await RemoveAsync(store, userId);
+
+        Assert.True(await AddAsync(await StoredStoreAsync(), userId));
+    }
+
     [Fact]
     public async Task AStoreCanHaveManyMembers()
     {

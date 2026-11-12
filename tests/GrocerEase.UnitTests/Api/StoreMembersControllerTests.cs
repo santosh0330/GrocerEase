@@ -28,7 +28,41 @@ public class StoreMembersControllerTests
 
     private static readonly StoreMemberResult Asha = new(Guid.CreateVersion7(), Guid.CreateVersion7(), "Asha", "Rai", "asha@example.com");
 
-    private static StoreMembersController ControllerWith(SpyHandler handler) => new(handler) { ProblemDetailsFactory = new StubProblemDetailsFactory() };
+    private sealed class SpyRemoveHandler(Result<StoreMemberResult> result) : ICommandHandler<RemoveStoreMemberCommand, Result<StoreMemberResult>>
+    {
+        public RemoveStoreMemberCommand? Received { get; private set; }
+
+        public Task<Result<StoreMemberResult>> Handle(RemoveStoreMemberCommand command, CancellationToken cancellationToken)
+        {
+            Received = command;
+            return Task.FromResult(result);
+        }
+    }
+
+    private static StoreMembersController ControllerWith(SpyHandler handler, SpyRemoveHandler? remove = null) =>
+        new(handler, remove ?? new SpyRemoveHandler(Result.Success(Asha))) { ProblemDetailsFactory = new StubProblemDetailsFactory() };
+
+    [Fact]
+    public async Task Remove_PutsTheStoreAndTheUserFromTheRouteInTheCommand_AndReturnsNoContent()
+    {
+        var spy = new SpyRemoveHandler(Result.Success(Asha));
+
+        var result = await ControllerWith(new SpyHandler(Result.Success(Asha)), spy).Remove(Asha.StoreId, Asha.UserId, CancellationToken.None);
+
+        Assert.Equal(new RemoveStoreMemberCommand(Asha.StoreId, Asha.UserId), spy.Received);
+        Assert.IsType<NoContentResult>(result);
+    }
+
+    [Fact]
+    public async Task Remove_WhenTheHandlerFails_ReturnsAProblemForThatError()
+    {
+        var spy = new SpyRemoveHandler(Result.Failure<StoreMemberResult>(StoreErrors.MemberNotFound));
+
+        var result = await ControllerWith(new SpyHandler(Result.Success(Asha)), spy).Remove(Asha.StoreId, Asha.UserId, CancellationToken.None);
+
+        var problem = Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value);
+        Assert.Equal((StatusCodes.Status404NotFound, "Store.MemberNotFound"), (problem.Status, problem.Extensions["code"]));
+    }
 
     [Fact]
     public async Task Assign_PutsTheStoreFromTheRouteAndTheEmailFromTheBodyInTheCommand_AndReturnsTheMember()

@@ -171,9 +171,9 @@ expect "email is stored in lower case" "$(admin_sql 'select email from users')" 
 expect "the password is not stored" "$(admin_sql "select count(*) from users where password_hash like '%Sup3r%'")" "0"
 expect "timestamps are filled in" "$(admin_sql 'select created_at is not null and updated_at is not null from users')" "t"
 expect "a new user holds the Customer role" "$(admin_sql 'select r.name from users u join roles r on r.id = u.role_id')" "Customer"
-expect "all migrations are recorded, in their own schema" "$(admin_sql 'select count(*) from migrations."__EFMigrationsHistory"')" "6"
-expect "the roles are seeded, under their fixed ids" "$(admin_sql "select string_agg(id || ':' || name, ',' order by name) from roles")" "019e0000-0000-7000-8000-000000000002:Admin,019e0000-0000-7000-8000-000000000001:Customer"
-expect "the roles grant what they should" "$(admin_sql "select string_agg(r.name || ':' || c.claim_value, ',' order by r.name, c.claim_value) from role_claims c join roles r on r.id = c.role_id where c.claim_type = 'permission'")" "Admin:profile.read,Admin:roles.read,Customer:profile.read"
+expect "all migrations are recorded, in their own schema" "$(admin_sql 'select count(*) from migrations."__EFMigrationsHistory"')" "9"
+expect "the roles are seeded, under their fixed ids" "$(admin_sql "select string_agg(id || ':' || name, ',' order by name) from roles")" "019e0000-0000-7000-8000-000000000002:Admin,019e0000-0000-7000-8000-000000000001:Customer,019e0000-0000-7000-8000-000000000003:StoreUser"
+expect "the roles grant what they should" "$(admin_sql "select string_agg(r.name || ':' || c.claim_value, ',' order by r.name, c.claim_value) from role_claims c join roles r on r.id = c.role_id where c.claim_type = 'permission'")" "Admin:profile.read,Admin:roles.read,Admin:stores.manage,Admin:stores.read,Customer:profile.read,Customer:stores.read,StoreUser:profile.read,StoreUser:stores.read"
 
 step "refresh tokens are stored as hashes only"
 registered_hash="$(printf %s "$registered_refresh_token" | openssl dgst -sha256 -hex | awk '{print $NF}')"
@@ -188,11 +188,13 @@ expect "the migrator owns the table" "$(admin_sql "select tableowner from pg_tab
 expect "the migrator owns the refresh token table" "$(admin_sql "select tableowner from pg_tables where tablename = 'refresh_tokens'")" "grocerease_migrator"
 expect "the migrator owns the roles table" "$(admin_sql "select tableowner from pg_tables where tablename = 'roles'")" "grocerease_migrator"
 expect "the migrator owns the role claims table" "$(admin_sql "select tableowner from pg_tables where tablename = 'role_claims'")" "grocerease_migrator"
+expect "the migrator owns the stores tables" "$(admin_sql "select string_agg(tableowner, ',') from pg_tables where tablename in ('stores', 'store_members')")" "grocerease_migrator,grocerease_migrator"
 app_sql() { compose exec -T db sh -c 'PGPASSWORD="$APP_PASSWORD" psql -h localhost -U grocerease_app -d "$POSTGRES_DB" -Atc "$1" 2>&1' sh "$1"; }
 expect "the app role can read rows" "$(app_sql 'select count(*) from users')" "1"
 expect "the app role can use the refresh token table" "$(app_sql 'select count(*) from refresh_tokens')" "3"
-expect "the app role can read the roles" "$(app_sql 'select count(*) from roles')" "2"
-expect "the app role can read the role claims" "$(app_sql 'select count(*) from role_claims')" "3"
+expect "the app role can read the roles" "$(app_sql 'select count(*) from roles')" "3"
+expect "the app role can read the role claims" "$(app_sql 'select count(*) from role_claims')" "8"
+expect "the app role can use the stores tables" "$(app_sql 'select count(*) from stores')$(app_sql 'select count(*) from store_members')" "00"
 if out="$(app_sql 'create table should_fail (id int)')"; then fail "the app role was allowed to create a table"; fi
 echo "$out" | grep -q "permission denied" || fail "unexpected answer to CREATE TABLE as the app role: $out"
 if out="$(app_sql 'select * from migrations."__EFMigrationsHistory"')"; then fail "the app role can read the migration history"; fi
@@ -221,9 +223,9 @@ jwt_claim_json() {
 }
 get() { curl -sS -o "$work/get.json" -w '%{http_code}' "http://localhost:8080$1" ${2:+-H "Authorization: Bearer $2"}; }
 expect "the token of a new user says Customer" "$(jwt_claim "$customer_token" role)" "Customer"
-expect "and carries what a customer may do" "$(jwt_claim_json "$customer_token" permission)" '["profile.read"]'
+expect "and carries what a customer may do" "$(jwt_claim_json "$customer_token" permission)" '["profile.read","stores.read"]'
 expect "GET /me shows the role" "$(get /me "$customer_token" > /dev/null; jq -r .role "$work/get.json")" "Customer"
-expect "GET /me shows what the role may do" "$(jq -c .permissions "$work/get.json")" '["profile.read"]'
+expect "GET /me shows what the role may do" "$(jq -c .permissions "$work/get.json")" '["profile.read","stores.read"]'
 expect "GET /roles with no token" "$(get /roles)" "401"
 expect "GET /roles as a customer" "$(get /roles "$customer_token")" "403"
 expect "the refusal has a stable code" "$(jq -r .code "$work/get.json")" "Authorization.Forbidden"
@@ -233,12 +235,38 @@ expect "a token issued before the change keeps the old role" "$(get /roles "$cus
 expect "refreshing gives a token with the current role" "$(post /auth/refresh "{\"refreshToken\":\"$customer_refresh_token\"}")" "200"
 admin_token="$(jq -r .token "$work/body.json")"
 expect "the new token says Admin" "$(jwt_claim "$admin_token" role)" "Admin"
-expect "and carries what an admin may do" "$(jwt_claim_json "$admin_token" permission)" '["profile.read","roles.read"]'
+expect "and carries what an admin may do" "$(jwt_claim_json "$admin_token" permission)" '["profile.read","roles.read","stores.manage","stores.read"]'
 expect "GET /roles as an admin" "$(get /roles "$admin_token")" "200"
-expect "GET /roles lists both roles" "$(jq -r '[.[].name] | join(",")' "$work/get.json")" "Admin,Customer"
-expect "GET /roles says what each role may do" "$(jq -c '[.[] | {name, permissions}]' "$work/get.json")" '[{"name":"Admin","permissions":["profile.read","roles.read"]},{"name":"Customer","permissions":["profile.read"]}]'
+expect "GET /roles lists both roles" "$(jq -r '[.[].name] | join(",")' "$work/get.json")" "Admin,Customer,StoreUser"
+expect "GET /roles says what each role may do" "$(jq -c '[.[] | {name, permissions}]' "$work/get.json")" '[{"name":"Admin","permissions":["profile.read","roles.read","stores.manage","stores.read"]},{"name":"Customer","permissions":["profile.read","stores.read"]},{"name":"StoreUser","permissions":["profile.read","stores.read"]}]'
 expect "GET /me shows the new role" "$(get /me "$admin_token" > /dev/null; jq -r .role "$work/get.json")" "Admin"
-expect "and the new permissions" "$(jq -c .permissions "$work/get.json")" '["profile.read","roles.read"]'
+expect "and the new permissions" "$(jq -c .permissions "$work/get.json")" '["profile.read","roles.read","stores.manage","stores.read"]'
+
+step "stores: an admin creates a store and assigns a customer to it, which makes them a store user"
+# A third user, who registers and then waits to be assigned. Refresh, not login, gives the new token (login is limited to 5 a minute).
+member_email="smoke.member.$(date +%s)@example.com"
+expect "register a third user" "$(post /auth/register "{\"firstName\":\"Asha\",\"lastName\":\"Rai\",\"email\":\"$member_email\",\"password\":\"Sup3r-s3cret!\"}")" "200"
+member_token="$(jq -r .token "$work/body.json")"
+member_refresh_token="$(jq -r .refreshToken "$work/body.json")"
+member_id="$(jq -r .id "$work/body.json")"
+send_as() { curl -sS -o "$work/body.json" -w '%{http_code}' -X "$1" "http://localhost:8080$2" -H "Authorization: Bearer $3" ${4:+-H 'Content-Type: application/json' -d "$4"}; }
+expect "a customer cannot create a store" "$(send_as POST /stores "$member_token" '{"name":"Nope","address":"x"}')" "403"
+expect "an admin creates a store" "$(send_as POST /stores "$admin_token" '{"name":"Fresh Mart","address":"1 High Street"}')" "201"
+store_id="$(jq -r .id "$work/body.json")"
+expect "the same name again is a conflict" "$(send_as POST /stores "$admin_token" '{"name":"Fresh Mart","address":"elsewhere"}')" "409"
+expect "the conflict has a stable code" "$(jq -r .code "$work/body.json")" "Store.DuplicateName"
+expect "a customer can read the store" "$(send_as GET "/stores/$store_id" "$member_token")" "200"
+expect "a customer cannot assign anyone" "$(send_as POST "/stores/$store_id/members" "$member_token" "{\"email\":\"$member_email\"}")" "403"
+expect "an admin assigns the customer to the store" "$(send_as POST "/stores/$store_id/members" "$admin_token" "{\"email\":\"$member_email\"}")" "200"
+expect "the database says store user, in one store" "$(admin_sql "select r.name || ':' || (select count(*) from store_members m where m.user_id = u.id) from users u join roles r on r.id = u.role_id where u.email = '$member_email'")" "StoreUser:1"
+expect "their old token still says Customer" "$(jwt_claim "$member_token" role)" "Customer"
+expect "refreshing gives them a token that says StoreUser" "$(post /auth/refresh "{\"refreshToken\":\"$member_refresh_token\"}")" "200"
+expect "with the store user's permissions" "$(jwt_claim_json "$(jq -r .token "$work/body.json")" permission)" '["profile.read","stores.read"]'
+expect "a store user cannot create a store" "$(send_as POST /stores "$(jq -r .token "$work/body.json")" '{"name":"Nope","address":"x"}')" "403"
+expect "assigning them again is refused" "$(send_as POST "/stores/$store_id/members" "$admin_token" "{\"email\":\"$member_email\"}")" "409"
+expect "with a stable code" "$(jq -r .code "$work/body.json")" "User.NotACustomer"
+expect "an admin takes them out again" "$(send_as DELETE "/stores/$store_id/members/$member_id" "$admin_token")" "204"
+expect "the database says customer, in no store" "$(admin_sql "select r.name || ':' || (select count(*) from store_members m where m.user_id = u.id) from users u join roles r on r.id = u.role_id where u.email = '$member_email'")" "Customer:0"
 
 step "health: /health includes the database, /health/live does not"
 expect "/health status" "$(curl -sS -o "$work/health.json" -w '%{http_code}' http://localhost:8080/health)" "200"

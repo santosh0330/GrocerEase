@@ -38,7 +38,7 @@ Content-Type: application/json
 ###
 
 # Protected: only a signed-in user may call it. Run "login" first; the token it returns is sent as a bearer token.
-# 200 with { id, firstName, lastName, email }.
+# 200 with { id, firstName, lastName, email, role }.
 GET {{GrocerEase.Api_HostAddress}}/me
 Authorization: Bearer {{login.response.body.$.token}}
 
@@ -54,6 +54,14 @@ GET {{GrocerEase.Api_HostAddress}}/me
 # "Authentication.InvalidToken". An expired one gives "Authentication.TokenExpired": sign in again.
 GET {{GrocerEase.Api_HostAddress}}/me
 Authorization: Bearer not-a-real-token
+
+###
+
+# Guarded by the Admin role. A user who just registered is a Customer, so this is 403 application/problem+json with code
+# "Authorization.Forbidden". After the user is made an admin (see "Roles" in the README) and logs in again, it is 200 with
+# [ { "id": "...", "name": "Admin" }, { "id": "...", "name": "Customer" } ]. With no token it is 401.
+GET {{GrocerEase.Api_HostAddress}}/roles
+Authorization: Bearer {{login.response.body.$.token}}
 
 ###
 

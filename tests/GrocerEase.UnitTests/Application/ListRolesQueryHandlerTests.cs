@@ -20,6 +20,18 @@ public class ListRolesQueryHandlerTests
     }
 
     [Fact]
+    public async Task Handle_ReturnsWhatEachRoleGrants_InAStableOrder()
+    {
+        var handler = new ListRolesQueryHandler(new FakeRoleRepository());
+
+        var result = await handler.Handle(new ListRolesQuery(), CancellationToken.None);
+
+        var byName = result.Value.ToDictionary(role => role.Name, role => role.Permissions, StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead], byName[RoleNames.Admin], StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProfileRead], byName[RoleNames.Customer], StringComparer.Ordinal);
+    }
+
+    [Fact]
     public async Task Handle_WhenThereAreNoRoles_IsAnEmptyListNotAnError()
     {
         var handler = new ListRolesQueryHandler(new FakeRoleRepository(seeded: false));

@@ -27,7 +27,11 @@ public class RolesControllerTests
     }
 
     private static Result<IReadOnlyList<RoleResult>> Roles() =>
-        Result.Success<IReadOnlyList<RoleResult>>([new(RoleIds.Admin, RoleNames.Admin), new(RoleIds.Customer, RoleNames.Customer)]);
+        Result.Success<IReadOnlyList<RoleResult>>(
+        [
+            new(RoleIds.Admin, RoleNames.Admin, [Permissions.ProfileRead, Permissions.RolesRead]),
+            new(RoleIds.Customer, RoleNames.Customer, [Permissions.ProfileRead]),
+        ]);
 
     private static RolesController ControllerWith(SpyHandler handler) => new(handler) { ProblemDetailsFactory = new StubProblemDetailsFactory() };
 
@@ -39,10 +43,12 @@ public class RolesControllerTests
         var result = await ControllerWith(handler).List(CancellationToken.None);
 
         Assert.NotNull(handler.ReceivedQuery);
-        var body = Assert.IsAssignableFrom<IEnumerable<RoleResponse>>(Assert.IsType<OkObjectResult>(result).Value);
+        var body = Assert.IsAssignableFrom<IEnumerable<RoleResponse>>(Assert.IsType<OkObjectResult>(result).Value).ToList();
         Assert.Equal(
-            [new RoleResponse(RoleIds.Admin, RoleNames.Admin), new RoleResponse(RoleIds.Customer, RoleNames.Customer)],
-            body);
+            [(RoleIds.Admin, RoleNames.Admin), (RoleIds.Customer, RoleNames.Customer)],
+            body.Select(role => (role.Id, role.Name)));
+        Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead], body[0].Permissions, StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProfileRead], body[1].Permissions, StringComparer.Ordinal);
     }
 
     [Fact]
@@ -68,6 +74,11 @@ public class RolesControllerTests
     }
 
     [Fact]
-    public void ToResponse_CopiesTheIdAndTheName() =>
-        Assert.Equal(new RoleResponse(RoleIds.Customer, "Customer"), new RoleResult(RoleIds.Customer, "Customer").ToResponse());
+    public void ToResponse_CopiesTheIdTheNameAndThePermissions()
+    {
+        var response = new RoleResult(RoleIds.Customer, "Customer", [Permissions.ProfileRead]).ToResponse();
+
+        Assert.Equal((RoleIds.Customer, "Customer"), (response.Id, response.Name));
+        Assert.Equal([Permissions.ProfileRead], response.Permissions, StringComparer.Ordinal);
+    }
 }

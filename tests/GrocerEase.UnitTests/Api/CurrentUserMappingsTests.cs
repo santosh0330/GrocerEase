@@ -17,6 +17,7 @@ public class CurrentUserMappingsTests
         ("family_name", "Lovelace"),
         ("email", "ada@example.com"),
         ("role", "Customer"),
+        ("permission", "profile.read"),
     ];
 
     [Fact]
@@ -28,6 +29,27 @@ public class CurrentUserMappingsTests
         Assert.Equal(
             (UserId, "Ada", "Lovelace", "ada@example.com", "Customer"),
             (response.Id, response.FirstName, response.LastName, response.Email, response.Role));
+    }
+
+    [Fact]
+    public void ThePermissions_AreOneClaimEach_InAStableOrder()
+    {
+        var claims = AllClaims().Concat([("permission", "roles.read"), ("permission", "a.first")]).ToArray();
+
+        var response = Principal(claims).ToCurrentUserResponse();
+
+        Assert.Equal(["a.first", "profile.read", "roles.read"], response?.Permissions, StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public void ATokenWithNoPermissions_IsStillAUser_WhoMayDoNothing()
+    {
+        var claims = AllClaims().Where(c => !string.Equals(c.Item1, "permission", StringComparison.Ordinal)).ToArray();
+
+        var response = Principal(claims).ToCurrentUserResponse();
+
+        Assert.NotNull(response);
+        Assert.Empty(response.Permissions);
     }
 
     [Fact]

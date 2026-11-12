@@ -78,9 +78,10 @@ public class RolesEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var roles = await response.Content.ReadFromJsonAsync<List<RoleResponse>>();
-        Assert.Equal(
-            [new RoleResponse(RoleIds.Admin, RoleNames.Admin), new RoleResponse(RoleIds.Customer, RoleNames.Customer)],
-            roles);
+        Assert.NotNull(roles);
+        Assert.Equal([(RoleIds.Admin, RoleNames.Admin), (RoleIds.Customer, RoleNames.Customer)], roles.Select(role => (role.Id, role.Name)));
+        Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead], roles[0].Permissions, StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProfileRead], roles[1].Permissions, StringComparer.Ordinal);
     }
 
     [Fact]

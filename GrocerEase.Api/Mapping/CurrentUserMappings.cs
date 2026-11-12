@@ -33,6 +33,10 @@ public static class CurrentUserMappings
             return null;
         }
 
-        return new CurrentUserResponse(id, firstName, lastName, email, role);
+        // One claim per permission. A token that carries none (a role that grants nothing, or one made before permissions existed)
+        // is not an error: the user is who they are, and may simply do little.
+        var permissions = principal.FindAll(JwtClaims.Permission).Select(claim => claim.Value).Order(StringComparer.Ordinal).ToArray();
+
+        return new CurrentUserResponse(id, firstName, lastName, email, role, permissions);
     }
 }

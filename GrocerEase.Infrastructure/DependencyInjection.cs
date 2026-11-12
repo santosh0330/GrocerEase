@@ -45,6 +45,7 @@ public static class DependencyInjection
             options.ConfigureNpgsql(provider.GetRequiredService<IOptions<DatabaseSettings>>().Value.ConnectionString));
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+        services.AddScoped<IRoleRepository, RoleRepository>();
 
         // Answers "can this instance reach and use its database?" for the /health endpoint. The timeout stops a hung database
         // from hanging the probe: after five seconds the check is reported unhealthy.

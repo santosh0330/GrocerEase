@@ -1,58 +1,19 @@
 using System.Reflection;
 using GrocerEase.Domain.Entities;
 using GrocerEase.Infrastructure.Persistence;
-using Microsoft.AspNetCore.Authorization;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
-using NetArchTest.Rules;
 
 namespace GrocerEase.ArchitectureTests;
 
 /// <summary>
-/// How roles are used. A guard that names a role nobody holds (a typo, or a role that was renamed) locks every caller out without
-/// a single error, and a query that reads the roles table outside the repository bypasses the one place that decides how they are read.
+/// How roles are read. A query that reads the roles table outside the repository bypasses the one place that decides how they are
+/// read (and, now that a role carries its claims, the one place that always loads them). How a controller names what it needs is
+/// in <see cref="PermissionConventionTests"/>.
 /// </summary>
 public class RoleConventionTests
 {
-    private static readonly Assembly Api = typeof(Program).Assembly;
     private static readonly Assembly Infrastructure = typeof(Infrastructure.AssemblyReference).Assembly;
-
-    /// <summary>The roles an <c>[Authorize(Roles = "A,B")]</c> value names that the application does not know.</summary>
-    private static string[] UnknownRoles(string? roles) =>
-        [.. (roles ?? string.Empty)
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(role => !RoleNames.All.Contains(role, StringComparer.Ordinal))];
-
-    private static IEnumerable<(string Where, AuthorizeAttribute Attribute)> AuthorizeAttributesInControllers() =>
-        Types.InAssembly(Api).That().ResideInNamespace("GrocerEase.Api.Controllers").GetTypes().SelectMany(controller =>
-            controller.GetCustomAttributes<AuthorizeAttribute>(inherit: true).Select(attribute => (controller.Name, attribute))
-                .Concat(controller
-                    .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-                    .SelectMany(method => method.GetCustomAttributes<AuthorizeAttribute>(inherit: true)
-                        .Select(attribute => ($"{controller.Name}.{method.Name}", attribute)))));
-
-    [Fact]
-    public void EveryRoleAGuardNames_IsARoleTheApplicationKnows()
-    {
-        var offenders = AuthorizeAttributesInControllers()
-            .Where(guard => guard.Attribute.Roles is not null)
-            .SelectMany(guard => UnknownRoles(guard.Attribute.Roles).Select(role => $"{guard.Where}: '{role}'"))
-            .ToList();
-
-        Assert.True(
-            offenders.Count == 0,
-            $"[Authorize(Roles = ...)] must name roles from RoleNames.All, or no caller is ever let in: {string.Join(", ", offenders)}");
-    }
-
-    [Fact]
-    public void TheGuardRule_IsNotEmpty_AndCanFail()
-    {
-        // Guards the test above against passing by accident: a misspelt role is caught. (No controller names a role any more: they
-        // name permissions, so the test above has nothing to check until one does.)
-        Assert.NotEmpty(AuthorizeAttributesInControllers());
-        Assert.Equal(["Admn"], UnknownRoles("Admn, Admin"));
-        Assert.Empty(UnknownRoles("Admin,Customer"));
-    }
 
     // A role is read from the database through AppDbContext.Roles (or Set<Role>()). Reading the IL, not the source, so a call hidden
     // in a lambda or an async method is found too.

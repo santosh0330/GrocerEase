@@ -5,6 +5,9 @@ using GrocerEase.Application.Authentication.Common;
 using GrocerEase.Application.Authentication.Handlers;
 using GrocerEase.Application.Common;
 using GrocerEase.Application.Decorators;
+using GrocerEase.Application.Roles.Common;
+using GrocerEase.Application.Roles.Handlers;
+using GrocerEase.Application.Roles.Queries;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GrocerEase.Application;
@@ -27,6 +30,7 @@ public static class DependencyInjection
         services.AddValidatedCommandHandler<RegisterCommand, Result<AuthenticationResult>, RegisterCommandHandler>();
         services.AddValidatedCommandHandler<LoginCommand, Result<AuthenticationResult>, LoginCommandHandler>();
         services.AddValidatedCommandHandler<RefreshCommand, Result<AuthenticationResult>, RefreshCommandHandler>();
+        services.AddValidatedCommandHandler<ListRolesQuery, Result<IReadOnlyList<RoleResult>>, ListRolesQueryHandler>();
 
         return services;
     }

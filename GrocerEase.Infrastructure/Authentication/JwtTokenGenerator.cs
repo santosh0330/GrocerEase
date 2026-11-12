@@ -8,7 +8,7 @@ namespace GrocerEase.Infrastructure.Authentication;
 
 /// <summary>
 /// Issues a signed JWT (HMAC-SHA256). The token proves who the caller is: anyone can read its claims, but only a holder of the
-/// signing key can produce or change one, so it carries the user's id and name but never anything secret such as the password hash.
+/// signing key can produce or change one, so it carries the user's id, name and role but never anything secret such as the password hash.
 /// </summary>
 public sealed class JwtTokenGenerator : IJwtTokenGenerator
 {
@@ -27,9 +27,16 @@ public sealed class JwtTokenGenerator : IJwtTokenGenerator
         _credentials = new SigningCredentials(_settings.CreateSigningKey(), SecurityAlgorithms.HmacSha256);
     }
 
-    public string GenerateToken(User user)
+    public string GenerateToken(User user, Role role)
     {
         ArgumentNullException.ThrowIfNull(user);
+        ArgumentNullException.ThrowIfNull(role);
+
+        if (user.RoleId != role.Id)
+        {
+            // A token claims a role for the user, so it must be the role the user holds, never another one handed in by mistake.
+            throw new ArgumentException($"The role '{role.Name}' is not the role this user holds.", nameof(role));
+        }
 
         var now = _timeProvider.GetUtcNow().UtcDateTime;
 
@@ -42,6 +49,7 @@ public sealed class JwtTokenGenerator : IJwtTokenGenerator
                 [JwtRegisteredClaimNames.Email] = user.Email,
                 [JwtRegisteredClaimNames.GivenName] = user.FirstName,
                 [JwtRegisteredClaimNames.FamilyName] = user.LastName,
+                [JwtClaims.Role] = role.Name,
                 [JwtRegisteredClaimNames.Jti] = Guid.NewGuid().ToString(),
             },
             Issuer = _settings.Issuer,

@@ -35,6 +35,10 @@ public static class JwtValidationParameters
 
             ValidateLifetime = true,
             RequireExpirationTime = true, // a token that never expires is refused
+
+            // Which claim names the role, so IsInRole and [Authorize(Roles = ...)] read the claim the generator writes. Claim mapping
+            // is switched off, so without this they would look for the long .NET claim URI and never find it.
+            RoleClaimType = JwtClaims.Role,
             ClockSkew = ClockSkew,
         };
     }

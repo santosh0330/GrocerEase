@@ -31,6 +31,8 @@ public class RegisterCommandHandlerTests
         public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult<User?>(null);
 
         public Task<bool> TryAddAsync(User user, CancellationToken cancellationToken) => Task.FromResult(false);
+
+        public Task<bool> TryChangeRoleAsync(Guid userId, Guid fromRoleId, Guid toRoleId, CancellationToken cancellationToken) => Task.FromResult(false);
     }
 
     private readonly RefreshTestKit _refresh = new();

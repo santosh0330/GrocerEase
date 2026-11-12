@@ -161,4 +161,97 @@ public class UserRepositoryTests
         await Assert.ThrowsAsync<ArgumentNullException>(() => repository.GetByEmailAsync(null!, CancellationToken.None));
         await Assert.ThrowsAsync<ArgumentNullException>(() => repository.TryAddAsync(null!, CancellationToken.None));
     }
+
+    private static async Task<Guid> StoredUserAsync()
+    {
+        var user = NewUser();
+        await using var db = await NewContextAsync();
+        Assert.True(await new UserRepository(db).TryAddAsync(user, CancellationToken.None));
+        return user.Id;
+    }
+
+    private static async Task<bool> ChangeRoleAsync(Guid userId, Guid from, Guid to)
+    {
+        await using var db = await NewContextAsync();
+        return await new UserRepository(db).TryChangeRoleAsync(userId, from, to, CancellationToken.None);
+    }
+
+    private static async Task<string> RoleOfAsync(Guid userId) =>
+        (await PostgresServer.ScalarAsync<string>(
+            await PostgresServer.ApplicationConnectionStringAsync(),
+            $"select r.name from users u join roles r on r.id = u.role_id where u.id = '{userId}'"))!;
+
+    [Fact]
+    public async Task TheRole_IsChanged_WhenTheUserHoldsTheOneItIsChangedFrom()
+    {
+        var id = await StoredUserAsync();
+
+        var changed = await ChangeRoleAsync(id, RoleIds.Customer, RoleIds.StoreUser);
+
+        Assert.True(changed);
+        Assert.Equal(RoleNames.StoreUser, await RoleOfAsync(id));
+    }
+
+    [Fact]
+    public async Task TheRole_IsNotChanged_WhenTheUserHoldsAnotherOne()
+    {
+        var id = await StoredUserAsync();
+
+        var changed = await ChangeRoleAsync(id, RoleIds.Admin, RoleIds.StoreUser); // they are a customer, not an admin
+
+        Assert.False(changed);
+        Assert.Equal(RoleNames.Customer, await RoleOfAsync(id));
+    }
+
+    [Fact]
+    public async Task ChangingTheRoleOfAnUnknownUser_ChangesNothing_AndSaysSo() =>
+        Assert.False(await ChangeRoleAsync(Guid.CreateVersion7(), RoleIds.Customer, RoleIds.StoreUser));
+
+    [Fact]
+    public async Task ARoleThatDoesNotExist_IsAnException_NotAnOrdinaryRefusal()
+    {
+        var id = await StoredUserAsync();
+
+        // The foreign key refuses it. That is a bug in the caller, so it must not come back as false ("they hold another role").
+        var exception = await Assert.ThrowsAsync<Npgsql.PostgresException>(() => ChangeRoleAsync(id, RoleIds.Customer, Guid.CreateVersion7()));
+
+        Assert.Equal(Npgsql.PostgresErrorCodes.ForeignKeyViolation, exception.SqlState);
+        Assert.Equal("fk_users_roles_role_id", exception.ConstraintName);
+        Assert.Equal(RoleNames.Customer, await RoleOfAsync(id));
+    }
+
+    [Fact]
+    public async Task TheSameChangeTwice_SucceedsOnce_BecauseTheSecondFindsTheRoleAlreadyChanged()
+    {
+        var id = await StoredUserAsync();
+
+        Assert.True(await ChangeRoleAsync(id, RoleIds.Customer, RoleIds.StoreUser));
+        Assert.False(await ChangeRoleAsync(id, RoleIds.Customer, RoleIds.StoreUser));
+    }
+
+    [Fact]
+    public async Task ManyRequestsChangingTheSameCustomerAtTheSameTime_OneWins()
+    {
+        var id = await StoredUserAsync();
+
+        // Eight requests that all saw a customer, each trying to make them something else. Only the statement's own condition can
+        // decide: a read followed by a write would let several of them through.
+        var results = await Task.WhenAll(Enumerable.Range(0, 8)
+            .Select(attempt => ChangeRoleAsync(id, RoleIds.Customer, attempt % 2 == 0 ? RoleIds.StoreUser : RoleIds.Admin)));
+
+        Assert.Equal(1, results.Count(changed => changed));
+        Assert.Contains(await RoleOfAsync(id), new[] { RoleNames.StoreUser, RoleNames.Admin }, StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public async Task ChangingTheRole_MovesUpdatedAt_BecauseTheDatabaseKeepsIt()
+    {
+        var id = await StoredUserAsync();
+        var connection = await PostgresServer.ApplicationConnectionStringAsync();
+        await PostgresServer.ExecuteAsync(connection, "select pg_sleep(0.05)"); // so a moved timestamp cannot equal the created one
+
+        await ChangeRoleAsync(id, RoleIds.Customer, RoleIds.StoreUser);
+
+        Assert.True(await PostgresServer.ScalarAsync<bool>(connection, $"select updated_at > created_at from users where id = '{id}'"));
+    }
 }

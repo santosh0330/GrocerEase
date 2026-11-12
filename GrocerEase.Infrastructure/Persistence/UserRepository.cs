@@ -45,6 +45,17 @@ public sealed class UserRepository(AppDbContext db) : IUserRepository
         }
     }
 
+    public async Task<bool> TryChangeRoleAsync(Guid userId, Guid fromRoleId, Guid toRoleId, CancellationToken cancellationToken)
+    {
+        // UPDATE users SET role_id = @to WHERE id = @id AND role_id = @from. The condition is in the statement, so a concurrent request
+        // waits for the row lock and then re-checks it on the new row, finds another role, and changes nothing. A role that does not
+        // exist is refused by the foreign key, which is an exception: a bug, not "the user holds another role".
+        var changed = await db.Users
+            .Where(user => user.Id == userId && user.RoleId == fromRoleId)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(user => user.RoleId, toRoleId), cancellationToken);
+        return changed == 1;
+    }
+
     // Only the email index counts. A clash on the primary key (the same id twice) or any other failure is a bug or an outage
     // and must stay an exception, not be reported to the caller as "that email is taken".
     private static bool IsDuplicateEmail(DbUpdateException exception) =>

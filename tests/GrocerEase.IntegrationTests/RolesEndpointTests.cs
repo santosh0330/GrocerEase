@@ -10,7 +10,7 @@ using static GrocerEase.IntegrationTests.AuthProbe;
 namespace GrocerEase.IntegrationTests;
 
 /// <summary>
-/// GET /roles: guarded by the Admin role. No token is a 401, a signed-in customer is a 403, an admin gets the list. Against the
+/// GET /roles: guarded by the roles.read permission. No token is a 401, a signed-in customer is a 403, an admin gets the list. Against the
 /// real API and PostgreSQL. Nothing in the application can make an admin yet, so a test promotes a user with SQL.
 /// </summary>
 public class RolesEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
@@ -98,10 +98,12 @@ public class RolesEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task ATokenThatClaimsToBeAnAdminButIsSignedWithAnotherKey_Is401()
+    public async Task ATokenThatClaimsThePermissionButIsSignedWithAnotherKey_Is401()
     {
         using var client = factory.CreateClient();
-        var forged = TestTokens.Create(key: "another-signing-key-0123456789-abcdefghij", extraClaims: new Dictionary<string, object>(StringComparer.Ordinal) { [JwtClaims.Role] = RoleNames.Admin });
+        var forged = TestTokens.Create(
+            key: "another-signing-key-0123456789-abcdefghij",
+            extraClaims: new Dictionary<string, object>(StringComparer.Ordinal) { [JwtClaims.Permission] = new[] { Permissions.RolesRead } });
 
         using var request = GetWithToken("/roles", forged);
         var response = await client.SendAsync(request);
@@ -110,15 +112,46 @@ public class RolesEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task ASignedTokenWithTheAdminRoleClaim_Is200_WithoutTouchingTheDatabaseRow()
+    public async Task ASignedTokenWithThePermission_Is200_WithoutTouchingTheDatabaseRow()
     {
         using var client = factory.CreateClient();
-        var token = TestTokens.Create(extraClaims: new Dictionary<string, object>(StringComparer.Ordinal) { [JwtClaims.Role] = RoleNames.Admin });
+        var token = TestTokens.Create(extraClaims: new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            [JwtClaims.Permission] = new[] { Permissions.ProfileRead, Permissions.RolesRead }, // an array: one claim per entry
+        });
 
         using var request = GetWithToken("/roles", token);
         var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ATokenThatSaysAdminButCarriesNoPermission_Is403_BecauseThePermissionDecides_NotTheName()
+    {
+        using var client = factory.CreateClient();
+        // What a token made before permissions existed looks like: a role, and nothing the role may do.
+        var token = TestTokens.Create(extraClaims: new Dictionary<string, object>(StringComparer.Ordinal) { [JwtClaims.Role] = RoleNames.Admin });
+
+        using var request = GetWithToken("/roles", token);
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("Authorization.Forbidden", (await ProblemAsync(response)).GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task ATokenWithOnlyTheProfilePermission_Is403_AndOneWithOnlyTheRolesPermissionIs200()
+    {
+        using var client = factory.CreateClient();
+        Dictionary<string, object> Permission(string permission) =>
+            new(StringComparer.Ordinal) { [JwtClaims.Permission] = new[] { permission } };
+
+        using var profileOnly = GetWithToken("/roles", TestTokens.Create(extraClaims: Permission(Permissions.ProfileRead)));
+        using var rolesOnly = GetWithToken("/roles", TestTokens.Create(extraClaims: Permission(Permissions.RolesRead)));
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.SendAsync(profileOnly)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(rolesOnly)).StatusCode);
     }
 
     [Fact]

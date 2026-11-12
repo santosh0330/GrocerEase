@@ -11,13 +11,13 @@ using Microsoft.AspNetCore.Mvc;
 namespace GrocerEase.Api.Controllers;
 
 /// <summary>
-/// The roles the application knows. Only an <c>Admin</c> may read them: <c>[Authorize(Roles = ...)]</c> is checked against the
-/// <c>role</c> claim of the token, so a signed-in <c>Customer</c> is answered with a 403 and never reaches this code. It holds no
-/// logic: it runs the handler and maps the result.
+/// The roles the application knows. Whoever may read them is whoever holds the <c>roles.read</c> permission: the policy checks the
+/// <c>permission</c> claims of the token, not a role name, so a signed-in user without it is answered with a 403 and never reaches
+/// this code. It holds no logic: it runs the handler and maps the result.
 /// </summary>
 [ApiController]
 [Route("roles")]
-[Authorize(Roles = RoleNames.Admin)]
+[Authorize(Policy = Permissions.RolesRead)]
 public sealed class RolesController(ICommandHandler<ListRolesQuery, Result<IReadOnlyList<RoleResult>>> listHandler) : ControllerBase
 {
     private const string ProblemJson = "application/problem+json";

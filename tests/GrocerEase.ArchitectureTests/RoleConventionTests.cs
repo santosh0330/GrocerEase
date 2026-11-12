@@ -47,8 +47,9 @@ public class RoleConventionTests
     [Fact]
     public void TheGuardRule_IsNotEmpty_AndCanFail()
     {
-        // Guards the test above against passing by accident: at least one controller names a role, and a misspelt one is caught.
-        Assert.Contains(AuthorizeAttributesInControllers(), guard => guard.Attribute.Roles is not null);
+        // Guards the test above against passing by accident: a misspelt role is caught. (No controller names a role any more: they
+        // name permissions, so the test above has nothing to check until one does.)
+        Assert.NotEmpty(AuthorizeAttributesInControllers());
         Assert.Equal(["Admn"], UnknownRoles("Admn, Admin"));
         Assert.Empty(UnknownRoles("Admin,Customer"));
     }

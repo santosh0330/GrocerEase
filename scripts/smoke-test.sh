@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Starts the whole Compose stack with throwaway passwords and checks it end to end, over HTTP and inside the database:
 # migrations applied by the migrate service, the API working against PostgreSQL, data surviving a restart of the stack,
-# the API's log files, and nothing running as root or connecting as more than it needs.
+# the API's logs reaching Seq and the log files, and nothing running as root or connecting as more than it needs.
 #
-# Needs: Docker with the Compose plugin, curl, jq, openssl, and the host ports 8080 and 5432 free.
+# Needs: Docker with the Compose plugin, curl, jq, openssl, and the host ports 8080, 5341 and 5432 free.
 # Leaves nothing behind: it uses its own Compose project and volume and removes them at the end, pass or fail.
 set -euo pipefail
 
@@ -73,6 +73,28 @@ wait_for_health_status() {
   fail "/health did not answer $wanted within $seconds seconds (last answer: $code)"
 }
 
+# Seq answers on its own API once it is up (a few seconds after the container starts).
+wait_for_seq() {
+  for _ in $(seq 1 60); do
+    if curl -fsS -o /dev/null http://localhost:5341/api 2> /dev/null; then return 0; fi
+    sleep 1
+  done
+  fail "Seq did not answer on http://localhost:5341/api within 60 seconds"
+}
+
+# Events reach Seq in batches, a couple of seconds after the request, so poll for them instead of sleeping.
+# $1 is a Seq filter, for example: RequestPath = '/auth/login'. Prints how many matching events Seq has (up to 100).
+seq_count() { curl -sS -G http://localhost:5341/api/events --data-urlencode "filter=$1" --data-urlencode "count=100" | jq 'length'; }
+wait_for_seq_events() {
+  local filter="$1" wanted="$2" found=0
+  for _ in $(seq 1 40); do
+    found="$(seq_count "$filter")"
+    if [ "$found" -ge "$wanted" ]; then return 0; fi
+    sleep 1
+  done
+  fail "Seq has $found event(s) for [$filter], expected at least $wanted"
+}
+
 # The API's log files, read from inside the container (they live in the api-logs volume).
 log_files() { compose exec -T api sh -c 'cat /app/logs/grocerease-*.log' | tr -d '\r'; }
 
@@ -89,6 +111,9 @@ wait_for_api
 
 step "docker reports the api container healthy (its health check calls /health, which includes the database)"
 wait_for_healthy_container
+
+step "seq is up"
+wait_for_seq
 
 step "the migrate service ran and exited cleanly"
 migrate_container="$(compose ps --all --quiet migrate)"
@@ -115,7 +140,18 @@ expect "the refusal says why, in a stable code" "$(jq -r .code "$work/body.json"
 expect "reusing the old one revoked the session: the newest token is refused too" "$(post /auth/refresh "{\"refreshToken\":\"$refreshed_token\"}")" "401"
 expect "an empty refresh token is a validation error" "$(post /auth/refresh '{"refreshToken":""}')" "400"
 
-step "logs: the API's files hold one structured event per request, one JSON document per line, and no secret"
+step "logs: every request is one structured event in Seq, with its request and its response"
+wait_for_seq_events "RequestPath = '/auth/login' and RequestMethod = 'POST' and StatusCode = 200" 1
+curl -sS -G http://localhost:5341/api/events --data-urlencode "filter=RequestPath = '/auth/login' and StatusCode = 200" --data-urlencode "count=1" > "$work/seq-event.json"
+jq -e '.[0].Properties | map(.Name) | contains(["RequestMethod","RequestPath","StatusCode","Elapsed","RequestHost","RequestScheme","Endpoint","RequestContentType","ResponseContentType","ResponseBytes","TraceId","RequestId","Application","Environment"])' "$work/seq-event.json" > /dev/null \
+  || fail "the login event in Seq is missing request or response details: $(jq -c '.[0].Properties | map(.Name)' "$work/seq-event.json")"
+expect "an ordinary request is Information" "$(jq -r '.[0].Level' "$work/seq-event.json")" "Information"
+wait_for_seq_events "RequestPath = '/auth/register' and StatusCode = 409" 1
+expect "a refused request is a Warning" "$(curl -sS -G http://localhost:5341/api/events --data-urlencode "filter=RequestPath = '/auth/register' and StatusCode = 409" --data-urlencode "count=1" | jq -r '.[0].Level')" "Warning"
+# Only request events have a RequestMethod: other events of the same request (a warning from the middleware) also carry the path.
+expect "healthy probes are not logged at Information (Docker probes /health every 10 seconds)" "$(seq_count "RequestMethod is not null and StartsWith(RequestPath, '/health')")" "0"
+
+step "logs: the API's files hold the same events, one JSON document per line, and no secret"
 expect "the file is named after the day" "$(compose exec -T api sh -c 'ls /app/logs' | tr -d '\r' | grep -cE '^grocerease-[0-9]{8}\.log$')" "1"
 log_files | jq -c . > /dev/null || fail "a line of the log file is not valid JSON"
 log_files | jq -e 'select(.Properties.RequestPath == "/auth/login" and .Properties.StatusCode == 200) | .Level == "Information" and (.Timestamp | length > 0) and (.RenderedMessage | startswith("HTTP"))' | grep -q true \
@@ -123,6 +159,7 @@ log_files | jq -e 'select(.Properties.RequestPath == "/auth/login" and .Properti
 expect "the log directory is owned by the user the API runs as" "$(compose exec -T api sh -c 'stat -c %u /app/logs')" "$(compose exec -T api id -u | tr -d '\r')"
 for secret in 'Sup3r-s3cret' "$registered_refresh_token" "$refreshed_token"; do
   expect "the log file does not contain a secret" "$(log_files | grep -cF -- "$secret" || true)" "0"
+  expect "Seq does not contain a secret" "$(curl -sS -G http://localhost:5341/api/events --data-urlencode "count=1000" | grep -cF -- "$secret" || true)" "0"
 done
 log_lines_before_restart="$(log_files | wc -l)"
 
@@ -172,6 +209,14 @@ wait_for_health_status 200 90
 expect "/health overall after the database is back" "$(jq -r .status "$work/health.json")" "Healthy"
 expect "login works again, without restarting the API" "$(post /auth/login "$login_body")" "200"
 
+step "the API does not depend on Seq: stop it under the running API, then start it again"
+compose stop seq > /dev/null 2>&1
+expect "login works while Seq is down" "$(post /auth/login "$login_body")" "200"
+expect "the API is still healthy while Seq is down" "$(curl -sS -o /dev/null -w '%{http_code}' http://localhost:8080/health)" "200"
+compose start seq > /dev/null 2>&1
+wait_for_seq
+expect "login works after Seq is back" "$(post /auth/login "$login_body")" "200"
+
 step "nothing runs as root"
 [ "$(compose exec -T db id -u | tr -d '\r')" != "0" ] || fail "the database container runs as root"
 [ "$(compose exec -T api id -u | tr -d '\r')" != "0" ] || fail "the API container runs as root"
@@ -183,6 +228,7 @@ wait_for_api
 expect "migrate runs again without error" "$(docker inspect --format '{{.State.ExitCode}}' "$(compose ps --all --quiet migrate)")" "0"
 expect "login after the restart" "$(post /auth/login "$login_body")" "200"
 expect "same user after the restart" "$(jq -r .id "$work/body.json")" "$registered_id"
+wait_for_seq
 [ "$(log_files | wc -l)" -gt "$log_lines_before_restart" ] || fail "the log files did not survive the restart and keep growing (api-logs volume)"
 log_files | jq -c . > /dev/null || fail "a line of the log file is not valid JSON after the restart"
 

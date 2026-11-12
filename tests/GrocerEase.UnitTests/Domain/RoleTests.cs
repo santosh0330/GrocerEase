@@ -54,6 +54,65 @@ public class RoleTests
     }
 
     [Fact]
+    public void ANewRole_HasNoClaims_AndGrantsNothing()
+    {
+        var role = new Role(Guid.CreateVersion7(), "Tester");
+
+        Assert.Empty(role.Claims);
+        Assert.Empty(role.GrantedPermissions);
+        Assert.False(role.Grants(Permissions.RolesRead));
+    }
+
+    [Fact]
+    public void Grant_AddsAPermissionClaim_ThatBelongsToTheRole()
+    {
+        var role = new Role(Guid.CreateVersion7(), "Tester");
+
+        var claim = role.Grant(Permissions.RolesRead);
+
+        Assert.Same(claim, Assert.Single(role.Claims));
+        Assert.Equal((role.Id, Permissions.ClaimType, Permissions.RolesRead), (claim.RoleId, claim.Type, claim.Value));
+        Assert.True(role.Grants(Permissions.RolesRead));
+        Assert.False(role.Grants(Permissions.ProfileRead));
+    }
+
+    [Fact]
+    public void GrantedPermissions_AreSortedAndLeaveOutOtherKindsOfClaim()
+    {
+        var role = new Role(Guid.CreateVersion7(), "Tester");
+        role.Grant(Permissions.RolesRead);
+        role.AddClaim("department", "kitchen"); // a claim, but not a permission
+        role.Grant(Permissions.ProfileRead);
+
+        Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead], role.GrantedPermissions, StringComparer.Ordinal);
+        Assert.Equal(3, role.Claims.Count);
+    }
+
+    [Fact]
+    public void AddClaim_RefusesTheSameTypeAndValueTwice_ButAllowsTheSameValueUnderAnotherType()
+    {
+        var role = new Role(Guid.CreateVersion7(), "Tester");
+        role.AddClaim("permission", "roles.read");
+
+        Assert.Throws<ArgumentException>(() => role.AddClaim("permission", "roles.read"));
+        role.AddClaim("scope", "roles.read");
+
+        Assert.Equal(2, role.Claims.Count);
+    }
+
+    [Fact]
+    public void Claims_CannotBeChangedFromOutside_ExceptThroughAddClaim()
+    {
+        var role = new Role(Guid.CreateVersion7(), "Tester");
+        role.Grant(Permissions.ProfileRead);
+
+        // Not the list the role keeps: a caller that casts it back to a List must not be able to add or remove a claim.
+        Assert.IsNotType<List<RoleClaim>>(role.Claims);
+        Assert.Throws<NotSupportedException>(() => ((IList<RoleClaim>)role.Claims).Clear());
+        Assert.Single(role.Claims);
+    }
+
+    [Fact]
     public void RoleNames_All_ListsEveryRoleOnce()
     {
         Assert.Equal([RoleNames.Customer, RoleNames.Admin], RoleNames.All);

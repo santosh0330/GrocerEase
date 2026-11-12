@@ -31,6 +31,9 @@ public sealed class RoleConfiguration : IEntityTypeConfiguration<Role>
         builder.Property(role => role.Name).HasColumnName("name").HasMaxLength(Role.MaxNameLength).IsRequired();
         builder.HasIndex(role => role.Name).IsUnique().HasDatabaseName(NameIndexName);
 
+        // The claims live in a private field, so the entity can guard them (AddClaim). EF reads and fills that field, not a setter.
+        builder.Navigation(role => role.Claims).UsePropertyAccessMode(PropertyAccessMode.Field);
+
         // Part of the migration that creates the table, so every database starts with the same two roles under the same ids.
         builder.HasData(
             new Role(RoleIds.Customer, RoleNames.Customer),

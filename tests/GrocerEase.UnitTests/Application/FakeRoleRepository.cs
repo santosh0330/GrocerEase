@@ -4,14 +4,28 @@ using GrocerEase.Domain.Entities;
 namespace GrocerEase.UnitTests.Application;
 
 /// <summary>
-/// The seeded roles in memory, standing in for the database in handler tests. <c>seeded: false</c> is a database that was never
+/// The seeded roles, with what each grants, in memory, standing in for the database in handler tests. <c>seeded: false</c> is a database that was never
 /// migrated: no role exists at all.
 /// </summary>
 internal sealed class FakeRoleRepository(bool seeded = true) : IRoleRepository
 {
-    private readonly List<Role> _roles = seeded
-        ? [new Role(RoleIds.Customer, RoleNames.Customer), new Role(RoleIds.Admin, RoleNames.Admin)]
-        : [];
+    private readonly List<Role> _roles = seeded ? [Customer(), Admin()] : [];
+
+    /// <summary>What the database is seeded with, written out here so a test says what it expects instead of reading the seed.</summary>
+    public static Role Customer()
+    {
+        var role = new Role(RoleIds.Customer, RoleNames.Customer);
+        role.Grant(Permissions.ProfileRead);
+        return role;
+    }
+
+    public static Role Admin()
+    {
+        var role = new Role(RoleIds.Admin, RoleNames.Admin);
+        role.Grant(Permissions.ProfileRead);
+        role.Grant(Permissions.RolesRead);
+        return role;
+    }
 
     public Task<Role?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
         Task.FromResult(_roles.SingleOrDefault(role => role.Id == id));

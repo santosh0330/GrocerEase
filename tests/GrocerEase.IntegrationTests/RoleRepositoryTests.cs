@@ -63,6 +63,45 @@ public class RoleRepositoryTests
     }
 
     [Fact]
+    public async Task EveryRoleComesBackWithWhatItGrants_ByName_ById_AndInTheList()
+    {
+        await using var db = await NewContextAsync();
+        var repository = new RoleRepository(db);
+
+        var customer = await repository.GetByNameAsync(RoleNames.Customer, CancellationToken.None);
+        var admin = await repository.GetByIdAsync(RoleIds.Admin, CancellationToken.None);
+        var listed = await repository.ListAsync(CancellationToken.None);
+
+        Assert.Equal([Permissions.ProfileRead], customer?.GrantedPermissions, StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead], admin?.GrantedPermissions, StringComparer.Ordinal);
+        Assert.Equal(
+            [Permissions.ProfileRead, Permissions.RolesRead],
+            listed.Single(role => string.Equals(role.Name, RoleNames.Admin, StringComparison.Ordinal)).GrantedPermissions,
+            StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public async Task ACustomerDoesNotGrantTheRolesPermission_AndAnAdminDoes()
+    {
+        await using var db = await NewContextAsync();
+        var repository = new RoleRepository(db);
+
+        Assert.False((await repository.GetByNameAsync(RoleNames.Customer, CancellationToken.None))!.Grants(Permissions.RolesRead));
+        Assert.True((await repository.GetByNameAsync(RoleNames.Admin, CancellationToken.None))!.Grants(Permissions.RolesRead));
+    }
+
+    [Fact]
+    public async Task TheClaims_BelongToTheRoleTheyWereReadWith()
+    {
+        await using var db = await NewContextAsync();
+
+        var admin = await new RoleRepository(db).GetByNameAsync(RoleNames.Admin, CancellationToken.None);
+
+        Assert.All(admin!.Claims, claim => Assert.Equal(admin.Id, claim.RoleId));
+        Assert.All(admin.Claims, claim => Assert.Equal(Permissions.ClaimType, claim.Type));
+    }
+
+    [Fact]
     public async Task ARoleThatWasRead_IsNotTracked()
     {
         await using var db = await NewContextAsync();

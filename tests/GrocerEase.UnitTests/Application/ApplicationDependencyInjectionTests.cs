@@ -5,6 +5,8 @@ using GrocerEase.Application.Authentication.Commands;
 using GrocerEase.Application.Authentication.Common;
 using GrocerEase.Application.Common;
 using GrocerEase.Application.Decorators;
+using GrocerEase.Application.Roles.Common;
+using GrocerEase.Application.Roles.Queries;
 using GrocerEase.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,6 +57,8 @@ public class ApplicationDependencyInjectionTests
             scope.ServiceProvider.GetRequiredService<ICommandHandler<LoginCommand, Result<AuthenticationResult>>>());
         Assert.IsType<ValidationDecorator<RefreshCommand, Result<AuthenticationResult>>>(
             scope.ServiceProvider.GetRequiredService<ICommandHandler<RefreshCommand, Result<AuthenticationResult>>>());
+        Assert.IsType<ValidationDecorator<ListRolesQuery, Result<IReadOnlyList<RoleResult>>>>(
+            scope.ServiceProvider.GetRequiredService<ICommandHandler<ListRolesQuery, Result<IReadOnlyList<RoleResult>>>>());
     }
 
     [Fact]

@@ -66,6 +66,11 @@ jobs:
         run: |
           docker compose --env-file .env.example config --format json | jq -e '.services.seq.ports | length > 0 and all(.host_ip == "127.0.0.1")'
 
+      # Docker keeps a container's console output without any size limit unless told to: every service must say how much to keep.
+      - name: Every service rotates its logs
+        run: |
+          docker compose --env-file .env.example config --format json | jq -e '.services | to_entries | length > 0 and all(.value.logging.driver == "json-file" and (.value.logging.options["max-size"] | length > 0) and (.value.logging.options["max-file"] | length > 0))'
+
       # Starts the real stack (database, migrations, API) with throwaway passwords and checks it over HTTP and in the database.
       # The same script anyone can run locally: ./scripts/smoke-test.sh
       - name: Smoke test the whole stack

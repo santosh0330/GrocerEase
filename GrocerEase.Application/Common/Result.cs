@@ -4,7 +4,7 @@ namespace GrocerEase.Application.Common;
 /// The outcome of a use case: either a value or an <see cref="ResultError"/>, never both.
 /// Handlers return it for failures a caller should expect; unexpected failures stay exceptions.
 /// </summary>
-public sealed class Result<T>
+public sealed class Result<T> : IResult
 {
     private readonly T? _value;
     private readonly ResultError? _error;

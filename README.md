@@ -20,7 +20,7 @@ Requires Docker with the Compose plugin.
 
 ```bash
 cp .env.example .env          # then edit .env: set the three database passwords and JWT_SECRET_KEY
-docker compose up --build     # PostgreSQL on 127.0.0.1:5432, then migrations, then the API on http://localhost:8080
+docker compose up --build     # PostgreSQL on 127.0.0.1:5432, then migrations, then the API on http://localhost:8080, and Seq on http://localhost:5341
 ```
 
 Use a different random value for each of `POSTGRES_PASSWORD`, `DB_MIGRATOR_PASSWORD` and `DB_APP_PASSWORD`, and use hex (`openssl rand -hex 24`) so no character needs escaping in a connection string.
@@ -34,9 +34,9 @@ Check it: `curl http://localhost:8080/test` returns `test`.
 | `docker compose up --build -d` | Rebuild and start in the background |
 | `docker compose logs -f api` | Follow the API log |
 | `docker compose down` | Stop and remove the containers; **the database data is kept** |
-| `docker compose down -v` | Same, and **delete the volumes**: the database and the API's log files |
+| `docker compose down -v` | Same, and **delete the volumes**: the database, the API's log files and Seq's data |
 
-Both containers run as non-root users (`app` for the API, `postgres` for the database) with all Linux capabilities dropped, and CI checks it. The database port is published on loopback only.
+The API and database containers run as non-root users (`app` for the API, `postgres` for the database) with all Linux capabilities dropped, and CI checks it. The database port is published on loopback only. Seq, a third-party image, is the exception (see *Logging*): it runs as root, and only its port is limited to loopback.
 
 ### Migrations
 
@@ -165,14 +165,13 @@ The project changes is going to be documented as md files on `~/Documents/Guides
 
 ## Logging
 
-The API writes **structured** logs with [Serilog](https://serilog.net): every event keeps its values as named properties (`StatusCode`, `Elapsed`, ...), not only as a line of text, so they can be filtered and counted, not just read. Two places receive the same events:
+The API writes **structured** logs with [Serilog](https://serilog.net): every event keeps its values as named properties (`StatusCode`, `Elapsed`, ...), not only as a line of text, so they can be filtered and counted, not just read. Three places receive the same events:
 
 | Where | Form | For |
 |---|---|---|
 | **Console** (`docker compose logs api`) | one readable line per event, then its properties as JSON | watching the API run |
 | **Files** (`/app/logs` in the `api-logs` volume, or `logs/` when run with `dotnet run`) | one JSON document per line, **a new file every day**: `grocerease-20261110.log` | the record, and `jq` |
-
-Seq, a third place, comes in the next step.
+| **Seq** (`http://localhost:5341`) | searchable events | finding things |
 
 Levels come from `Serilog:MinimumLevel` in `appsettings.json`: `Information`, with the framework's own chatter (`Microsoft`, `System`) at `Warning`. `appsettings.Development.json` lowers the default to `Debug`.
 
@@ -202,9 +201,9 @@ When a response has been sent, the API logs **one** event that says what was ask
 - **The level says how it went:** `Information` for a success, `Warning` for a refused request (any `4xx`: bad input, wrong credentials, a rate limit), `Error` for a `5xx`. The health probes are `Debug` when healthy (Docker asks every 10 seconds) and `Warning` when not.
 - **A failure keeps its exception.** An unhandled exception is logged by its own event (`Level: Error`, the exception with its full stack trace in `Exception`, still on one line in the file), and the request's event is the `500`. Both carry the same **`RequestId`** and **`TraceId`**, and the `traceId` in the `500` response body contains the same trace id: a user's report leads to the exact log lines. Events the application writes while handling a request (a revoked refresh token family, say) carry them too.
 
-**What is never logged,** on purpose: request and response **bodies** (passwords, access tokens and refresh tokens are in them), the **`Authorization` header** and cookies, and the **query string** (a URL is where people put values they should not). Tests send canary secrets through every path and search the console and the files for them. If a request needs more detail to debug, add the one property it needs: do not turn on body logging.
+**What is never logged,** on purpose: request and response **bodies** (passwords, access tokens and refresh tokens are in them), the **`Authorization` header** and cookies, and the **query string** (a URL is where people put values they should not). Tests send canary secrets through every path and search the console, the files and what Seq receives for them. If a request needs more detail to debug, add the one property it needs: do not turn on body logging.
 
-`ClientIp`, `UserId` and `UserAgent` identify people. Treat the logs as personal data: files are kept 14 days by default (below).
+`ClientIp`, `UserId` and `UserAgent` identify people. Treat the logs as personal data: files are kept 14 days by default (below), and Seq is for the developers of this API.
 
 ### Files
 
@@ -221,3 +220,23 @@ The API refuses to start with a value outside these ranges. Several writers (two
 docker compose exec api sh -c 'cat /app/logs/grocerease-*.log' \
   | jq -c 'select(.Properties.StatusCode >= 400) | {t: .Timestamp, m: .Properties.RequestMethod, p: .Properties.RequestPath, s: .Properties.StatusCode, ms: .Properties.Elapsed}'
 ```
+
+### Seq
+
+```bash
+docker compose up -d seq        # the UI is at http://localhost:5341
+```
+
+`dotnet run` sends to `Seq:ServerUrl`, `http://localhost:5341` by default, so the same Seq serves both. Compose sets it to `http://seq:5341` for the API container. Leave it empty (`Seq__ServerUrl=`) to turn Seq off. Useful filters, typed in the Seq search box:
+
+| Filter | Finds |
+|---|---|
+| `StatusCode >= 500` | server errors |
+| `RequestPath = '/auth/login' and StatusCode = 401` | failed sign-ins |
+| `Elapsed > 1000` | requests slower than a second |
+| `UserId = '0192f1a2-...'` | everything one user did |
+| `TraceId = '80bf0f04...'` | one request, and everything the application logged while handling it |
+
+- **Seq never slows the API or stops it.** Events are sent in the background in batches. If Seq is stopped or unreachable the API keeps answering, and the console and files still have everything; events past the sink's in-memory limit are dropped. When the API stops it posts what it still holds, so the last events before a shutdown are not lost.
+- **Local development only, as configured here.** The Compose `seq` service has **no login** (Seq 2026 refuses to start without either an admin password or an explicit opt-out; `SEQ_FIRSTRUN_NOAUTHENTICATION: "true"` is that opt-out) and its ports are on `127.0.0.1` only, like the database. CI checks that no Seq port is published on another address. The image runs as root and does not start with its capabilities dropped, so it has less hardening than the other services. For anything shared: remove the opt-out, set `SEQ_FIRSTRUN_ADMINPASSWORDHASH` (the hash: `echo 'a password' | docker run --rm -i datalust/seq config hash`), create an API key in Seq, and give it to the API as `Seq__ApiKey` (a secret: user-secrets or the environment, never a committed file). These settings apply only when the data volume is first created.
+- **`ACCEPT_EULA: "Y"`** in `docker-compose.yml` accepts Seq's license agreement, which the image requires; Seq is free for individual use.

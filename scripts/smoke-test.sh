@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Starts the whole Compose stack with throwaway passwords and checks it end to end, over HTTP and inside the database:
 # migrations applied by the migrate service, the API working against PostgreSQL, data surviving a restart of the stack,
-# and nothing running as root or connecting as more than it needs.
+# the API's log files, and nothing running as root or connecting as more than it needs.
 #
 # Needs: Docker with the Compose plugin, curl, jq, openssl, and the host ports 8080 and 5432 free.
 # Leaves nothing behind: it uses its own Compose project and volume and removes them at the end, pass or fail.
@@ -73,6 +73,9 @@ wait_for_health_status() {
   fail "/health did not answer $wanted within $seconds seconds (last answer: $code)"
 }
 
+# The API's log files, read from inside the container (they live in the api-logs volume).
+log_files() { compose exec -T api sh -c 'cat /app/logs/grocerease-*.log' | tr -d '\r'; }
+
 # POST JSON, print the HTTP status, keep the body in $work/body.json.
 post() { curl -sS -o "$work/body.json" -w '%{http_code}' -X POST "http://localhost:8080$1" -H 'Content-Type: application/json' -d "$2"; }
 
@@ -111,6 +114,17 @@ expect "an old refresh token is refused" "$(post /auth/refresh "{\"refreshToken\
 expect "the refusal says why, in a stable code" "$(jq -r .code "$work/body.json")" "Authentication.InvalidRefreshToken"
 expect "reusing the old one revoked the session: the newest token is refused too" "$(post /auth/refresh "{\"refreshToken\":\"$refreshed_token\"}")" "401"
 expect "an empty refresh token is a validation error" "$(post /auth/refresh '{"refreshToken":""}')" "400"
+
+step "logs: the API's files hold one structured event per request, one JSON document per line, and no secret"
+expect "the file is named after the day" "$(compose exec -T api sh -c 'ls /app/logs' | tr -d '\r' | grep -cE '^grocerease-[0-9]{8}\.log$')" "1"
+log_files | jq -c . > /dev/null || fail "a line of the log file is not valid JSON"
+log_files | jq -e 'select(.Properties.RequestPath == "/auth/login" and .Properties.StatusCode == 200) | .Level == "Information" and (.Timestamp | length > 0) and (.RenderedMessage | startswith("HTTP"))' | grep -q true \
+  || fail "the login event is not in the log file with its timestamp, level and message"
+expect "the log directory is owned by the user the API runs as" "$(compose exec -T api sh -c 'stat -c %u /app/logs')" "$(compose exec -T api id -u | tr -d '\r')"
+for secret in 'Sup3r-s3cret' "$registered_refresh_token" "$refreshed_token"; do
+  expect "the log file does not contain a secret" "$(log_files | grep -cF -- "$secret" || true)" "0"
+done
+log_lines_before_restart="$(log_files | wc -l)"
 
 step "what is stored in the database"
 expect "users" "$(admin_sql 'select count(*) from users')" "1"
@@ -169,5 +183,7 @@ wait_for_api
 expect "migrate runs again without error" "$(docker inspect --format '{{.State.ExitCode}}' "$(compose ps --all --quiet migrate)")" "0"
 expect "login after the restart" "$(post /auth/login "$login_body")" "200"
 expect "same user after the restart" "$(jq -r .id "$work/body.json")" "$registered_id"
+[ "$(log_files | wc -l)" -gt "$log_lines_before_restart" ] || fail "the log files did not survive the restart and keep growing (api-logs volume)"
+log_files | jq -c . > /dev/null || fail "a line of the log file is not valid JSON after the restart"
 
 echo "ALL CHECKS PASSED"

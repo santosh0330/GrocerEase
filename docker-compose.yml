@@ -31,6 +31,10 @@ services:
       # Becomes the Jwt:SecretKey setting ("__" is how an environment variable names a nested key). The API refuses
       # to start if it is missing or shorter than 32 characters. It lives in .env, never in a committed file.
       Jwt__SecretKey: ${JWT_SECRET_KEY:?set JWT_SECRET_KEY in .env}
+      # Logs go to the console and to daily JSON files in /app/logs (the api-logs volume below).
+      LogFiles__Directory: /app/logs
+    volumes:
+      - api-logs:/app/logs
     depends_on:
       db:
         condition: service_healthy
@@ -86,3 +90,5 @@ services:
 
 volumes:
   db-data:
+  # The API's log files, so they survive the container being recreated.
+  api-logs:

@@ -194,6 +194,37 @@ if out="$(app_sql 'create table should_fail (id int)')"; then fail "the app role
 echo "$out" | grep -q "permission denied" || fail "unexpected answer to CREATE TABLE as the app role: $out"
 if out="$(app_sql 'select * from migrations."__EFMigrationsHistory"')"; then fail "the app role can read the migration history"; fi
 
+step "roles: a new user is a customer, only an admin reaches GET /roles, and a role is read when a token is made"
+# A second user, so this step does not disturb the first one's counts. It uses refresh, not login, to get its new token: login is
+# limited to 5 a minute per address, and the checks that follow already use most of that.
+admin_email="smoke.admin.$(date +%s)@example.com"
+expect "register a second user" "$(post /auth/register "{\"firstName\":\"Grace\",\"lastName\":\"Hopper\",\"email\":\"$admin_email\",\"password\":\"Sup3r-s3cret!\"}")" "200"
+customer_token="$(jq -r .token "$work/body.json")"
+customer_refresh_token="$(jq -r .refreshToken "$work/body.json")"
+
+# A claim of a JWT. The payload is base64url, so restore the standard alphabet and the padding before decoding it.
+jwt_claim() {
+  local payload
+  payload="$(printf %s "$1" | cut -d. -f2 | tr '_-' '/+')"
+  while [ $(( ${#payload} % 4 )) -ne 0 ]; do payload="$payload="; done
+  printf %s "$payload" | base64 -d | jq -r --arg name "$2" '.[$name]'
+}
+get() { curl -sS -o "$work/get.json" -w '%{http_code}' "http://localhost:8080$1" ${2:+-H "Authorization: Bearer $2"}; }
+expect "the token of a new user says Customer" "$(jwt_claim "$customer_token" role)" "Customer"
+expect "GET /me shows the role" "$(get /me "$customer_token" > /dev/null; jq -r .role "$work/get.json")" "Customer"
+expect "GET /roles with no token" "$(get /roles)" "401"
+expect "GET /roles as a customer" "$(get /roles "$customer_token")" "403"
+expect "the refusal has a stable code" "$(jq -r .code "$work/get.json")" "Authorization.Forbidden"
+
+admin_sql "update users set role_id = '019e0000-0000-7000-8000-000000000002' where email = '$admin_email'" > /dev/null
+expect "a token issued before the change keeps the old role" "$(get /roles "$customer_token")" "403"
+expect "refreshing gives a token with the current role" "$(post /auth/refresh "{\"refreshToken\":\"$customer_refresh_token\"}")" "200"
+admin_token="$(jq -r .token "$work/body.json")"
+expect "the new token says Admin" "$(jwt_claim "$admin_token" role)" "Admin"
+expect "GET /roles as an admin" "$(get /roles "$admin_token")" "200"
+expect "GET /roles lists both roles" "$(jq -r '[.[].name] | join(",")' "$work/get.json")" "Admin,Customer"
+expect "GET /me shows the new role" "$(get /me "$admin_token" > /dev/null; jq -r .role "$work/get.json")" "Admin"
+
 step "health: /health includes the database, /health/live does not"
 expect "/health status" "$(curl -sS -o "$work/health.json" -w '%{http_code}' http://localhost:8080/health)" "200"
 expect "/health overall" "$(jq -r .status "$work/health.json")" "Healthy"

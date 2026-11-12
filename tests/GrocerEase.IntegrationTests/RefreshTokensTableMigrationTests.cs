@@ -172,14 +172,18 @@ public class RefreshTokensTableMigrationTests
     {
         var database = await MigratedAsync();
         var migrations = AllMigrations();
+        var thisMigration = migrations.ToList().FindIndex(name => name.EndsWith("_AddRefreshTokens", StringComparison.Ordinal));
 
-        await MigrateAsync(database, migrations[^2]);
+        // Found by name, not by position, so a migration added after this one does not change what this test rolls back.
+        await MigrateAsync(database, migrations[thisMigration - 1]);
 
         Assert.Null(await PostgresServer.ScalarAsync<string>(database, "select to_regclass('public.refresh_tokens')::text"));
         Assert.Equal(1L, await PostgresServer.ScalarAsync<long>(database, "select count(*) from users"));
     }
 
     [Fact]
-    public async Task ThisIsTheNewestMigration() =>
-        Assert.EndsWith("_AddRefreshTokens", AllMigrations()[^1], StringComparison.Ordinal);
+    public void ThisMigrationExists_AndFollowsTheOnesThatCreateTheUsersTable() =>
+        Assert.True(
+            AllMigrations().ToList().FindIndex(name => name.EndsWith("_AddRefreshTokens", StringComparison.Ordinal)) >= 2,
+            "AddRefreshTokens must come after CreateUsers and AddUserTimestamps.");
 }

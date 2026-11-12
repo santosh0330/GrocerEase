@@ -65,6 +65,44 @@ Authorization: Bearer {{login.response.body.$.token}}
 
 ###
 
+# Stores. Anyone signed in may read them (stores.read); creating one needs stores.manage, which only an admin has, so run these as
+# an admin (see "Roles and permissions" in the README). 201 with { "id", "name", "address" }; the same name twice is 409 "Store.DuplicateName".
+# @name createStore
+POST {{GrocerEase.Api_HostAddress}}/stores
+Authorization: Bearer {{login.response.body.$.token}}
+Content-Type: application/json
+
+{
+  "name": "Fresh Mart",
+  "address": "1 High Street"
+}
+
+###
+
+GET {{GrocerEase.Api_HostAddress}}/stores
+Authorization: Bearer {{login.response.body.$.token}}
+
+###
+
+# Assign a registered customer to the store: that makes them a store user (200). An unknown store or email is 404, an admin or someone
+# who already runs a store is 409 "User.NotACustomer". Their token keeps saying Customer until they log in or refresh.
+# @name assignMember
+POST {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/members
+Authorization: Bearer {{login.response.body.$.token}}
+Content-Type: application/json
+
+{
+  "email": "asha@example.com"
+}
+
+###
+
+# Take them out again: 204, and they are a customer. 404 "Store.MemberNotFound" if they do not run this store.
+DELETE {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/members/{{assignMember.response.body.$.userId}}
+Authorization: Bearer {{login.response.body.$.token}}
+
+###
+
 # Health, readiness: open to anyone, no token. Runs every check, including the database.
 # 200 { "status": "Healthy", "totalDurationMs": 4.1, "checks": [ { "name": "database", "status": "Healthy", "durationMs": 3.8 } ] }
 # 503 with "status": "Unhealthy" when the database cannot be reached or has not been migrated. It never says why: that goes to the log.

@@ -36,6 +36,24 @@ public static class DependencyInjection
     }
 
     /// <summary>
+    /// Registers <typeparamref name="THandler"/> like <c>AddValidatedCommandHandler</c>, and also runs it in a unit of work
+    /// (<see cref="TransactionDecorator{TCommand, TResponse}"/>): what it writes is kept together or not at all. The validation
+    /// is the outer wrapper, so a command that fails it is refused before any transaction is opened.
+    /// </summary>
+    public static IServiceCollection AddTransactionalCommandHandler<TCommand, TResponse, THandler>(this IServiceCollection services)
+        where THandler : class, ICommandHandler<TCommand, TResponse>
+        where TResponse : IResult
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddScoped<THandler>();
+        services.AddScoped<ICommandHandler<TCommand, TResponse>>(provider => new ValidationDecorator<TCommand, TResponse>(
+            new TransactionDecorator<TCommand, TResponse>(provider.GetRequiredService<THandler>(), provider.GetRequiredService<IUnitOfWork>()),
+            provider.GetServices<IValidator<TCommand>>()));
+        return services;
+    }
+
+    /// <summary>
     /// Registers <typeparamref name="THandler"/> for its command and wraps it in a <see cref="ValidationDecorator{TCommand, TResponse}"/>,
     /// so callers asking for <c>ICommandHandler&lt;TCommand, TResponse&gt;</c> get the validated version.
     /// </summary>

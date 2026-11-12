@@ -65,4 +65,14 @@ public class ResultTests
 
         Assert.Equal("error User.DuplicateEmail", text);
     }
+
+    [Fact]
+    public void AResult_SaysWhetherItSucceeded_ThroughIResult_WithoutItsValue()
+    {
+        // Through a method that takes the interface, as the transaction decorator reads a result it knows nothing else about.
+        static bool Succeeded(IResult result) => result.IsSuccess;
+
+        Assert.True(Succeeded(Result.Success(42)));
+        Assert.False(Succeeded(Result.Failure<int>(DuplicateEmail)));
+    }
 }

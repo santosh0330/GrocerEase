@@ -40,11 +40,6 @@ public class RolesEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         return (await response.Content.ReadFromJsonAsync<AuthenticationResponse>())!;
     }
 
-    private static async Task MakeAdminAsync(string email) =>
-        await PostgresServer.ExecuteAsync(
-            await PostgresServer.ConnectionStringAsync(PostgresServer.AdminUser, PostgresServer.AdminPassword),
-            $"update users set role_id = '{RoleIds.Admin}' where email = '{email}'");
-
     [Fact]
     public async Task WithNoToken_Is401()
     {
@@ -75,7 +70,7 @@ public class RolesEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         using var client = factory.CreateClient();
         var email = UniqueEmail();
         await RegisterAsync(client, email);
-        await MakeAdminAsync(email);
+        await TestUsers.MakeAdminAsync(email);
         var admin = await LoginAsync(client, email); // a new token, because a role is read when a token is made
 
         using var request = GetWithToken("/roles", admin.Token);
@@ -94,7 +89,7 @@ public class RolesEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         using var client = factory.CreateClient();
         var email = UniqueEmail();
         var registered = await RegisterAsync(client, email);
-        await MakeAdminAsync(email);
+        await TestUsers.MakeAdminAsync(email);
 
         using var request = GetWithToken("/roles", registered.Token); // issued while they were a customer
         var response = await client.SendAsync(request);

@@ -41,11 +41,6 @@ public class RoleInTokenTests(ApiFactory factory) : IClassFixture<ApiFactory>
         return (await response.Content.ReadFromJsonAsync<AuthenticationResponse>())!;
     }
 
-    private static async Task MakeAdminAsync(string email) =>
-        await PostgresServer.ExecuteAsync(
-            await PostgresServer.ConnectionStringAsync(PostgresServer.AdminUser, PostgresServer.AdminPassword),
-            $"update users set role_id = '{RoleIds.Admin}' where email = '{email}'");
-
     [Fact]
     public async Task ANewUser_IsACustomer_AndTheTokenFromRegisteringSaysSo()
     {
@@ -66,7 +61,7 @@ public class RoleInTokenTests(ApiFactory factory) : IClassFixture<ApiFactory>
         using var client = factory.CreateClient();
         var email = UniqueEmail();
         await RegisterAsync(client, email);
-        await MakeAdminAsync(email);
+        await TestUsers.MakeAdminAsync(email);
 
         var loggedIn = await LoginAsync(client, email);
 
@@ -79,7 +74,7 @@ public class RoleInTokenTests(ApiFactory factory) : IClassFixture<ApiFactory>
         using var client = factory.CreateClient();
         var email = UniqueEmail();
         var registered = await RegisterAsync(client, email);
-        await MakeAdminAsync(email);
+        await TestUsers.MakeAdminAsync(email);
 
         var refreshed = await RefreshAsync(client, registered.RefreshToken);
 

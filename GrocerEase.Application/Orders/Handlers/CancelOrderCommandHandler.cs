@@ -39,15 +39,8 @@ public sealed class CancelOrderCommandHandler(StoreAccess storeAccess, IOrderRep
         }
 
         var order = moved.Value;
-        foreach (var line in order.Lines.OrderBy(line => line.ProductId))
-        {
-            if (await inventoryRepository.TryAdjustAsync(order.StoreId, line.ProductId, line.Quantity, cancellationToken) is null)
-            {
-                // The decorator rolls back the status change and every line already restored.
-                return Result.Failure<OrderResult>(OrderErrors.CannotRestoreStock(line.ProductName));
-            }
-        }
-
-        return Result.Success(order.ToResult());
+        return await OrderStock.RestoreAsync(inventoryRepository, order, cancellationToken) is { } cannotRestore
+            ? Result.Failure<OrderResult>(cannotRestore) // the decorator rolls back the status change and every line already restored
+            : Result.Success(order.ToResult());
     }
 }

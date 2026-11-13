@@ -37,6 +37,28 @@ internal static class OrderMoves
             return Result.Failure<Order>(OrderErrors.NotFound);
         }
 
+        return await ChangeAsync(orderRepository, order, pastTense, move, cancellationToken);
+    }
+
+    /// <summary>
+    /// The same move for the <b>customer</b> who placed the order: it is read through the customer, so someone else's order is "not found",
+    /// the same as one that does not exist. Returns the order after the move, or the error to answer with.
+    /// </summary>
+    public static async Task<Result<Order>> MoveMineAsync(
+        IOrderRepository orderRepository, Guid customerId, Guid orderId, string pastTense, Func<Order, bool> move, CancellationToken cancellationToken)
+    {
+        if (await orderRepository.GetForCustomerAsync(customerId, orderId, cancellationToken) is not { } order)
+        {
+            return Result.Failure<Order>(OrderErrors.NotFound);
+        }
+
+        return await ChangeAsync(orderRepository, order, pastTense, move, cancellationToken);
+    }
+
+    // The entity says whether the move is legal; the database changes the status only if nobody changed it first.
+    private static async Task<Result<Order>> ChangeAsync(
+        IOrderRepository orderRepository, Order order, string pastTense, Func<Order, bool> move, CancellationToken cancellationToken)
+    {
         var from = order.Status;
         if (!move(order))
         {
@@ -44,7 +66,7 @@ internal static class OrderMoves
         }
 
         // The status the order had when it was read is the one the row must still have.
-        return await orderRepository.TryChangeStatusAsync(storeId, orderId, from, order.Status, cancellationToken)
+        return await orderRepository.TryChangeStatusAsync(order.StoreId, order.Id, from, order.Status, cancellationToken)
             ? Result.Success(order)
             : Result.Failure<Order>(OrderErrors.ChangedMeanwhile);
     }

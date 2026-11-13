@@ -408,6 +408,30 @@ expect "the statuses in the database" "$(admin_sql "select string_agg(status || 
 expect "the store user lists only the cancelled" "$(send_as GET "/stores/$store_id/orders?status=cancelled" "$owner_token")" "200"
 expect "two of them" "$(jq -r .totalCount "$work/body.json")" "2"
 
+step "a customer cancels their own order, but only while it is pending"
+pending_id="$(admin_sql "select id from orders where store_id = '$store_id' and status = 'Pending'")"
+expect "a store user cannot use the customer's cancellation" "$(send_as POST "/orders/$pending_id/cancel" "$owner_token")" "403"
+expect "another customer is told there is no such order" "$(send_as POST "/orders/$pending_id/cancel" "$customer_token")" "404"
+expect "with a stable code" "$(jq -r .code "$work/body.json")" "Order.NotFound"
+expect "the order is still pending" "$(admin_sql "select status from orders where id = '$pending_id'")" "Pending"
+expect "the owner cancels it" "$(send_as POST "/orders/$pending_id/cancel" "$member_token")" "200"
+expect "it is cancelled" "$(jq -r .status "$work/body.json")" "Cancelled"
+expect "and its oat is back: three" "$(admin_sql "select quantity_on_hand from inventory_items where product_id = '$oats_id'")" "3"
+expect "cancelling it again is refused" "$(send_as POST "/orders/$pending_id/cancel" "$member_token")" "409"
+expect "an order the store has shipped cannot be cancelled by the customer" "$(send_as POST "/orders/$order_id/cancel" "$member_token")" "409"
+expect "with a stable code" "$(jq -r .code "$work/body.json")" "Order.InvalidTransition"
+expect "the customer orders an oat again" "$(send_as POST "/stores/$store_id/orders" "$member_token" "{\"deliveryAddress\":\"1 High Street\",\"lines\":[{\"productId\":\"$oats_id\",\"quantity\":1}]}")" "201"
+race_id="$(jq -r .id "$work/body.json")"
+# The customer cancels and the store user verifies the same order at the same moment: exactly one of them wins.
+( curl -sS -o /dev/null -w '%{http_code}\n' -X POST "http://localhost:8080/orders/$race_id/cancel" -H "Authorization: Bearer $member_token" > "$work/race-cancel" ) &
+( curl -sS -o /dev/null -w '%{http_code}\n' -X POST "http://localhost:8080/stores/$store_id/orders/$race_id/verify" -H "Authorization: Bearer $owner_token" > "$work/race-verify" ) &
+wait
+expect "cancel and verify at once: exactly one wins" "$(cat "$work/race-cancel" "$work/race-verify" | grep -c '^200$')" "1"
+expect "and the other is told no" "$(cat "$work/race-cancel" "$work/race-verify" | grep -c '^409$')" "1"
+if [ "$(cat "$work/race-cancel")" = "200" ]; then race_status="Cancelled"; race_oats="3"; else race_status="Verified"; race_oats="2"; fi
+expect "the order is in the status of the winner" "$(admin_sql "select status from orders where id = '$race_id'")" "$race_status"
+expect "and the oat is back only if the customer won" "$(admin_sql "select quantity_on_hand from inventory_items where product_id = '$oats_id'")" "$race_oats"
+
 step "a store user taken out of the store loses access at once, token or no token"
 expect "an admin takes the store user out" "$(send_as DELETE "/stores/$store_id/members/$owner_id" "$admin_token")" "204"
 expect "their token still says StoreUser, but it opens nothing: the store is not found for them" "$(send_as POST "/stores/$store_id/products" "$owner_token" '{"name":"Cheese","price":4}')" "404"

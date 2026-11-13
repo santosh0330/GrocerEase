@@ -171,7 +171,7 @@ expect "email is stored in lower case" "$(admin_sql 'select email from users')" 
 expect "the password is not stored" "$(admin_sql "select count(*) from users where password_hash like '%Sup3r%'")" "0"
 expect "timestamps are filled in" "$(admin_sql 'select created_at is not null and updated_at is not null from users')" "t"
 expect "a new user holds the Customer role" "$(admin_sql 'select r.name from users u join roles r on r.id = u.role_id')" "Customer"
-expect "all migrations are recorded, in their own schema" "$(admin_sql 'select count(*) from migrations."__EFMigrationsHistory"')" "14"
+expect "all migrations are recorded, in their own schema" "$(admin_sql 'select count(*) from migrations."__EFMigrationsHistory"')" "15"
 expect "the roles are seeded, under their fixed ids" "$(admin_sql "select string_agg(id || ':' || name, ',' order by name) from roles")" "019e0000-0000-7000-8000-000000000002:Admin,019e0000-0000-7000-8000-000000000001:Customer,019e0000-0000-7000-8000-000000000003:StoreUser"
 expect "the roles grant what they should" "$(admin_sql "select string_agg(r.name || ':' || c.claim_value, ',' order by r.name, c.claim_value) from role_claims c join roles r on r.id = c.role_id where c.claim_type = 'permission'")" "Admin:products.read,Admin:profile.read,Admin:roles.read,Admin:stores.manage,Admin:stores.read,Customer:orders.place,Customer:orders.read,Customer:products.read,Customer:profile.read,Customer:stores.read,StoreUser:inventory.manage,StoreUser:orders.manage,StoreUser:products.manage,StoreUser:products.read,StoreUser:profile.read,StoreUser:stores.read"
 
@@ -371,9 +371,47 @@ expect "four of them, and the first is the newest" "$(jq -c '[.totalCount, (.ite
 expect "another customer lists none of them" "$(send_as GET "/orders" "$customer_token")" "200"
 expect "none" "$(jq -r .totalCount "$work/body.json")" "0"
 
+step "fulfilment: the store user lists, verifies, ships and cancels the orders of their store, and cancelling puts the stock back once"
+expect "a customer cannot see the orders of a store" "$(send_as GET "/stores/$store_id/orders" "$member_token")" "403"
+expect "nor verify one" "$(send_as POST "/stores/$store_id/orders/$order_id/verify" "$member_token")" "403"
+expect "the store user lists the pending orders" "$(send_as GET "/stores/$store_id/orders?status=Pending" "$owner_token")" "200"
+expect "four of them, oldest first, the first being the first order placed" "$(jq -c --arg id "$order_id" '[.totalCount, (.items[0].id == $id), (.items[0].placedAt <= .items[1].placedAt)]' "$work/body.json")" "[4,true,true]"
+second_order_id="$(jq -r '.items[1].id' "$work/body.json")"
+third_order_id="$(jq -r '.items[2].id' "$work/body.json")"
+expect "a bad status filter is refused" "$(send_as GET "/stores/$store_id/orders?status=Lost" "$owner_token")" "400"
+expect "a pending order cannot be shipped before it is verified" "$(send_as POST "/stores/$store_id/orders/$order_id/ship" "$owner_token")" "409"
+expect "with a stable code" "$(jq -r .code "$work/body.json")" "Order.InvalidTransition"
+expect "the store user verifies the first order" "$(send_as POST "/stores/$store_id/orders/$order_id/verify" "$owner_token")" "200"
+expect "it is verified" "$(jq -r .status "$work/body.json")" "Verified"
+expect "the customer sees it verified" "$(send_as GET "/orders/$order_id" "$member_token")" "200"
+expect "as verified" "$(jq -r .status "$work/body.json")" "Verified"
+expect "verifying it again is refused" "$(send_as POST "/stores/$store_id/orders/$order_id/verify" "$owner_token")" "409"
+expect "the store user ships it" "$(send_as POST "/stores/$store_id/orders/$order_id/ship" "$owner_token")" "200"
+expect "it is shipped" "$(jq -r .status "$work/body.json")" "Shipped"
+expect "a shipped order cannot be cancelled" "$(send_as POST "/stores/$store_id/orders/$order_id/cancel" "$owner_token")" "409"
+expect "and its stock did not come back: still no oats" "$(admin_sql "select quantity_on_hand from inventory_items where product_id = '$oats_id'")" "0"
+expect "the store user cancels a pending order of one oat" "$(send_as POST "/stores/$store_id/orders/$second_order_id/cancel" "$owner_token")" "200"
+expect "it is cancelled" "$(jq -r .status "$work/body.json")" "Cancelled"
+expect "and its oat is back on the shelf" "$(admin_sql "select quantity_on_hand from inventory_items where product_id = '$oats_id'")" "1"
+expect "cancelling it again is refused" "$(send_as POST "/stores/$store_id/orders/$second_order_id/cancel" "$owner_token")" "409"
+expect "and the stock came back once, not twice" "$(admin_sql "select quantity_on_hand from inventory_items where product_id = '$oats_id'")" "1"
+# Ten cancellations of one order at the same moment: exactly one wins, and the oat goes back once.
+for i in $(seq 1 10); do
+  ( curl -sS -o /dev/null -w '%{http_code}\n' -X POST "http://localhost:8080/stores/$store_id/orders/$third_order_id/cancel" \
+      -H "Authorization: Bearer $owner_token" > "$work/cancel-$i" ) &
+done
+wait
+expect "ten cancellations at once: one succeeds" "$(cat "$work"/cancel-* | grep -c '^200$')" "1"
+expect "and nine are told no" "$(cat "$work"/cancel-* | grep -c '^409$')" "9"
+expect "the stock went back once: two oats" "$(admin_sql "select quantity_on_hand from inventory_items where product_id = '$oats_id'")" "2"
+expect "the statuses in the database" "$(admin_sql "select string_agg(status || '=' || n, ',' order by status) from (select status, count(*) n from orders where store_id = '$store_id' group by status) t")" "Cancelled=2,Pending=1,Shipped=1"
+expect "the store user lists only the cancelled" "$(send_as GET "/stores/$store_id/orders?status=cancelled" "$owner_token")" "200"
+expect "two of them" "$(jq -r .totalCount "$work/body.json")" "2"
+
 step "a store user taken out of the store loses access at once, token or no token"
 expect "an admin takes the store user out" "$(send_as DELETE "/stores/$store_id/members/$owner_id" "$admin_token")" "204"
 expect "their token still says StoreUser, but it opens nothing: the store is not found for them" "$(send_as POST "/stores/$store_id/products" "$owner_token" '{"name":"Cheese","price":4}')" "404"
+expect "nor can they see or move the orders of the store" "$(send_as GET "/stores/$store_id/orders" "$owner_token")$(send_as POST "/stores/$store_id/orders/$order_id/cancel" "$owner_token")" "404404"
 
 step "health: /health includes the database, /health/live does not"
 expect "/health status" "$(curl -sS -o "$work/health.json" -w '%{http_code}' http://localhost:8080/health)" "200"

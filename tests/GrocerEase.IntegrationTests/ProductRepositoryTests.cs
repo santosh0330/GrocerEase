@@ -49,6 +49,55 @@ public class ProductRepositoryTests
         Assert.Equal((product.Id, store, "Milk", "Fresh milk", 1.10m, null), (found.Id, found.StoreId, found.Name, found.Description, found.Price, found.ArchivedAt));
     }
 
+    private static async Task<GrocerEase.Application.Common.PagedResult<Product>> ListAsync(Guid storeId, int page, int pageSize)
+    {
+        await using var db = await NewContextAsync();
+        return await new ProductRepository(db).ListLiveAsync(storeId, page, pageSize, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task TheList_IsPaged_OrderedByName_AndSaysHowLongTheWholeListIs()
+    {
+        var store = await StoredStoreAsync();
+        foreach (var name in new[] { "Eggs", "Bread", "Milk", "Apples", "Cheese" })
+        {
+            Assert.True(await AddAsync(NewProduct(store, name)));
+        }
+
+        var first = await ListAsync(store, 1, 2);
+        var last = await ListAsync(store, 3, 2);
+
+        Assert.Equal(["Apples", "Bread"], first.Items.Select(product => product.Name), StringComparer.Ordinal);
+        Assert.Equal(["Milk"], last.Items.Select(product => product.Name), StringComparer.Ordinal);
+        Assert.Equal((5, 5, 1), (first.TotalCount, last.TotalCount, last.Items.Count));
+    }
+
+    [Fact]
+    public async Task TheList_LeavesOutArchivedProducts_AndAnotherStoresProducts()
+    {
+        var store = await StoredStoreAsync();
+        Assert.True(await AddAsync(NewProduct(store, "Milk")));
+        Assert.True(await AddAsync(new Product(Guid.CreateVersion7(), store, "Old", "", 1m, DateTimeOffset.UtcNow)));
+        Assert.True(await AddAsync(NewProduct(await StoredStoreAsync(), "Elsewhere")));
+
+        var page = await ListAsync(store, 1, 20);
+
+        Assert.Equal(["Milk"], page.Items.Select(product => product.Name), StringComparer.Ordinal);
+        Assert.Equal(1, page.TotalCount);
+    }
+
+    [Fact]
+    public async Task APagePastTheEnd_IsEmpty_AndTheTotalIsStillRight()
+    {
+        var store = await StoredStoreAsync();
+        Assert.True(await AddAsync(NewProduct(store)));
+
+        var page = await ListAsync(store, 50, 20);
+
+        Assert.Empty(page.Items);
+        Assert.Equal(1, page.TotalCount);
+    }
+
     [Fact]
     public async Task AProduct_IsNotFoundThroughAnotherStore()
     {

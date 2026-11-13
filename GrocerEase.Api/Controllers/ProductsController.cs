@@ -4,6 +4,7 @@ using GrocerEase.Application.Common;
 using GrocerEase.Application.Products.Commands;
 using GrocerEase.Application.Products.Common;
 using GrocerEase.Application.Products.Queries;
+using GrocerEase.Contracts.Common;
 using GrocerEase.Contracts.Products;
 using GrocerEase.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
@@ -21,7 +22,8 @@ namespace GrocerEase.Api.Controllers;
 [Route("stores/{storeId:guid}/products")]
 public sealed class ProductsController(
     ICommandHandler<CreateProductCommand, Result<ProductResult>> createHandler,
-    ICommandHandler<GetProductQuery, Result<ProductResult>> getHandler) : ControllerBase
+    ICommandHandler<GetProductQuery, Result<ProductResult>> getHandler,
+    ICommandHandler<ListProductsQuery, Result<PagedResult<ProductResult>>> listHandler) : ControllerBase
 {
     private const string ProblemJson = "application/problem+json";
 
@@ -44,6 +46,21 @@ public sealed class ProductsController(
         return result.Match<IActionResult>(
             product => CreatedAtAction(nameof(Get), new { storeId, productId = product.Id }, product.ToResponse()),
             error => this.ToProblem(error));
+    }
+
+    // page counts from 1. The limits are the same for every list (Paging): a value outside them is a 400 naming the parameter.
+    [HttpGet]
+    [Authorize(Policy = Permissions.ProductsRead)]
+    [ProducesResponseType<PagedResponse<ProductResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, ProblemJson)]
+    public async Task<IActionResult> List(
+        Guid storeId, CancellationToken cancellationToken, [FromQuery] int page = 1, [FromQuery] int pageSize = Paging.DefaultPageSize)
+    {
+        var result = await listHandler.Handle(new ListProductsQuery(storeId, page, pageSize), cancellationToken);
+        return result.Match<IActionResult>(products => Ok(products.ToResponse()), error => this.ToProblem(error));
     }
 
     [HttpGet("{productId:guid}")]

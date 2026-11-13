@@ -231,6 +231,7 @@ public class StockAdjustmentEndpointTests(ApiFactory factory) : IClassFixture<Ap
         Assert.Equal(5, responses.Count(response => response.StatusCode == HttpStatusCode.OK));
         Assert.Equal(15, responses.Count(response => response.StatusCode == HttpStatusCode.Conflict));
         Assert.Equal(0, await QuantityAsync(productId)); // never below zero, never a lost change
+        await Ledger.AgreesAsync(storeId); // however the stock moved, the ledger adds up to it
     }
 
     [Fact]
@@ -243,6 +244,7 @@ public class StockAdjustmentEndpointTests(ApiFactory factory) : IClassFixture<Ap
 
         Assert.All(responses, response => Assert.Equal(HttpStatusCode.OK, response.StatusCode));
         Assert.Equal(24, await QuantityAsync(productId));
+        await Ledger.AgreesAsync(storeId); // however the stock moved, the ledger adds up to it
     }
 
     private static async Task<PagedResponse<InventoryEntryResponse>> InventoryAsync(HttpClient client, string token, Guid storeId, string query = "")

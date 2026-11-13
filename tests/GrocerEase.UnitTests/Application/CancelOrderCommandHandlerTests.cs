@@ -148,4 +148,30 @@ public class CancelOrderCommandHandlerTests
         Assert.Empty(_stock.Calls);
         Assert.Equal(0, _orders.StatusChanges);
     }
+
+    [Fact]
+    public async Task EachLinesStockThatGoesBack_LeavesAnOrderCancelledMovement_ForThatOrder_ByTheStoreUserWhoCancelled()
+    {
+        var milk = Guid.CreateVersion7();
+        var bread = Guid.CreateVersion7();
+        var order = Place(OrderStatus.Verified, null, (milk, 2), (bread, 3));
+
+        await CancelAsync(order.Id);
+
+        Assert.All(_stock.Movements, movement => Assert.Equal((StockMovementReason.OrderCancelled, _userId, (Guid?)order.Id, _storeId), (movement.Reason, movement.ActorId, movement.OrderId, movement.StoreId)));
+        Assert.Equal(new[] { (milk, 2), (bread, 3) }.OrderBy(pair => pair.Item1), _stock.Movements.Select(movement => (movement.ProductId, movement.Delta)).OrderBy(pair => pair.ProductId));
+    }
+
+    [Fact]
+    public async Task ACancellationThatIsRefused_OrLostToSomeoneElse_LeavesNoMovement()
+    {
+        var shipped = Place(OrderStatus.Shipped);
+        var raced = Place();
+        _orders.BeforeChangingStatus = () => _orders.SomeoneElseMoves(raced.Id, OrderStatus.Cancelled);
+
+        await CancelAsync(shipped.Id);
+        await CancelAsync(raced.Id);
+
+        Assert.Empty(_stock.Movements);
+    }
 }

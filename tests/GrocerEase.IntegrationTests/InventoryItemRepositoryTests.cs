@@ -27,7 +27,7 @@ public class InventoryItemRepositoryTests
     private static async Task<int?> AdjustAsync(Guid storeId, Guid productId, int delta)
     {
         await using var db = await NewContextAsync();
-        return await new InventoryItemRepository(db).TryAdjustAsync(storeId, productId, delta, CancellationToken.None);
+        return await new InventoryItemRepository(db).TryAdjustAsync(storeId, productId, await StockActors.ChangeAsync(delta), CancellationToken.None);
     }
 
     private static async Task<int?> QuantityAsync(Guid productId) =>

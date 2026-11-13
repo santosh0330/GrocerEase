@@ -32,7 +32,7 @@ public sealed class CancelMyOrderCommandHandler(IOrderRepository orderRepository
         }
 
         var order = moved.Value;
-        return await OrderStock.RestoreAsync(inventoryRepository, order, cancellationToken) is { } cannotRestore
+        return await OrderStock.RestoreAsync(inventoryRepository, order, command.CustomerId, cancellationToken) is { } cannotRestore
             ? Result.Failure<OrderResult>(cannotRestore) // the decorator rolls back the status change and every line already restored
             : Result.Success(order.ToResult());
     }

@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using GrocerEase.Application.Abstractions;
 using GrocerEase.Application.Common;
+using GrocerEase.Application.Inventory.Common;
 using GrocerEase.Application.Orders.Commands;
 using GrocerEase.Application.Orders.Common;
 using GrocerEase.Domain.Entities;
@@ -35,12 +36,15 @@ public class CancelOrderDeadlockTests
         public Task<IReadOnlyDictionary<Guid, InventoryItem>> GetItemsAsync(Guid storeId, IReadOnlyCollection<Guid> productIds, CancellationToken cancellationToken) =>
             inner.GetItemsAsync(storeId, productIds, cancellationToken);
 
+        public Task<PagedResult<StockMovement>> ListMovementsAsync(Guid storeId, Guid productId, int page, int pageSize, CancellationToken cancellationToken) =>
+            inner.ListMovementsAsync(storeId, productId, page, pageSize, cancellationToken);
+
         public Task<int?> SetLowStockThresholdAsync(Guid storeId, Guid productId, int? threshold, CancellationToken cancellationToken) =>
             inner.SetLowStockThresholdAsync(storeId, productId, threshold, cancellationToken);
 
-        public async Task<int?> TryAdjustAsync(Guid storeId, Guid productId, int delta, CancellationToken cancellationToken)
+        public async Task<int?> TryAdjustAsync(Guid storeId, Guid productId, StockChange change, CancellationToken cancellationToken)
         {
-            var result = await inner.TryAdjustAsync(storeId, productId, delta, cancellationToken);
+            var result = await inner.TryAdjustAsync(storeId, productId, change, cancellationToken);
             if (Interlocked.Increment(ref _changes) == 1)
             {
                 // Both units now hold their first row (or, if they started with the same row, one is stuck waiting for it: then this times out).
@@ -99,7 +103,7 @@ public class CancelOrderDeadlockTests
         foreach (var product in products)
         {
             Assert.True(await new ProductRepository(db).TryAddAsync(product, CancellationToken.None));
-            Assert.Equal(10, await new InventoryItemRepository(db).TryAdjustAsync(store.Id, product.Id, 10, CancellationToken.None));
+            Assert.Equal(10, await new InventoryItemRepository(db).TryAdjustAsync(store.Id, product.Id, await StockActors.ChangeAsync(10), CancellationToken.None));
         }
 
         // The same two products, the lines stored in opposite orders.

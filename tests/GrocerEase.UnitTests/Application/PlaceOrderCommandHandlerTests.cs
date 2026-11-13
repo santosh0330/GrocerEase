@@ -164,4 +164,29 @@ public class PlaceOrderCommandHandlerTests
         Assert.Same(OrderErrors.NotFound, theirs.Error); // the same error as an order that does not exist
         Assert.Same(OrderErrors.NotFound, unknown.Error);
     }
+
+    [Fact]
+    public async Task EachLineOfAnOrder_LeavesAnOrderPlacedMovement_ForThatOrder_ByTheCustomer_RemovingWhatWasOrdered()
+    {
+        var milk = AddProduct("Milk", 2.50m, stock: 10);
+        var bread = AddProduct("Bread", 1.10m, stock: 5);
+
+        var result = await Handler().Handle(Order((milk, 2), (bread, 1)), CancellationToken.None);
+
+        Assert.Equal(2, _stock.Movements.Count);
+        Assert.All(_stock.Movements, movement => Assert.Equal((StockMovementReason.OrderPlaced, _customerId, (Guid?)result.Value.Id, _store.Id), (movement.Reason, movement.ActorId, movement.OrderId, movement.StoreId)));
+        Assert.Equal(new[] { (milk.Id, -2), (bread.Id, -1) }.OrderBy(pair => pair.Item1), _stock.Movements.Select(movement => (movement.ProductId, movement.Delta)).OrderBy(pair => pair.ProductId));
+    }
+
+    [Fact]
+    public async Task AnOrderThatIsRefusedBeforeAnyStockIsTaken_LeavesNoMovement()
+    {
+        var milk = AddProduct("Milk", 2.50m, stock: 10);
+        var archived = AddProduct("Old", 1m, stock: 10, archived: true);
+
+        await Handler().Handle(Order((milk, 1), (archived, 1)), CancellationToken.None);
+        await Handler().Handle(Order((milk, 1)) with { StoreId = Guid.CreateVersion7() }, CancellationToken.None);
+
+        Assert.Empty(_stock.Movements);
+    }
 }

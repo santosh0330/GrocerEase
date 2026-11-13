@@ -1,4 +1,6 @@
 using GrocerEase.Application.Abstractions;
+using GrocerEase.Application.Common;
+using GrocerEase.Application.Inventory.Common;
 using GrocerEase.Domain.Entities;
 
 namespace GrocerEase.UnitTests.Application;
@@ -40,8 +42,10 @@ internal sealed class FakeInventoryItemRepository : IInventoryItemRepository
         return Task.FromResult<int?>(Quantities[(storeId, productId)]);
     }
 
-    public Task<int?> TryAdjustAsync(Guid storeId, Guid productId, int delta, CancellationToken cancellationToken)
+    public Task<int?> TryAdjustAsync(Guid storeId, Guid productId, StockChange change, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(change);
+        var delta = change.Delta;
         Calls.Add((productId, delta));
         Quantities.TryGetValue((storeId, productId), out var current);
         var next = (long)current + delta;
@@ -51,6 +55,24 @@ internal sealed class FakeInventoryItemRepository : IInventoryItemRepository
         }
 
         Quantities[(storeId, productId)] = (int)next;
+
+        // Like the real statement: a change that is made leaves its movement, and a refused one leaves none. The entity refuses a movement
+        // that makes no sense, as the repository does before it runs any SQL.
+        Movements.Add(new StockMovement(Guid.CreateVersion7(), productId, storeId, delta, change.Reason, change.ActorId, change.OrderId, DateTimeOffset.UtcNow));
+        Changes.Add(change);
         return Task.FromResult<int?>((int)next);
+    }
+
+    /// <summary>The ledger: one movement for every change that was made, in the order they were made. A refused change leaves nothing.</summary>
+    public List<StockMovement> Movements { get; } = [];
+
+    /// <summary>Every change that was made (not the refused ones), with its reason, actor and order.</summary>
+    public List<StockChange> Changes { get; } = [];
+
+    public Task<PagedResult<StockMovement>> ListMovementsAsync(Guid storeId, Guid productId, int page, int pageSize, CancellationToken cancellationToken)
+    {
+        var history = Movements.Where(movement => movement.StoreId == storeId && movement.ProductId == productId)
+            .OrderByDescending(movement => movement.CreatedAt).ThenByDescending(movement => movement.Id).ToList();
+        return Task.FromResult(new PagedResult<StockMovement>([.. history.Skip((page - 1) * pageSize).Take(pageSize)], page, pageSize, history.Count));
     }
 }

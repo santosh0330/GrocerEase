@@ -38,8 +38,8 @@ public class CancelOrderRollbackTests
         }
 
         var inventory = new InventoryItemRepository(db);
-        Assert.Equal(5, await inventory.TryAdjustAsync(store.Id, products[0].Id, 5, CancellationToken.None));
-        Assert.Equal(1, await inventory.TryAdjustAsync(store.Id, products[1].Id, 1, CancellationToken.None));
+        Assert.Equal(5, await inventory.TryAdjustAsync(store.Id, products[0].Id, await StockActors.ChangeAsync(5), CancellationToken.None));
+        Assert.Equal(1, await inventory.TryAdjustAsync(store.Id, products[1].Id, await StockActors.ChangeAsync(1), CancellationToken.None));
 
         var orderId = Guid.CreateVersion7();
         var order = Order.Place(
@@ -65,6 +65,9 @@ public class CancelOrderRollbackTests
             await PostgresServer.ScalarAsync<string?>(connection, $"select status from orders where id = '{world.OrderId}'"));
     }
 
+    private static async Task<long> MovementsAsync(World world) =>
+        await PostgresServer.ScalarAsync<long>(await PostgresServer.ApplicationConnectionStringAsync(), $"select count(*) from stock_movements where store_id = '{world.StoreId}'");
+
     [Fact]
     public async Task WhenEveryLineCanBePutBack_TheOrderIsCancelledAndAllTheStockIsBack()
     {
@@ -75,6 +78,7 @@ public class CancelOrderRollbackTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal((7, 3, "Cancelled"), await StateAsync(world));
+        Assert.Equal(4L, await MovementsAsync(world)); // the setup's two, and one OrderCancelled movement for each line
     }
 
     [Fact]
@@ -92,6 +96,7 @@ public class CancelOrderRollbackTests
         // work that is what would remain: (7, max, "Cancelled"). With it, everything is as it was.
         Assert.Equal("Order.CannotRestoreStock", result.Error.Code);
         Assert.Equal((5, InventoryItem.MaxQuantity, "Pending"), await StateAsync(world));
+        Assert.Equal(2L, await MovementsAsync(world)); // the first line's movement went back with its stock: only the setup's two remain
     }
 
     [Fact]

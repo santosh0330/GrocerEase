@@ -1,5 +1,6 @@
 using GrocerEase.Application.Abstractions;
 using GrocerEase.Application.Common;
+using GrocerEase.Application.Inventory.Common;
 using GrocerEase.Application.Orders.Commands;
 using GrocerEase.Application.Orders.Common;
 using GrocerEase.Application.Products.Common;
@@ -58,7 +59,8 @@ public sealed class PlaceOrderCommandHandler(
 
         foreach (var line in lines)
         {
-            if (await inventoryRepository.TryAdjustAsync(command.StoreId, line.ProductId, -line.Quantity, cancellationToken) is null)
+            if (await inventoryRepository.TryAdjustAsync(
+                command.StoreId, line.ProductId, new StockChange(-line.Quantity, StockMovementReason.OrderPlaced, command.CustomerId, orderId), cancellationToken) is null)
             {
                 // The decorator rolls back everything reserved before this line.
                 return Result.Failure<OrderResult>(OrderErrors.InsufficientStock(line.ProductName));

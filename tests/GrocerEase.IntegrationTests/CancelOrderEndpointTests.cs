@@ -153,6 +153,7 @@ public class CancelOrderEndpointTests(ApiFactory factory) : IClassFixture<ApiFac
         }
 
         Assert.Equal(("Cancelled", 10), (await StatusInDatabaseAsync(order.Id), await StockAsync(shop.Milk.Id))); // 6 + 4, not 6 + 40
+        await Ledger.AgreesAsync(shop.StoreId); // however the stock moved, the ledger adds up to it
     }
 
     [Fact]
@@ -181,6 +182,7 @@ public class CancelOrderEndpointTests(ApiFactory factory) : IClassFixture<ApiFac
 
         // The stock agrees with the winners: each cancelled order put its 2 back, each shipped one did not.
         Assert.Equal(76 + (2 * results.Count(result => result.Cancel == HttpStatusCode.OK)), await StockAsync(shop.Milk.Id));
+        await Ledger.AgreesAsync(shop.StoreId); // however the stock moved, the ledger adds up to it
     }
 
     // Thirty orders for the same two products, cancelled together: every one succeeds and every unit comes back. (That the two stock rows are

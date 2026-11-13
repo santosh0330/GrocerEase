@@ -10,20 +10,20 @@ namespace GrocerEase.IntegrationTests;
 /// <summary>What the order endpoint tests share: a store with two products and a store user, placing an order, and reading stock and order counts straight from the database.</summary>
 public static class OrderScenario
 {
-    public sealed record Shop(string Admin, Guid StoreId, string StoreUser, ProductResponse Milk, ProductResponse Bread);
+    public sealed record Shop(string Admin, Guid StoreId, string StoreUser, ProductResponse Milk, ProductResponse Bread, Guid StoreUserId = default);
 
     /// <summary>A store with two products: milk (2.50) and bread (1.10), each with the stock given.</summary>
     public static async Task<Shop> AShopAsync(HttpClient client, int milkStock = 10, int breadStock = 10)
     {
         var admin = await AdminTokenAsync(client);
         var storeId = await CreateStoreAsync(client, admin);
-        var (token, _, _) = await StoreUserOfAsync(client, admin, storeId);
+        var (token, storeUserId, _) = await StoreUserOfAsync(client, admin, storeId);
         var milk = await CreateProductAsync(client, token, storeId, $"Milk {Guid.NewGuid():N}");
         var bread = await SendAsync(client, HttpMethod.Post, $"/stores/{storeId}/products", token, new CreateProductRequest($"Bread {Guid.NewGuid():N}", "", 1.10m));
         var breadProduct = (await bread.Content.ReadFromJsonAsync<ProductResponse>())!;
         await SetStockAsync(client, token, storeId, milk.Id, milkStock);
         await SetStockAsync(client, token, storeId, breadProduct.Id, breadStock);
-        return new Shop(admin, storeId, token, milk, breadProduct);
+        return new Shop(admin, storeId, token, milk, breadProduct, storeUserId);
     }
 
     public static async Task SetStockAsync(HttpClient client, string token, Guid storeId, Guid productId, int quantity)

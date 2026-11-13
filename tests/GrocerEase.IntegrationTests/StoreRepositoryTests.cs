@@ -80,29 +80,29 @@ public class StoreRepositoryTests
     }
 
     [Fact]
-    public async Task TheList_IsOrderedByName()
+    public async Task TheList_IsOrderedByName_AndPagedWithoutRepeatingOrSkipping()
     {
-        var prefix = $"List {Guid.NewGuid():N} ";
-        Assert.True(await AddAsync(NewStore(prefix + "b")));
-        Assert.True(await AddAsync(NewStore(prefix + "a")));
-
-        // The database holds every store the other tests made, so walk all the pages, as a client would.
-        await using var db = await NewContextAsync();
+        // In a database of its own: the shared one is written by other tests at the same moment, which shifts the pages under a walk
+        // through them (a store inserted before the page boundary makes one appear twice), so only a database nobody else writes can show
+        // that the pages are exact.
+        var database = await MigrationTestSupport.MigratedDatabaseAsync();
+        await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().Configure(database).Options);
         var repository = new StoreRepository(db);
-        var listed = new List<Store>();
-        for (var page = 1; ; page++)
+        foreach (var name in new[] { "D", "B", "A", "C", "E" })
         {
-            var next = await repository.ListAsync(page, 100, CancellationToken.None);
-            listed.AddRange(next.Items);
-            if (next.Items.Count == 0 || listed.Count >= next.TotalCount)
-            {
-                break;
-            }
+            Assert.True(await repository.TryAddAsync(new Store(Guid.CreateVersion7(), name, "x"), CancellationToken.None));
         }
 
-        Assert.Equal([prefix + "a", prefix + "b"], listed.Where(store => store.Name.StartsWith(prefix, StringComparison.Ordinal)).Select(store => store.Name), StringComparer.Ordinal);
-        Assert.Equal(listed.OrderBy(store => store.Name, StringComparer.Ordinal).Select(store => store.Id), listed.Select(store => store.Id));
-        Assert.Equal(listed.Count, listed.Select(store => store.Id).Distinct().Count()); // no store repeated across pages
+        var all = await repository.ListAsync(1, 100, CancellationToken.None);
+        var first = await repository.ListAsync(1, 2, CancellationToken.None);
+        var second = await repository.ListAsync(2, 2, CancellationToken.None);
+        var last = await repository.ListAsync(3, 2, CancellationToken.None);
+
+        Assert.Equal(["A", "B", "C", "D", "E"], all.Items.Select(store => store.Name), StringComparer.Ordinal);
+        Assert.Equal(["A", "B"], first.Items.Select(store => store.Name), StringComparer.Ordinal);
+        Assert.Equal(["C", "D"], second.Items.Select(store => store.Name), StringComparer.Ordinal);
+        Assert.Equal(["E"], last.Items.Select(store => store.Name), StringComparer.Ordinal);
+        Assert.Equal((5, 5, 5), (first.TotalCount, second.TotalCount, last.TotalCount));
     }
 
     [Fact]

@@ -209,8 +209,10 @@ public class StoresEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.True(first.TotalCount >= 2);
         Assert.Empty(beyond.Items);
         Assert.True(beyond.TotalCount >= first.TotalCount); // other tests add stores at the same time: the total can only have grown
-        var all = await AllStoresAsync(client, admin);
-        Assert.Equal(all.OrderBy(store => store.Name, StringComparer.Ordinal).Select(store => store.Id), all.Select(store => store.Id));
+        // One page is one query, so it is consistent even while other tests add stores; a walk through several pages is not.
+        using var wholePage = Send(HttpMethod.Get, "/stores?page=1&pageSize=100", admin);
+        var page = (await (await client.SendAsync(wholePage)).Content.ReadFromJsonAsync<PagedResponse<StoreResponse>>())!;
+        Assert.Equal(page.Items.OrderBy(store => store.Name, StringComparer.Ordinal).Select(store => store.Id), page.Items.Select(store => store.Id));
     }
 
     [Theory]

@@ -31,11 +31,11 @@ public class StoreOrdersControllerTests
         }
     }
 
-    private sealed class MoveSpy(Result<OrderResult> result) : ICommandHandler<VerifyOrderCommand, Result<OrderResult>>
+    private sealed class MoveSpy<TCommand>(Result<OrderResult> result) : ICommandHandler<TCommand, Result<OrderResult>>
     {
-        public VerifyOrderCommand? Received { get; private set; }
+        public TCommand? Received { get; private set; }
 
-        public Task<Result<OrderResult>> Handle(VerifyOrderCommand command, CancellationToken cancellationToken)
+        public Task<Result<OrderResult>> Handle(TCommand command, CancellationToken cancellationToken)
         {
             Received = command;
             return Task.FromResult(result);
@@ -47,9 +47,11 @@ public class StoreOrdersControllerTests
     private static OrderResult AnOrder(string status = "Verified") =>
         new(OrderId, StoreId, status, "1 High Street", new DateTimeOffset(2026, 11, 13, 9, 0, 0, TimeSpan.Zero), 5m, [new OrderLineResult(Guid.CreateVersion7(), "Milk", 2.5m, 2, 5m)]);
 
-    private static StoreOrdersController ControllerWith(ListSpy list, string? sub = null, MoveSpy? verify = null)
+    private static StoreOrdersController ControllerWith(
+        ListSpy list, string? sub = null, MoveSpy<VerifyOrderCommand>? verify = null, MoveSpy<ShipOrderCommand>? ship = null)
     {
-        var controller = new StoreOrdersController(list, verify ?? new MoveSpy(Result.Success(AnOrder())))
+        var controller = new StoreOrdersController(
+            list, verify ?? new MoveSpy<VerifyOrderCommand>(Result.Success(AnOrder())), ship ?? new MoveSpy<ShipOrderCommand>(Result.Success(AnOrder("Shipped"))))
         {
             ProblemDetailsFactory = new StubProblemDetailsFactory(),
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
@@ -109,7 +111,7 @@ public class StoreOrdersControllerTests
     [Fact]
     public async Task Verify_PutsTheRouteAndTheCallerInTheCommand_AndReturnsTheOrder()
     {
-        var verify = new MoveSpy(Result.Success(AnOrder()));
+        var verify = new MoveSpy<VerifyOrderCommand>(Result.Success(AnOrder()));
 
         var result = await ControllerWith(new ListSpy(Result.Success(Empty)), CallerId.ToString(), verify).Verify(StoreId, OrderId, CancellationToken.None);
 
@@ -121,7 +123,7 @@ public class StoreOrdersControllerTests
     [Fact]
     public async Task Verify_WithATokenThatDoesNotNameAUser_Is401_AndRunsNothing()
     {
-        var verify = new MoveSpy(Result.Success(AnOrder()));
+        var verify = new MoveSpy<VerifyOrderCommand>(Result.Success(AnOrder()));
 
         var result = await ControllerWith(new ListSpy(Result.Success(Empty)), verify: verify).Verify(StoreId, OrderId, CancellationToken.None);
 
@@ -136,9 +138,46 @@ public class StoreOrdersControllerTests
     [InlineData("Order.ChangedMeanwhile", ErrorType.Conflict, StatusCodes.Status409Conflict)]
     public async Task Verify_WhenTheHandlerFails_ReturnsAProblemForThatError(string code, ErrorType type, int status)
     {
-        var verify = new MoveSpy(Result.Failure<OrderResult>(new ResultError(code, "x", type)));
+        var verify = new MoveSpy<VerifyOrderCommand>(Result.Failure<OrderResult>(new ResultError(code, "x", type)));
 
         var result = await ControllerWith(new ListSpy(Result.Success(Empty)), CallerId.ToString(), verify).Verify(StoreId, OrderId, CancellationToken.None);
+
+        var problem = Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value);
+        Assert.Equal((status, code), (problem.Status, problem.Extensions["code"]));
+    }
+
+    [Fact]
+    public async Task Ship_PutsTheRouteAndTheCallerInTheCommand_AndReturnsTheOrder()
+    {
+        var ship = new MoveSpy<ShipOrderCommand>(Result.Success(AnOrder("Shipped")));
+
+        var result = await ControllerWith(new ListSpy(Result.Success(Empty)), CallerId.ToString(), ship: ship).Ship(StoreId, OrderId, CancellationToken.None);
+
+        Assert.Equal(new ShipOrderCommand(StoreId, OrderId, CallerId), ship.Received);
+        Assert.Equal("Shipped", Assert.IsType<OrderResponse>(Assert.IsType<OkObjectResult>(result).Value).Status);
+    }
+
+    [Fact]
+    public async Task Ship_WithATokenThatDoesNotNameAUser_Is401_AndRunsNothing()
+    {
+        var ship = new MoveSpy<ShipOrderCommand>(Result.Success(AnOrder("Shipped")));
+
+        var result = await ControllerWith(new ListSpy(Result.Success(Empty)), ship: ship).Ship(StoreId, OrderId, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value).Status);
+        Assert.Null(ship.Received);
+    }
+
+    [Theory]
+    [InlineData("Store.NotFound", ErrorType.NotFound, StatusCodes.Status404NotFound)]
+    [InlineData("Order.NotFound", ErrorType.NotFound, StatusCodes.Status404NotFound)]
+    [InlineData("Order.InvalidTransition", ErrorType.Conflict, StatusCodes.Status409Conflict)]
+    [InlineData("Order.ChangedMeanwhile", ErrorType.Conflict, StatusCodes.Status409Conflict)]
+    public async Task Ship_WhenTheHandlerFails_ReturnsAProblemForThatError(string code, ErrorType type, int status)
+    {
+        var ship = new MoveSpy<ShipOrderCommand>(Result.Failure<OrderResult>(new ResultError(code, "x", type)));
+
+        var result = await ControllerWith(new ListSpy(Result.Success(Empty)), CallerId.ToString(), ship: ship).Ship(StoreId, OrderId, CancellationToken.None);
 
         var problem = Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value);
         Assert.Equal((status, code), (problem.Status, problem.Extensions["code"]));
@@ -147,6 +186,7 @@ public class StoreOrdersControllerTests
     [Theory]
     [InlineData(nameof(StoreOrdersController.List))]
     [InlineData(nameof(StoreOrdersController.Verify))]
+    [InlineData(nameof(StoreOrdersController.Ship))]
     public void EachRoute_NeedsThePermissionToManageOrders_NotARoleName(string action)
     {
         var authorize = typeof(StoreOrdersController).GetMethod(action)!.GetCustomAttribute<AuthorizeAttribute>();

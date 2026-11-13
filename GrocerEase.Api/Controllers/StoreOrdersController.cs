@@ -21,7 +21,8 @@ namespace GrocerEase.Api.Controllers;
 [Route("stores/{storeId:guid}/orders")]
 public sealed class StoreOrdersController(
     ICommandHandler<ListStoreOrdersQuery, Result<PagedResult<OrderResult>>> listHandler,
-    ICommandHandler<VerifyOrderCommand, Result<OrderResult>> verifyHandler) : ControllerBase
+    ICommandHandler<VerifyOrderCommand, Result<OrderResult>> verifyHandler,
+    ICommandHandler<ShipOrderCommand, Result<OrderResult>> shipHandler) : ControllerBase
 {
     private const string ProblemJson = "application/problem+json";
 
@@ -61,6 +62,25 @@ public sealed class StoreOrdersController(
         }
 
         var result = await verifyHandler.Handle(new VerifyOrderCommand(storeId, orderId, callerId), cancellationToken);
+        return result.Match<IActionResult>(order => Ok(order.ToResponse()), error => this.ToProblem(error));
+    }
+
+    // The store sends a verified order. Final.
+    [HttpPost("{orderId:guid}/ship")]
+    [Authorize(Policy = Permissions.OrdersManage)]
+    [ProducesResponseType<OrderResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, ProblemJson)]
+    public async Task<IActionResult> Ship(Guid storeId, Guid orderId, CancellationToken cancellationToken)
+    {
+        if (User.GetUserId() is not { } callerId)
+        {
+            return this.InvalidTokenProblem();
+        }
+
+        var result = await shipHandler.Handle(new ShipOrderCommand(storeId, orderId, callerId), cancellationToken);
         return result.Match<IActionResult>(order => Ok(order.ToResponse()), error => this.ToProblem(error));
     }
 }

@@ -67,6 +67,7 @@ public static class DependencyInjection
 
         // One statement that changes the status only if nobody changed it first: no unit of work needed.
         services.AddValidatedCommandHandler<VerifyOrderCommand, Result<OrderResult>, VerifyOrderCommandHandler>();
+        services.AddValidatedCommandHandler<ShipOrderCommand, Result<OrderResult>, ShipOrderCommandHandler>();
 
         // Reserves the stock of every line and writes the order, which must be kept together or not at all.
         services.AddTransactionalCommandHandler<PlaceOrderCommand, Result<OrderResult>, PlaceOrderCommandHandler>();

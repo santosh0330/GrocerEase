@@ -13,13 +13,21 @@ namespace GrocerEase.ArchitectureTests;
 /// store's data to another's user. Two rules make forgetting hard: every repository method that deals with a store-owned entity takes the
 /// <c>storeId</c> (or an entity that carries it), so an unscoped query cannot be written through the port; and only the entity's own
 /// repository reads its table, so it cannot be written around the port either. "Store-owned" is any domain entity with a
-/// <c>StoreId</c>, so the next one (an order, an inventory item) is covered the day it is added.
+/// <c>StoreId</c>, so the next one (an order, an inventory item) is covered the day it is added. The one exception is a named read-side
+/// repository (<see cref="ReadModels"/>) that joins two such tables for one listing.
 /// </summary>
 public class StoreScopeConventionTests
 {
     private static readonly Assembly Domain = typeof(Domain.AssemblyReference).Assembly;
     private static readonly Assembly Application = typeof(Application.AssemblyReference).Assembly;
     private static readonly Assembly Infrastructure = typeof(Infrastructure.AssemblyReference).Assembly;
+
+    /// <summary>
+    /// The read-side repositories: they answer one listing that needs two store-owned tables at once ("the live products whose stock is at or
+    /// below its level"), which neither table's own repository can page. They are the only exception to "only its own repository reads a table",
+    /// and they are named here, one by one, so adding another is a decision made in this file.
+    /// </summary>
+    private static readonly string[] ReadModels = [nameof(LowStockRepository)];
 
     private static List<Type> StoreOwnedEntities() =>
         [.. Domain.GetTypes()
@@ -126,7 +134,7 @@ public class StoreScopeConventionTests
     public void AStoreOwnedTable_IsReadAndChangedOnlyByItsRepository_AndTheContextThatExposesIt(Type entity, string table, string repository)
     {
         var strangers = TopLevelTypesThatQuery(entity).Union(TopLevelTypesWhoseSqlNames(table), StringComparer.Ordinal)
-            .Except([nameof(AppDbContext), repository], StringComparer.Ordinal)
+            .Except([nameof(AppDbContext), repository, .. ReadModels], StringComparer.Ordinal)
             .ToList();
 
         Assert.True(strangers.Count == 0, $"Only {repository} may read or change {table}, so every query is scoped by store in one place: {string.Join(", ", strangers)}");

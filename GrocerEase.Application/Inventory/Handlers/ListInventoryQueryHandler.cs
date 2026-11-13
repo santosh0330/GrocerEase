@@ -11,7 +11,8 @@ namespace GrocerEase.Application.Inventory.Handlers;
 /// catalogue, stock is the store's own business. It asks for a page of products, then for the quantities of exactly those, each from its
 /// own repository, so each table is read in one place and always scoped by store.
 /// </summary>
-public sealed class ListInventoryQueryHandler(StoreAccess storeAccess, IProductRepository productRepository, IInventoryItemRepository inventoryRepository)
+public sealed class ListInventoryQueryHandler(
+    StoreAccess storeAccess, IProductRepository productRepository, IInventoryItemRepository inventoryRepository, ILowStockRepository lowStockRepository)
     : ICommandHandler<ListInventoryQuery, Result<PagedResult<InventoryEntryResult>>>
 {
     public async Task<Result<PagedResult<InventoryEntryResult>>> Handle(ListInventoryQuery command, CancellationToken cancellationToken)
@@ -21,6 +22,12 @@ public sealed class ListInventoryQueryHandler(StoreAccess storeAccess, IProductR
         if (await storeAccess.RequireMemberAsync(command.StoreId, command.ActorId, cancellationToken) is { } notAMember)
         {
             return Result.Failure<PagedResult<InventoryEntryResult>>(notAMember);
+        }
+
+        // Only what is running out: a different question, answered by the read-side repository that can look at products and stock together.
+        if (command.LowStockOnly)
+        {
+            return Result.Success(await lowStockRepository.ListLowAsync(command.StoreId, command.Page, command.PageSize, cancellationToken));
         }
 
         var products = await productRepository.ListLiveAsync(command.StoreId, command.Page, command.PageSize, cancellationToken);

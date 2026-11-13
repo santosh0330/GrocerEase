@@ -26,7 +26,8 @@ public sealed class InventoryController(
 {
     private const string ProblemJson = "application/problem+json";
 
-    // Every product on sale in the store with how many are on hand (zero when it has never had stock), a page at a time.
+    // Every product on sale in the store with how many are on hand (zero when it has never had stock), a page at a time. ?lowStock=true keeps
+    // only the products at or below their low-stock level.
     [HttpGet("inventory")]
     [Authorize(Policy = Permissions.InventoryManage)]
     [ProducesResponseType<PagedResponse<InventoryEntryResponse>>(StatusCodes.Status200OK)]
@@ -35,14 +36,14 @@ public sealed class InventoryController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, ProblemJson)]
     public async Task<IActionResult> List(
-        Guid storeId, CancellationToken cancellationToken, [FromQuery] int page = 1, [FromQuery] int pageSize = Paging.DefaultPageSize)
+        Guid storeId, CancellationToken cancellationToken, [FromQuery] int page = 1, [FromQuery] int pageSize = Paging.DefaultPageSize, [FromQuery] bool lowStock = false)
     {
         if (User.GetUserId() is not { } callerId)
         {
             return this.InvalidTokenProblem();
         }
 
-        var result = await listHandler.Handle(new ListInventoryQuery(storeId, callerId, page, pageSize), cancellationToken);
+        var result = await listHandler.Handle(new ListInventoryQuery(storeId, callerId, page, pageSize, lowStock), cancellationToken);
         return result.Match<IActionResult>(entries => Ok(entries.ToResponse()), error => this.ToProblem(error));
     }
 

@@ -17,7 +17,7 @@ public class ListInventoryQueryHandlerTests
     public ListInventoryQueryHandlerTests() =>
         _members.Members.Add(new StoreMember(Guid.CreateVersion7(), _storeId, _userId));
 
-    private ListInventoryQueryHandler Handler() => new(new StoreAccess(_members), _products, _stock);
+    private ListInventoryQueryHandler Handler() => new(new StoreAccess(_members), _products, _stock, new FakeLowStockRepository(_products, _stock));
 
     private Product AddProduct(string name, int? quantity = null, Guid? storeId = null, bool archived = false)
     {
@@ -99,5 +99,67 @@ public class ListInventoryQueryHandlerTests
         var result = await Handler().Handle(new ListInventoryQuery(_storeId, Guid.CreateVersion7(), 1, 20), CancellationToken.None);
 
         Assert.Same(StoreErrors.NotFound, result.Error);
+    }
+
+    [Fact]
+    public async Task LowStockOnly_ListsTheProductsAtOrBelowTheirLevel_AndNothingElse()
+    {
+        var below = AddProduct("Below", 4);
+        var at = AddProduct("At", 5);
+        var above = AddProduct("Above", 6);
+        AddProduct("NoLevel", 0); // nothing on hand, but nobody asked to be told
+        AddProduct("NoRow");
+        var archived = AddProduct("Archived", 1, archived: true);
+        var elsewhere = AddProduct("Elsewhere", 1, storeId: Guid.CreateVersion7());
+        foreach (var product in new[] { below, at, above, archived })
+        {
+            _stock.Thresholds[(_storeId, product.Id)] = 5;
+        }
+
+        _stock.Thresholds[(elsewhere.StoreId, elsewhere.Id)] = 5;
+
+        var result = await Handler().Handle(new ListInventoryQuery(_storeId, _userId, 1, 20, LowStockOnly: true), CancellationToken.None);
+
+        Assert.Equal([(at.Id, 5), (below.Id, 4)], result.Value.Items.Select(entry => (entry.ProductId, entry.QuantityOnHand))); // by name; At is on the boundary
+        Assert.All(result.Value.Items, entry => Assert.True(entry.IsLow));
+        Assert.Equal(2, result.Value.TotalCount);
+    }
+
+    [Fact]
+    public async Task LowStockOnly_IsPaged_WithTheTotalOfAllTheLowOnes()
+    {
+        foreach (var name in new[] { "D", "B", "A", "C", "E" })
+        {
+            var product = AddProduct(name, 1);
+            _stock.Thresholds[(_storeId, product.Id)] = 5;
+        }
+
+        var result = await Handler().Handle(new ListInventoryQuery(_storeId, _userId, 2, 2, LowStockOnly: true), CancellationToken.None);
+
+        Assert.Equal(["C", "D"], result.Value.Items.Select(entry => entry.ProductName), StringComparer.Ordinal);
+        Assert.Equal(5, result.Value.TotalCount);
+    }
+
+    [Fact]
+    public async Task LowStockOnly_ForAStoreTheCallerDoesNotRun_IsStoreNotFound()
+    {
+        var product = AddProduct("Milk", 1);
+        _stock.Thresholds[(_storeId, product.Id)] = 5;
+
+        var result = await Handler().Handle(new ListInventoryQuery(_storeId, Guid.CreateVersion7(), 1, 20, LowStockOnly: true), CancellationToken.None);
+
+        Assert.Same(StoreErrors.NotFound, result.Error);
+    }
+
+    [Fact]
+    public async Task WithoutTheFlag_EveryProductIsListed_LowOrNot()
+    {
+        var low = AddProduct("Low", 1);
+        AddProduct("Fine", 100);
+        _stock.Thresholds[(_storeId, low.Id)] = 5;
+
+        var result = await Handler().Handle(new ListInventoryQuery(_storeId, _userId, 1, 20), CancellationToken.None);
+
+        Assert.Equal(["Fine", "Low"], result.Value.Items.Select(entry => entry.ProductName), StringComparer.Ordinal);
     }
 }

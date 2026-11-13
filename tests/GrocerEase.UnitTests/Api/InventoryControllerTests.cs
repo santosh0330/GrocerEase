@@ -119,6 +119,18 @@ public class InventoryControllerTests
         Assert.Equal((2, 5, 11), (body.Page, body.PageSize, body.TotalCount));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task List_PutsTheLowStockFlagInTheQuery(bool lowStock)
+    {
+        var list = new ListSpy(Result.Success(new PagedResult<InventoryEntryResult>([], 1, 20, 0)));
+
+        await ControllerWith(new Spy(Result.Success(new StockResult(ProductId, 1))), CallerId.ToString(), list).List(StoreId, CancellationToken.None, 1, 20, lowStock);
+
+        Assert.Equal(new ListInventoryQuery(StoreId, CallerId, 1, 20, lowStock), list.Received);
+    }
+
     [Fact]
     public async Task List_WithATokenThatDoesNotNameAUser_Is401_AndRunsNothing()
     {

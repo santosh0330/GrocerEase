@@ -160,6 +160,34 @@ Authorization: Bearer {{login.response.body.$.token}}
 
 ###
 
+# Orders. Only a CUSTOMER orders: log in as an ordinary user, not the store user. The stock of every line is reserved at once, all or nothing:
+# 201 and the order (Pending); 409 "Order.InsufficientStock" if a line cannot be filled; 404 for an unknown store, or a product that is unknown,
+# archived, or another store's. A product may appear once: ask for a bigger quantity. Limited to 20 a minute.
+# @name placeOrder
+POST {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/orders
+Authorization: Bearer {{login.response.body.$.token}}
+Content-Type: application/json
+
+{
+  "deliveryAddress": "1 High Street",
+  "lines": [
+    { "productId": "{{createProduct.response.body.$.id}}", "quantity": 2 }
+  ]
+}
+
+###
+
+# My own orders, newest first, a page at a time. Someone else's order is 404, exactly as one that does not exist.
+GET {{GrocerEase.Api_HostAddress}}/orders?page=1&pageSize=20
+Authorization: Bearer {{login.response.body.$.token}}
+
+###
+
+GET {{GrocerEase.Api_HostAddress}}/orders/{{placeOrder.response.body.$.id}}
+Authorization: Bearer {{login.response.body.$.token}}
+
+###
+
 # Health, readiness: open to anyone, no token. Runs every check, including the database.
 # 200 { "status": "Healthy", "totalDurationMs": 4.1, "checks": [ { "name": "database", "status": "Healthy", "durationMs": 3.8 } ] }
 # 503 with "status": "Unhealthy" when the database cannot be reached or has not been migrated. It never says why: that goes to the log.

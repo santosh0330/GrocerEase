@@ -108,6 +108,8 @@ curl -s http://localhost:8080/me -H "Authorization: Bearer $TOKEN"
 | `GET /stores/{storeId}/products`, `GET .../{productId}` | the `products.read` permission (every role) | a page of the products on sale in a store, or one; `404 Product.NotFound` |
 | `POST /stores/{storeId}/products/{productId}/stock-adjustments` | the `inventory.manage` permission **and** running that store | body `{ "delta": 12 }` (positive adds, negative removes); `200` and `{ productId, quantityOnHand }`; `409 Inventory.NotEnoughStock` (see [Inventory](#inventory)) |
 | `GET /stores/{storeId}/inventory` | the same | a page of every product on sale with `{ productId, productName, quantityOnHand }`, zero when it has never had stock |
+| `POST /stores/{storeId}/orders` | the `orders.place` permission (a customer) | body `{ "deliveryAddress": "...", "lines": [{ "productId": "...", "quantity": 2 }] }`; `201` and the order; `409 Order.InsufficientStock`; limited to 20 a minute (see [Orders](#orders)) |
+| `GET /orders`, `GET /orders/{orderId}` | the `orders.read` permission (a customer) | a page of the caller's **own** orders, newest first, or one of them; someone else's is `404 Order.NotFound` |
 
 An access token lives 10 minutes (`Jwt:ExpiryMinutes`); the refresh token keeps the session going. A request without a valid token never reaches the route. It gets `application/problem+json` with a `code` to switch on, plus a `WWW-Authenticate` header:
 
@@ -145,7 +147,7 @@ Every user holds **exactly one role**, stored in `users.role_id`. A role **grant
 
 | Role | Id | Who | May do |
 |---|---|---|---|
-| `Customer` | `019e0000-0000-7000-8000-000000000001` | everyone who registers | `profile.read`, `stores.read`, `products.read` |
+| `Customer` | `019e0000-0000-7000-8000-000000000001` | everyone who registers | `profile.read`, `stores.read`, `products.read`, `orders.place`, `orders.read` |
 | `Admin` | `019e0000-0000-7000-8000-000000000002` | made by hand, see below | `profile.read`, `roles.read`, `stores.read`, `stores.manage`, `products.read` |
 | `StoreUser` | `019e0000-0000-7000-8000-000000000003` | a customer an admin assigned to a store | `profile.read`, `stores.read`, `products.read`, `products.manage`, `inventory.manage` |
 
@@ -158,6 +160,8 @@ Every user holds **exactly one role**, stored in `users.role_id`. A role **grant
 | `products.read` | browsing the products of a store |
 | `products.manage` | adding, editing and archiving products, **in a store the caller runs** (see [Products](#products)) |
 | `inventory.manage` | reading and changing the stock, **in a store the caller runs** (see [Inventory](#inventory)) |
+| `orders.place` | `POST /stores/{storeId}/orders` (see [Orders](#orders)) |
+| `orders.read` | reading one's **own** orders |
 
 The token carries the role's name as `role` and the permissions as a `permission` array (`["products.read","profile.read","stores.read"]`). A route names the permission it needs, `[Authorize(Policy = "roles.read")]`, not a role: the policy checks the `permission` claims of the token, so giving the permission to another role changes no endpoint. `GET /me` shows the role and the permissions the token carries.
 
@@ -254,9 +258,36 @@ curl -s "http://localhost:8080/stores/$STORE_ID/inventory?page=1" -H "Authorizat
 | `409` | `Inventory.TooMuchStock` | the quantity would pass a billion |
 | `404` | `Store.NotFound` / `Product.NotFound` | a store the caller does not run, an unknown product, an archived one, or another store's |
 
+### Orders
+
+A customer orders products from **one store**, and the stock is reserved at once.
+
+```bash
+curl -s -X POST http://localhost:8080/stores/$STORE_ID/orders -H "Authorization: Bearer $CUSTOMER_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"deliveryAddress":"1 High Street","lines":[{"productId":"'$MILK_ID'","quantity":2},{"productId":"'$BREAD_ID'","quantity":1}]}'
+# 201 { "id": "...", "storeId": "...", "status": "Pending", "total": 6.10, "lines": [ { "productName": "Milk", "unitPrice": 2.50, "quantity": 2, "lineTotal": 5.00 }, ... ] }
+curl -s "http://localhost:8080/orders?page=1" -H "Authorization: Bearer $CUSTOMER_TOKEN"        # my orders, newest first
+curl -s http://localhost:8080/orders/$ORDER_ID -H "Authorization: Bearer $CUSTOMER_TOKEN"        # one of them
+```
+
+- **Only a customer orders.** A store user or an admin gets `403`. The customer is **the one in the token**, never a field in the body, so an order cannot be placed or read in someone else's name; someone else's order is `404 Order.NotFound`, exactly as an order that does not exist.
+- **The stock is reserved when the order is placed, all or nothing.** Every line takes its stock with the guarded statement the [inventory](#inventory) uses; if any line cannot be filled, the stock the earlier lines took goes back and no order exists (`409 Order.InsufficientStock`, naming the product). So twenty customers ordering one each from stock of five give five orders and a quantity of zero, and the last item goes to exactly one customer.
+- **A line is a product as it was bought.** Its name and unit price are copied, so a later price change, rename or archive does not rewrite the order. The total is computed from the lines.
+- **A product may appear once** in an order (ask for a bigger quantity), an order has at most 100 lines, and a line asks for 1 to a billion. An unknown store, an unknown or archived product, and another store's product are `404`, and nothing is reserved.
+- **Lines are reserved in order of product id**, whatever order they were asked for, so two orders for the same products cannot deadlock on each other's rows.
+- A new order is `Pending`. The store user moves it to `Verified`, `Shipped` or `Cancelled` in a later slice; there is no payment.
+- **Placing an order is limited to 20 a minute per client address** (see [Rate limits](#rate-limits)).
+
+| Status | `code` | When |
+|---|---|---|
+| `409` | `Order.InsufficientStock` | a line asks for more than the store has (including a product that has never had stock) |
+| `404` | `Store.NotFound` / `Product.NotFound` | the store does not exist, or a product is unknown, archived, or another store's |
+| `404` | `Order.NotFound` | no such order, or it is someone else's |
+| `400` | | no lines, a product twice, a quantity of zero, a blank address, more than 100 lines |
+
 ### Paging
 
-Every list is paged, with one set of limits: `?page=` counts **from 1** (at most 100 000), `?pageSize=` is **1 to 100** (20 by default). A value outside them is a `400` naming the parameter. The answer is `{ "items": [...], "page": 1, "pageSize": 20, "totalCount": 57 }`, and a page past the end has no items but still says `totalCount`. `GET /stores`, `GET /stores/{storeId}/products` and `GET /stores/{storeId}/inventory` are paged; the roles are not (there are three).
+Every list is paged, with one set of limits: `?page=` counts **from 1** (at most 100 000), `?pageSize=` is **1 to 100** (20 by default). A value outside them is a `400` naming the parameter. The answer is `{ "items": [...], "page": 1, "pageSize": 20, "totalCount": 57 }`, and a page past the end has no items but still says `totalCount`. `GET /stores`, `GET /stores/{storeId}/products`, `GET /stores/{storeId}/inventory` and `GET /orders` are paged; the roles are not (there are three).
 
 ## Health checks
 
@@ -277,15 +308,16 @@ Use `/health/live` for a probe that **restarts** the app: restarting does not fi
 
 ## Rate limits
 
-Three endpoints are limited per client address, each with its own counter:
+Four endpoints are limited per client address, each with its own counter:
 
 | Endpoint | Limit | Why |
 |---|---|---|
 | `POST /auth/login` | 5 per minute | Stops password guessing, and stops guesses from costing the server a slow hash each |
 | `POST /auth/register` | 10 per hour | Stops mass account creation and probing for registered emails (the `409`) |
 | `POST /auth/refresh` | 30 per minute | Stops guessing and replaying refresh tokens |
+| `POST /stores/{storeId}/orders` | 20 per minute | Placing an order takes stock and writes several rows, so a client hammering it costs the most |
 
-The next request over a limit gets `429 Too Many Requests` as `application/problem+json`, with a `Retry-After` header (seconds, the length of that endpoint's window) and the code `RateLimit.TooManyRequests`. Every request counts, whether it succeeded, was refused, or had an invalid body. IPv6 clients are grouped by their `/64` prefix. Change the numbers in `GrocerEase.Api/appsettings.json` (`RateLimiting:Login`, `RateLimiting:Register` and `RateLimiting:Refresh`, each with `PermitLimit` and `WindowSeconds`); the API refuses to start with a value outside 1-1000 requests or 1-3600 seconds.
+The next request over a limit gets `429 Too Many Requests` as `application/problem+json`, with a `Retry-After` header (seconds, the length of that endpoint's window) and the code `RateLimit.TooManyRequests`. Every request counts, whether it succeeded, was refused, or had an invalid body. IPv6 clients are grouped by their `/64` prefix. Change the numbers in `GrocerEase.Api/appsettings.json` (`RateLimiting:Login`, `RateLimiting:Register`, `RateLimiting:Refresh` and `RateLimiting:PlaceOrder`, each with `PermitLimit` and `WindowSeconds`); the API refuses to start with a value outside 1-1000 requests or 1-3600 seconds.
 
 The limit is per client **address**. Behind a reverse proxy or load balancer every request arrives from the proxy's address, so everyone would share one limit until forwarded headers are configured for the known proxy.
 

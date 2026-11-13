@@ -10,11 +10,12 @@ namespace GrocerEase.ArchitectureTests;
 /// <summary>
 /// Data that belongs to a store must never be asked for without saying which store. A permission (<c>products.manage</c>) says what
 /// kind of user may do something; only a membership check says "in this store", and a query that forgets the store would hand one
-/// store's data to another's user. Two rules make forgetting hard: every repository method that deals with a store-owned entity takes the
-/// <c>storeId</c> (or an entity that carries it), so an unscoped query cannot be written through the port; and only the entity's own
-/// repository reads its table, so it cannot be written around the port either. "Store-owned" is any domain entity with a
-/// <c>StoreId</c>, so the next one (an order, an inventory item) is covered the day it is added. The one exception is a named read-side
-/// repository (<see cref="ReadModels"/>) that joins two such tables for one listing.
+/// store's data to another's user. The rules are the usual command/query split. <b>Writing</b> goes through the repository of the table:
+/// every repository method that deals with a store-owned entity takes the <c>storeId</c> (or an entity that carries it), so an unscoped
+/// query cannot be written through the port, and nothing else reads or changes the table, so it cannot be written around the port either.
+/// <b>Listings that need several tables at once</b> are read models (<see cref="ReadModels"/>): named here one by one, they may join
+/// store-owned tables, but must take the <c>storeId</c> on every method of their port and must never write. "Store-owned" is any domain
+/// entity with a <c>StoreId</c>, so the next one (an order, an inventory item) is covered the day it is added.
 /// </summary>
 public class StoreScopeConventionTests
 {
@@ -23,9 +24,11 @@ public class StoreScopeConventionTests
     private static readonly Assembly Infrastructure = typeof(Infrastructure.AssemblyReference).Assembly;
 
     /// <summary>
-    /// The read-side repositories: they answer one listing that needs two store-owned tables at once ("the live products whose stock is at or
-    /// below its level"), which neither table's own repository can page. They are the only exception to "only its own repository reads a table",
-    /// and they are named here, one by one, so adding another is a decision made in this file.
+    /// The read models: queries that answer one listing needing two store-owned tables at once ("the live products whose stock is at or below
+    /// its level"), which neither table's own repository can page (a page cut before the archived products are removed comes back short while
+    /// the total still counts them). A repository is for loading and saving what the domain changes; a listing is not that, so it does not go
+    /// through one. They are named here, one by one, so adding another is a decision made in this file, and they are held to two rules below:
+    /// they name the store, and they write nothing.
     /// </summary>
     private static readonly string[] ReadModels = [nameof(LowStockRepository)];
 
@@ -131,13 +134,13 @@ public class StoreScopeConventionTests
     [InlineData(typeof(StoreMember), "store_members", nameof(StoreMemberRepository))]
     [InlineData(typeof(InventoryItem), "inventory_items", nameof(InventoryItemRepository))]
     [InlineData(typeof(Order), "orders", nameof(OrderRepository))]
-    public void AStoreOwnedTable_IsReadAndChangedOnlyByItsRepository_AndTheContextThatExposesIt(Type entity, string table, string repository)
+    public void AStoreOwnedTable_IsChangedOnlyByItsRepository_AndReadOnlyByItAndTheNamedReadModels(Type entity, string table, string repository)
     {
         var strangers = TopLevelTypesThatQuery(entity).Union(TopLevelTypesWhoseSqlNames(table), StringComparer.Ordinal)
             .Except([nameof(AppDbContext), repository, .. ReadModels], StringComparer.Ordinal)
             .ToList();
 
-        Assert.True(strangers.Count == 0, $"Only {repository} may read or change {table}, so every query is scoped by store in one place: {string.Join(", ", strangers)}");
+        Assert.True(strangers.Count == 0, $"Only {repository} may change {table} (and, besides the named read models, read it), so every write is scoped by store in one place: {string.Join(", ", strangers)}");
     }
 
     // What a read model must not do: write. Reading the IL for calls into Entity Framework that change data or run raw SQL (a write can hide in a
@@ -190,10 +193,10 @@ public class StoreScopeConventionTests
     }
 
     [Fact]
-    public void ARepositoryThatReadsTwoStoreOwnedTables_IsInTheReadModelList()
+    public void EveryNamedReadModel_ReallyJoinsStoreOwnedTables()
     {
-        // The exception is closed: any repository that reads more than one store-owned table, other than the listed read models, would already
-        // be flagged by the rule above. This pins the other direction: each read model really does read the tables it is allowed to.
+        // The list is closed: any other class that reads a store-owned table would already be flagged by the rule above. This pins the other
+        // direction: each read model really does read several of the tables, so it is a read model and not a repository that could live with its table.
         foreach (var readModel in ReadModels)
         {
             var tables = new[] { typeof(InventoryItem), typeof(Product) }.Where(entity => TopLevelTypesThatQuery(entity).Contains(readModel, StringComparer.Ordinal)).ToList();

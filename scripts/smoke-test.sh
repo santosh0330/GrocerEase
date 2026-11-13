@@ -193,7 +193,7 @@ app_sql() { compose exec -T db sh -c 'PGPASSWORD="$APP_PASSWORD" psql -h localho
 expect "the app role can read rows" "$(app_sql 'select count(*) from users')" "1"
 expect "the app role can use the refresh token table" "$(app_sql 'select count(*) from refresh_tokens')" "3"
 expect "the app role can read the roles" "$(app_sql 'select count(*) from roles')" "3"
-expect "the app role can read the role claims" "$(app_sql 'select count(*) from role_claims')" "17"
+expect "the app role can read the role claims" "$(app_sql 'select count(*) from role_claims')" "18"
 expect "the app role can use the stores tables" "$(app_sql 'select count(*) from stores')$(app_sql 'select count(*) from store_members')$(app_sql 'select count(*) from products')$(app_sql 'select count(*) from inventory_items')$(app_sql 'select count(*) from orders')$(app_sql 'select count(*) from order_lines')$(app_sql 'select count(*) from stock_movements')" "0000000"
 # The stock ledger is append-only: the app role may add and read movements, and nothing else, so no bug in the API can rewrite history.
 for statement in "update stock_movements set delta = 0" "delete from stock_movements" "truncate stock_movements"; do
@@ -513,6 +513,34 @@ expect "an unknown product is not found" "$(send_as GET "/stores/$store_id/produ
 # and the ledger still adds up for every product of the store.
 expect "for every product of the store, the movements add up to the quantity" "$(admin_sql "select count(*) from products p left join inventory_items i on i.product_id = p.id left join (select product_id, sum(delta) as total from stock_movements group by product_id) m on m.product_id = p.id where p.store_id = '$store_id' and coalesce(i.quantity_on_hand, 0) <> coalesce(m.total, 0)")" "0"
 expect "and the ledger is not empty: there are movements of every reason this script produces" "$(admin_sql "select string_agg(distinct reason, ',' order by reason) from stock_movements where store_id = '$store_id'")" "Correction,OrderCancelled,OrderPlaced,Received"
+
+step "the admin reads the orders of every store, and only reads"
+expect "a request with no token is refused" "$(get /admin/orders)" "401"
+expect "a store user cannot read every store's orders" "$(send_as GET /admin/orders "$owner_token")" "403"
+expect "nor can a customer" "$(send_as GET /admin/orders "$member_token")" "403"
+expect "with a stable code" "$(jq -r .code "$work/body.json")" "Authorization.Forbidden"
+expect "and reading every order is not managing a store: the admin still cannot use the store's route" "$(send_as GET "/stores/$store_id/orders" "$admin_token")" "403"
+# Make the second store sell something, so there is an order in a store that is not the first one's.
+expect "the other store's user adds a product" "$(send_as POST "/stores/$other_store_id/products" "$other_owner_token" '{"name":"Tea","price":3}')" "201"
+tea_id="$(jq -r .id "$work/body.json")"
+expect "and stocks it" "$(send_as POST "/stores/$other_store_id/products/$tea_id/stock-adjustments" "$other_owner_token" '{"delta":5}')" "200"
+expect "a customer orders a tea in the other store" "$(send_as POST "/stores/$other_store_id/orders" "$member_token" "{\"deliveryAddress\":\"1 High Street\",\"lines\":[{\"productId\":\"$tea_id\",\"quantity\":1}]}")" "201"
+tea_order_id="$(jq -r .id "$work/body.json")"
+expect "the admin lists the orders" "$(send_as GET "/admin/orders?pageSize=100" "$admin_token")" "200"
+expect "of every store: the total is every order in the database" "$(jq -r .totalCount "$work/body.json")" "$(admin_sql "select count(*) from orders")"
+expect "and the newest one is on top, whatever store it is in" "$(jq -r '.items[0].id' "$work/body.json")" "$tea_order_id"
+expect "orders of both stores are in the list" "$(jq -c --arg a "$store_id" --arg b "$other_store_id" '[(([.items[] | select(.storeId == $a)] | length) > 0), (([.items[] | select(.storeId == $b)] | length) > 0)]' "$work/body.json")" "[true,true]"
+expect "narrowed to the other store" "$(send_as GET "/admin/orders?storeId=$other_store_id" "$admin_token")" "200"
+expect "it has the one order, and only that store's" "$(jq -c '[.totalCount, [.items[].id]]' "$work/body.json")" "[1,[\"$tea_order_id\"]]"
+expect "narrowed to the first store, the total is that store's orders" "$(send_as GET "/admin/orders?storeId=$store_id" "$admin_token")$(jq -r .totalCount "$work/body.json")" "200$(admin_sql "select count(*) from orders where store_id = '$store_id'")"
+expect "by status, in any case, across stores" "$(send_as GET "/admin/orders?status=cancelled" "$admin_token")$(jq -r .totalCount "$work/body.json")" "200$(admin_sql "select count(*) from orders where status = 'Cancelled'")"
+expect "a store and a status together" "$(send_as GET "/admin/orders?storeId=$other_store_id&status=Pending" "$admin_token")$(jq -r .totalCount "$work/body.json")" "2001"
+expect "a store that does not exist is an empty page, not a 404" "$(send_as GET "/admin/orders?storeId=$tea_order_id" "$admin_token")$(jq -c '[.totalCount, (.items | length)]' "$work/body.json")" "200[0,0]"
+expect "a page is a page" "$(send_as GET "/admin/orders?page=2&pageSize=1" "$admin_token")$(jq -c '[.page, (.items | length)]' "$work/body.json")" "200[2,1]"
+expect "a status that is not one is a validation error" "$(send_as GET "/admin/orders?status=Lost" "$admin_token")" "400"
+expect "as is a store id that is not an id" "$(send_as GET "/admin/orders?storeId=nope" "$admin_token")" "400"
+expect "the admin cannot move an order: there is no such route" "$(send_as POST "/admin/orders/$tea_order_id/cancel" "$admin_token")" "404"
+expect "and the order is still pending" "$(admin_sql "select status from orders where id = '$tea_order_id'")" "Pending"
 
 step "a store user taken out of the store loses access at once, token or no token"
 expect "an admin takes the store user out" "$(send_as DELETE "/stores/$store_id/members/$owner_id" "$admin_token")" "204"

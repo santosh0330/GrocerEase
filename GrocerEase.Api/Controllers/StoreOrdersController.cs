@@ -22,7 +22,8 @@ namespace GrocerEase.Api.Controllers;
 public sealed class StoreOrdersController(
     ICommandHandler<ListStoreOrdersQuery, Result<PagedResult<OrderResult>>> listHandler,
     ICommandHandler<VerifyOrderCommand, Result<OrderResult>> verifyHandler,
-    ICommandHandler<ShipOrderCommand, Result<OrderResult>> shipHandler) : ControllerBase
+    ICommandHandler<ShipOrderCommand, Result<OrderResult>> shipHandler,
+    ICommandHandler<CancelOrderCommand, Result<OrderResult>> cancelHandler) : ControllerBase
 {
     private const string ProblemJson = "application/problem+json";
 
@@ -81,6 +82,25 @@ public sealed class StoreOrdersController(
         }
 
         var result = await shipHandler.Handle(new ShipOrderCommand(storeId, orderId, callerId), cancellationToken);
+        return result.Match<IActionResult>(order => Ok(order.ToResponse()), error => this.ToProblem(error));
+    }
+
+    // The store cancels an order that has not shipped, and the stock it reserved goes back. Final.
+    [HttpPost("{orderId:guid}/cancel")]
+    [Authorize(Policy = Permissions.OrdersManage)]
+    [ProducesResponseType<OrderResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, ProblemJson)]
+    public async Task<IActionResult> Cancel(Guid storeId, Guid orderId, CancellationToken cancellationToken)
+    {
+        if (User.GetUserId() is not { } callerId)
+        {
+            return this.InvalidTokenProblem();
+        }
+
+        var result = await cancelHandler.Handle(new CancelOrderCommand(storeId, orderId, callerId), cancellationToken);
         return result.Match<IActionResult>(order => Ok(order.ToResponse()), error => this.ToProblem(error));
     }
 }

@@ -48,10 +48,13 @@ public class StoreOrdersControllerTests
         new(OrderId, StoreId, status, "1 High Street", new DateTimeOffset(2026, 11, 13, 9, 0, 0, TimeSpan.Zero), 5m, [new OrderLineResult(Guid.CreateVersion7(), "Milk", 2.5m, 2, 5m)]);
 
     private static StoreOrdersController ControllerWith(
-        ListSpy list, string? sub = null, MoveSpy<VerifyOrderCommand>? verify = null, MoveSpy<ShipOrderCommand>? ship = null)
+        ListSpy list, string? sub = null, MoveSpy<VerifyOrderCommand>? verify = null, MoveSpy<ShipOrderCommand>? ship = null, MoveSpy<CancelOrderCommand>? cancel = null)
     {
         var controller = new StoreOrdersController(
-            list, verify ?? new MoveSpy<VerifyOrderCommand>(Result.Success(AnOrder())), ship ?? new MoveSpy<ShipOrderCommand>(Result.Success(AnOrder("Shipped"))))
+            list,
+            verify ?? new MoveSpy<VerifyOrderCommand>(Result.Success(AnOrder())),
+            ship ?? new MoveSpy<ShipOrderCommand>(Result.Success(AnOrder("Shipped"))),
+            cancel ?? new MoveSpy<CancelOrderCommand>(Result.Success(AnOrder("Cancelled"))))
         {
             ProblemDetailsFactory = new StubProblemDetailsFactory(),
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
@@ -183,10 +186,49 @@ public class StoreOrdersControllerTests
         Assert.Equal((status, code), (problem.Status, problem.Extensions["code"]));
     }
 
+    [Fact]
+    public async Task Cancel_PutsTheRouteAndTheCallerInTheCommand_AndReturnsTheOrder()
+    {
+        var cancel = new MoveSpy<CancelOrderCommand>(Result.Success(AnOrder("Cancelled")));
+
+        var result = await ControllerWith(new ListSpy(Result.Success(Empty)), CallerId.ToString(), cancel: cancel).Cancel(StoreId, OrderId, CancellationToken.None);
+
+        Assert.Equal(new CancelOrderCommand(StoreId, OrderId, CallerId), cancel.Received);
+        Assert.Equal("Cancelled", Assert.IsType<OrderResponse>(Assert.IsType<OkObjectResult>(result).Value).Status);
+    }
+
+    [Fact]
+    public async Task Cancel_WithATokenThatDoesNotNameAUser_Is401_AndRunsNothing()
+    {
+        var cancel = new MoveSpy<CancelOrderCommand>(Result.Success(AnOrder("Cancelled")));
+
+        var result = await ControllerWith(new ListSpy(Result.Success(Empty)), cancel: cancel).Cancel(StoreId, OrderId, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value).Status);
+        Assert.Null(cancel.Received);
+    }
+
+    [Theory]
+    [InlineData("Store.NotFound", ErrorType.NotFound, StatusCodes.Status404NotFound)]
+    [InlineData("Order.NotFound", ErrorType.NotFound, StatusCodes.Status404NotFound)]
+    [InlineData("Order.InvalidTransition", ErrorType.Conflict, StatusCodes.Status409Conflict)]
+    [InlineData("Order.ChangedMeanwhile", ErrorType.Conflict, StatusCodes.Status409Conflict)]
+    [InlineData("Order.CannotRestoreStock", ErrorType.Conflict, StatusCodes.Status409Conflict)]
+    public async Task Cancel_WhenTheHandlerFails_ReturnsAProblemForThatError(string code, ErrorType type, int status)
+    {
+        var cancel = new MoveSpy<CancelOrderCommand>(Result.Failure<OrderResult>(new ResultError(code, "x", type)));
+
+        var result = await ControllerWith(new ListSpy(Result.Success(Empty)), CallerId.ToString(), cancel: cancel).Cancel(StoreId, OrderId, CancellationToken.None);
+
+        var problem = Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value);
+        Assert.Equal((status, code), (problem.Status, problem.Extensions["code"]));
+    }
+
     [Theory]
     [InlineData(nameof(StoreOrdersController.List))]
     [InlineData(nameof(StoreOrdersController.Verify))]
     [InlineData(nameof(StoreOrdersController.Ship))]
+    [InlineData(nameof(StoreOrdersController.Cancel))]
     public void EachRoute_NeedsThePermissionToManageOrders_NotARoleName(string action)
     {
         var authorize = typeof(StoreOrdersController).GetMethod(action)!.GetCustomAttribute<AuthorizeAttribute>();

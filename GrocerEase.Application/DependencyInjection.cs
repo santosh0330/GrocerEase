@@ -69,6 +69,9 @@ public static class DependencyInjection
         services.AddValidatedCommandHandler<VerifyOrderCommand, Result<OrderResult>, VerifyOrderCommandHandler>();
         services.AddValidatedCommandHandler<ShipOrderCommand, Result<OrderResult>, ShipOrderCommandHandler>();
 
+        // Changes the status and puts every line's stock back, which must be kept together or not at all.
+        services.AddTransactionalCommandHandler<CancelOrderCommand, Result<OrderResult>, CancelOrderCommandHandler>();
+
         // Reserves the stock of every line and writes the order, which must be kept together or not at all.
         services.AddTransactionalCommandHandler<PlaceOrderCommand, Result<OrderResult>, PlaceOrderCommandHandler>();
 

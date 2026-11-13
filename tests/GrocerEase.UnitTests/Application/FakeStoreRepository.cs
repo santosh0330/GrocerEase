@@ -1,4 +1,5 @@
 using GrocerEase.Application.Abstractions;
+using GrocerEase.Application.Common;
 using GrocerEase.Domain.Entities;
 
 namespace GrocerEase.UnitTests.Application;
@@ -11,8 +12,9 @@ internal sealed class FakeStoreRepository : IStoreRepository
     public Task<Store?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
         Task.FromResult(_stores.SingleOrDefault(store => store.Id == id));
 
-    public Task<IReadOnlyList<Store>> ListAsync(CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyList<Store>>([.. _stores.OrderBy(store => store.Name, StringComparer.Ordinal)]);
+    public Task<PagedResult<Store>> ListAsync(int page, int pageSize, CancellationToken cancellationToken) =>
+        Task.FromResult(new PagedResult<Store>(
+            [.. _stores.OrderBy(store => store.Name, StringComparer.Ordinal).Skip((page - 1) * pageSize).Take(pageSize)], page, pageSize, _stores.Count));
 
     public Task<bool> TryAddAsync(Store store, CancellationToken cancellationToken)
     {

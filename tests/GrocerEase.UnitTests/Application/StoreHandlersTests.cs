@@ -33,7 +33,7 @@ public class StoreHandlersTests
 
         Assert.Same(StoreErrors.DuplicateName, result.Error);
         Assert.Equal(ErrorType.Conflict, result.Error.Type);
-        Assert.Single(await _stores.ListAsync(CancellationToken.None));
+        Assert.Equal(1, (await _stores.ListAsync(1, 20, CancellationToken.None)).TotalCount);
     }
 
     [Fact]
@@ -73,17 +73,34 @@ public class StoreHandlersTests
         await create.Handle(new CreateStoreCommand("Green Basket", "2 Park Lane"), CancellationToken.None);
         await create.Handle(FreshMart, CancellationToken.None);
 
-        var result = await new ListStoresQueryHandler(_stores).Handle(new ListStoresQuery(), CancellationToken.None);
+        var result = await new ListStoresQueryHandler(_stores).Handle(new ListStoresQuery(1, 20), CancellationToken.None);
 
-        Assert.Equal(["Fresh Mart", "Green Basket"], result.Value.Select(store => store.Name), StringComparer.Ordinal);
+        Assert.Equal(["Fresh Mart", "Green Basket"], result.Value.Items.Select(store => store.Name), StringComparer.Ordinal);
+        Assert.Equal((1, 20, 2), (result.Value.Page, result.Value.PageSize, result.Value.TotalCount));
+    }
+
+    [Fact]
+    public async Task List_ReturnsOnePage_WithTheTotalOfAllOfThem()
+    {
+        var create = new CreateStoreCommandHandler(_stores);
+        foreach (var name in new[] { "D", "B", "A", "C", "E" })
+        {
+            await create.Handle(new CreateStoreCommand(name, "x"), CancellationToken.None);
+        }
+
+        var result = await new ListStoresQueryHandler(_stores).Handle(new ListStoresQuery(2, 2), CancellationToken.None);
+
+        Assert.Equal(["C", "D"], result.Value.Items.Select(store => store.Name), StringComparer.Ordinal);
+        Assert.Equal(5, result.Value.TotalCount);
     }
 
     [Fact]
     public async Task List_WithNoStores_IsASuccessWithAnEmptyList()
     {
-        var result = await new ListStoresQueryHandler(_stores).Handle(new ListStoresQuery(), CancellationToken.None);
+        var result = await new ListStoresQueryHandler(_stores).Handle(new ListStoresQuery(1, 20), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        Assert.Empty(result.Value);
+        Assert.Empty(result.Value.Items);
+        Assert.Equal(0, result.Value.TotalCount);
     }
 }

@@ -42,7 +42,7 @@ public static class DependencyInjection
         services.AddValidatedCommandHandler<ListRolesQuery, Result<IReadOnlyList<RoleResult>>, ListRolesQueryHandler>();
         services.AddValidatedCommandHandler<CreateStoreCommand, Result<StoreResult>, CreateStoreCommandHandler>();
         services.AddValidatedCommandHandler<GetStoreQuery, Result<StoreResult>, GetStoreQueryHandler>();
-        services.AddValidatedCommandHandler<ListStoresQuery, Result<IReadOnlyList<StoreResult>>, ListStoresQueryHandler>();
+        services.AddValidatedCommandHandler<ListStoresQuery, Result<PagedResult<StoreResult>>, ListStoresQueryHandler>();
 
         services.AddValidatedCommandHandler<CreateProductCommand, Result<ProductResult>, CreateProductCommandHandler>();
         services.AddValidatedCommandHandler<GetProductQuery, Result<ProductResult>, GetProductQueryHandler>();

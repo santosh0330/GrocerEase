@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using GrocerEase.Contracts.Authentication;
+using GrocerEase.Contracts.Common;
 using GrocerEase.Contracts.Stores;
 
 namespace GrocerEase.IntegrationTests;
@@ -170,7 +171,63 @@ public class StoresEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.OK, one.StatusCode);
         Assert.Equal(store, await one.Content.ReadFromJsonAsync<StoreResponse>());
         Assert.Equal(HttpStatusCode.OK, all.StatusCode);
-        Assert.Contains(store, (await all.Content.ReadFromJsonAsync<List<StoreResponse>>())!);
+        var first = (await all.Content.ReadFromJsonAsync<PagedResponse<StoreResponse>>())!;
+        Assert.Equal((1, 20), (first.Page, first.PageSize));
+        Assert.True(first.TotalCount >= 1 && first.Items.Count <= 20);
+        Assert.Contains(store, await AllStoresAsync(client, token)); // the database has many stores by now: walk the pages to find it
+    }
+
+    private static async Task<List<StoreResponse>> AllStoresAsync(HttpClient client, string token)
+    {
+        var stores = new List<StoreResponse>();
+        for (var page = 1; ; page++)
+        {
+            using var request = Send(HttpMethod.Get, $"/stores?page={page}&pageSize=100", token);
+            var body = (await (await client.SendAsync(request)).Content.ReadFromJsonAsync<PagedResponse<StoreResponse>>())!;
+            stores.AddRange(body.Items);
+            if (body.Items.Count == 0 || stores.Count >= body.TotalCount)
+            {
+                return stores;
+            }
+        }
+    }
+
+    [Fact]
+    public async Task TheList_IsPaged_InOrderOfName_AndAPastTheEndPageIsEmpty()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        await CreateAsync(client, admin);
+        await CreateAsync(client, admin);
+
+        using var one = Send(HttpMethod.Get, "/stores?page=1&pageSize=1", admin);
+        using var past = Send(HttpMethod.Get, "/stores?page=100000&pageSize=100", admin);
+        var first = (await (await client.SendAsync(one)).Content.ReadFromJsonAsync<PagedResponse<StoreResponse>>())!;
+        var beyond = (await (await client.SendAsync(past)).Content.ReadFromJsonAsync<PagedResponse<StoreResponse>>())!;
+
+        Assert.Single(first.Items);
+        Assert.True(first.TotalCount >= 2);
+        Assert.Empty(beyond.Items);
+        Assert.True(beyond.TotalCount >= first.TotalCount); // other tests add stores at the same time: the total can only have grown
+        var all = await AllStoresAsync(client, admin);
+        Assert.Equal(all.OrderBy(store => store.Name, StringComparer.Ordinal).Select(store => store.Id), all.Select(store => store.Id));
+    }
+
+    [Theory]
+    [InlineData("?page=0", "page")]
+    [InlineData("?page=100001", "page")]
+    [InlineData("?pageSize=0", "pageSize")]
+    [InlineData("?pageSize=101", "pageSize")]
+    public async Task PagingOutsideTheLimits_Is400_NamingTheParameter(string query, string parameter)
+    {
+        using var client = factory.CreateClient();
+        var token = await TokenAsync(client);
+
+        using var request = Send(HttpMethod.Get, $"/stores{query}", token);
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.True((await ProblemAsync(response)).GetProperty("errors").TryGetProperty(parameter, out _));
     }
 
     [Fact]

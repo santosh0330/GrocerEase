@@ -1,4 +1,5 @@
 using GrocerEase.Application.Abstractions;
+using GrocerEase.Application.Common;
 using GrocerEase.Domain.Entities;
 using GrocerEase.Infrastructure.Persistence.Configurations;
 using Microsoft.EntityFrameworkCore;
@@ -13,8 +14,16 @@ public sealed class StoreRepository(AppDbContext db) : IStoreRepository
     public Task<Store?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
         db.Stores.AsNoTracking().SingleOrDefaultAsync(store => store.Id == id, cancellationToken);
 
-    public async Task<IReadOnlyList<Store>> ListAsync(CancellationToken cancellationToken) =>
-        await db.Stores.AsNoTracking().OrderBy(store => store.Name).ToListAsync(cancellationToken);
+    public async Task<PagedResult<Store>> ListAsync(int page, int pageSize, CancellationToken cancellationToken)
+    {
+        // The name is unique (ix_stores_name), so it orders the pages by itself. The count and the page are two queries; a store created
+        // between them makes the total one more than the page shows, which a client refreshing the list absorbs.
+        var total = await db.Stores.CountAsync(cancellationToken);
+        var items = await db.Stores.AsNoTracking().OrderBy(store => store.Name)
+            .Skip((page - 1) * pageSize).Take(pageSize)
+            .ToListAsync(cancellationToken);
+        return new PagedResult<Store>(items, page, pageSize, total);
+    }
 
     public async Task<bool> TryAddAsync(Store store, CancellationToken cancellationToken)
     {

@@ -121,17 +121,20 @@ expect "migrate exit code" "$(docker inspect --format '{{.State.ExitCode}}' "$mi
 
 step "register, log in, and refuse a duplicate over HTTP"
 expect "register status" "$(post /auth/register "$register_body")" "200"
+cp "$work/body.json" "$work/register.json" # kept to check what it says about expiry, once the JWT helpers exist
 registered_id="$(jq -r .id "$work/body.json")"
 jq -e '.token | split(".") | length == 3' "$work/body.json" > /dev/null || fail "the token is not a JWT"
 registered_refresh_token="$(jq -r .refreshToken "$work/body.json")"
 [ "${#registered_refresh_token}" = "43" ] || fail "the refresh token is not 43 characters (32 random bytes in base64url)"
 expect "login status" "$(post /auth/login "$login_body")" "200"
+cp "$work/body.json" "$work/login.json"
 expect "login returns the registered user" "$(jq -r .id "$work/body.json")" "$registered_id"
 upper="$(echo "$register_body" | sed "s/$email/$(echo "$email" | tr '[:lower:]' '[:upper:]')/")"
 expect "duplicate register status (email in another case)" "$(post /auth/register "$upper")" "409"
 
 step "refresh: a token works once, and using an old one ends the session"
 expect "refresh status" "$(post /auth/refresh "{\"refreshToken\":\"$registered_refresh_token\"}")" "200"
+cp "$work/body.json" "$work/refresh.json"
 refreshed_token="$(jq -r .refreshToken "$work/body.json")"
 [ "$refreshed_token" != "$registered_refresh_token" ] || fail "refreshing returned the same refresh token"
 jq -e '.token | split(".") | length == 3' "$work/body.json" > /dev/null || fail "the refreshed access token is not a JWT"
@@ -231,6 +234,15 @@ expect "the token of a new user says Customer" "$(jwt_claim "$customer_token" ro
 expect "and carries what a customer may do" "$(jwt_claim_json "$customer_token" permission)" '["orders.cancel","orders.place","orders.read","products.read","profile.read","stores.read"]'
 expect "GET /me shows the role" "$(get /me "$customer_token" > /dev/null; jq -r .role "$work/get.json")" "Customer"
 expect "GET /me shows what the role may do" "$(jq -c .permissions "$work/get.json")" '["orders.cancel","orders.place","orders.read","products.read","profile.read","stores.read"]'
+step "register, login and refresh each say when the access token expires, and it is the token's own exp"
+for kind in register login refresh; do
+  expires_at="$(jq -r .expiresAt "$work/$kind.json")"
+  kind_token="$(jq -r .token "$work/$kind.json")"
+  expect "$kind: expiresAt is an ISO 8601 instant in UTC" "$(printf %s "$expires_at" | grep -Ec '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|\+00:00)$')" "1"
+  expect "$kind: it is the exp claim of the token in the same response" "$(date -u -d "$expires_at" +%s)" "$(jwt_claim "$kind_token" exp)"
+  expect "$kind: it is ten minutes after the token was issued (Jwt:ExpiryMinutes)" "$(( $(date -u -d "$expires_at" +%s) - $(jwt_claim "$kind_token" iat) ))" "600"
+done
+
 expect "GET /roles with no token" "$(get /roles)" "401"
 expect "GET /roles as a customer" "$(get /roles "$customer_token")" "403"
 expect "the refusal has a stable code" "$(jq -r .code "$work/get.json")" "Authorization.Forbidden"

@@ -28,8 +28,8 @@ public sealed class LoginCommandHandler(
 
         // Read now, at every login, so a role that was changed since the last token is in the new one.
         var role = await roleRepository.GetRequiredByIdAsync(user.RoleId, cancellationToken);
-        var token = jwtTokenGenerator.GenerateToken(user, role).Token;
+        var accessToken = jwtTokenGenerator.GenerateToken(user, role);
         var refreshToken = await refreshTokenIssuer.StartSessionAsync(user.Id, cancellationToken);
-        return Result.Success(new AuthenticationResult(user.Id, user.FirstName, user.LastName, user.Email, token, refreshToken));
+        return Result.Success(new AuthenticationResult(user.Id, user.FirstName, user.LastName, user.Email, accessToken.Token, accessToken.ExpiresAt, refreshToken));
     }
 }

@@ -32,6 +32,19 @@ public class OpenApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(["200", "400", "401", "429"], Statuses(await ResponsesOfAsync("/auth/refresh")));
 
     [Fact]
+    public async Task TheSignInResponse_DeclaresWhenTheAccessTokenExpires_AsARequiredDateTime()
+    {
+        using var client = factory.CreateClient();
+        var json = await client.GetStringAsync(new Uri("/openapi/v1.json", UriKind.Relative));
+        using var document = JsonDocument.Parse(json);
+
+        var schema = document.RootElement.GetProperty("components").GetProperty("schemas").GetProperty("AuthenticationResponse");
+
+        Assert.Equal("date-time", schema.GetProperty("properties").GetProperty("expiresAt").GetProperty("format").GetString());
+        Assert.Contains("expiresAt", schema.GetProperty("required").EnumerateArray().Select(name => name.GetString()), StringComparer.Ordinal);
+    }
+
+    [Fact]
     public async Task Me_DeclaresSuccessAndUnauthorized()
     {
         using var client = factory.CreateClient();

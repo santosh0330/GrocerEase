@@ -76,6 +76,7 @@ public class RefreshCommandHandlerTests
         Assert.True(result.IsSuccess);
         Assert.Equal((_ada.Id, "Ada", "Lovelace", "ada@example.com"), (result.Value.Id, result.Value.FirstName, result.Value.LastName, result.Value.Email));
         Assert.Equal("access-1-for-ada@example.com", result.Value.Token);
+        Assert.Equal(StubTokenGenerator.ExpiresAt, result.Value.ExpiresAt); // the generator's answer, passed on as it is
         Assert.False(string.IsNullOrEmpty(result.Value.RefreshToken));
         Assert.NotEqual(token, result.Value.RefreshToken, StringComparer.Ordinal);
     }

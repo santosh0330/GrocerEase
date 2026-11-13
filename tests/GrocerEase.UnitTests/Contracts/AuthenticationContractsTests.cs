@@ -31,12 +31,12 @@ public class AuthenticationContractsTests
     public void AuthenticationResponse_SerializesToCamelCaseJson()
     {
         var id = Guid.Parse("11111111-2222-3333-4444-555555555555");
-        var response = new AuthenticationResponse(id, "Ada", "Lovelace", "ada@example.com", "jwt", "refresh");
+        var response = new AuthenticationResponse(id, "Ada", "Lovelace", "ada@example.com", "jwt", new DateTimeOffset(2030, 1, 1, 12, 10, 0, TimeSpan.Zero), "refresh");
 
         var json = JsonSerializer.Serialize(response, Web);
 
         Assert.Equal(
-            """{"id":"11111111-2222-3333-4444-555555555555","firstName":"Ada","lastName":"Lovelace","email":"ada@example.com","token":"jwt","refreshToken":"refresh"}""",
+            """{"id":"11111111-2222-3333-4444-555555555555","firstName":"Ada","lastName":"Lovelace","email":"ada@example.com","token":"jwt","expiresAt":"2030-01-01T12:10:00+00:00","refreshToken":"refresh"}""",
             json);
     }
 
@@ -51,7 +51,7 @@ public class AuthenticationContractsTests
     [Fact]
     public void AuthenticationResponse_ToString_DoesNotContainEitherToken()
     {
-        var text = new AuthenticationResponse(Guid.NewGuid(), "Ada", "Lovelace", "ada@example.com", "jwt-value", "refresh-value").ToString();
+        var text = new AuthenticationResponse(Guid.NewGuid(), "Ada", "Lovelace", "ada@example.com", "jwt-value", DateTimeOffset.UnixEpoch, "refresh-value").ToString();
 
         Assert.DoesNotContain("jwt-value", text, StringComparison.Ordinal);
         Assert.DoesNotContain("refresh-value", text, StringComparison.Ordinal);

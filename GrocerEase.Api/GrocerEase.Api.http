@@ -13,6 +13,7 @@ Content-Type: application/json
 ###
 
 # The name lets the requests below reuse this response: {{login.response.body.$.token}} is the access token it returns,
+# {{login.response.body.$.expiresAt}} the UTC instant it stops working (the token's own exp, so refresh a little before it),
 # {{login.response.body.$.refreshToken}} the refresh token.
 # @name login
 POST {{GrocerEase.Api_HostAddress}}/auth/login
@@ -25,7 +26,7 @@ Content-Type: application/json
 
 ###
 
-# Exchange the refresh token for a new pair. 200 with a new "token" and a NEW "refreshToken": the one sent is used up, so the second
+# Exchange the refresh token for a new pair. 200 with a new "token" (and its new "expiresAt") and a NEW "refreshToken": the one sent is used up, so the second
 # send of this request (without logging in again) is 401 "Authentication.InvalidRefreshToken", and revokes the whole session.
 # @name refresh
 POST {{GrocerEase.Api_HostAddress}}/auth/refresh

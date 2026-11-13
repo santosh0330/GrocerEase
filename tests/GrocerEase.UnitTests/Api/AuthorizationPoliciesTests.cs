@@ -34,6 +34,8 @@ public class AuthorizationPoliciesTests
     [InlineData(Permissions.ProductsRead)]
     [InlineData(Permissions.ProductsManage)]
     [InlineData(Permissions.InventoryManage)]
+    [InlineData(Permissions.OrdersPlace)]
+    [InlineData(Permissions.OrdersRead)]
     public async Task EveryPermission_HasAPolicyNamedAfterIt(string permission)
     {
         using var provider = Build();
@@ -48,7 +50,7 @@ public class AuthorizationPoliciesTests
     [Fact]
     public void TheTestThatNamesEveryPermission_CoversTheWholeList() =>
         Assert.Equal(
-            [Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresRead, Permissions.StoresManage, Permissions.ProductsRead, Permissions.ProductsManage, Permissions.InventoryManage],
+            [Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresRead, Permissions.StoresManage, Permissions.ProductsRead, Permissions.ProductsManage, Permissions.InventoryManage, Permissions.OrdersPlace, Permissions.OrdersRead],
             Permissions.All, StringComparer.Ordinal);
 
     [Fact]

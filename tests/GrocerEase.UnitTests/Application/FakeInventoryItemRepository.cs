@@ -11,12 +11,16 @@ internal sealed class FakeInventoryItemRepository : IInventoryItemRepository
 {
     public Dictionary<(Guid StoreId, Guid ProductId), int> Quantities { get; } = [];
 
+    /// <summary>Every change asked for, in the order it was asked: a test can say in which order products were reserved.</summary>
+    public List<(Guid ProductId, int Delta)> Calls { get; } = [];
+
     public Task<IReadOnlyDictionary<Guid, int>> GetQuantitiesAsync(Guid storeId, IReadOnlyCollection<Guid> productIds, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyDictionary<Guid, int>>(
             Quantities.Where(entry => entry.Key.StoreId == storeId && productIds.Contains(entry.Key.ProductId)).ToDictionary(entry => entry.Key.ProductId, entry => entry.Value));
 
     public Task<int?> TryAdjustAsync(Guid storeId, Guid productId, int delta, CancellationToken cancellationToken)
     {
+        Calls.Add((productId, delta));
         Quantities.TryGetValue((storeId, productId), out var current);
         var next = (long)current + delta;
         if (next < 0 || next > InventoryItem.MaxQuantity)

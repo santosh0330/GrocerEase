@@ -437,6 +437,20 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                             RoleId = new Guid("019e0000-0000-7000-8000-000000000003"),
                             Type = "permission",
                             Value = "inventory.manage"
+                        },
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000114"),
+                            RoleId = new Guid("019e0000-0000-7000-8000-000000000001"),
+                            Type = "permission",
+                            Value = "orders.place"
+                        },
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000115"),
+                            RoleId = new Guid("019e0000-0000-7000-8000-000000000001"),
+                            Type = "permission",
+                            Value = "orders.read"
                         });
                 });
 

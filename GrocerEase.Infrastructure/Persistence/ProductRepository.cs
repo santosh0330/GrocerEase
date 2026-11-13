@@ -19,6 +19,16 @@ public sealed class ProductRepository(AppDbContext db) : IProductRepository
         db.Products.AsNoTracking()
             .SingleOrDefaultAsync(product => product.Id == productId && product.StoreId == storeId && product.ArchivedAt == null, cancellationToken);
 
+    public async Task<IReadOnlyList<Product>> GetLiveByIdsAsync(Guid storeId, IReadOnlyCollection<Guid> productIds, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(productIds);
+
+        // The store is in the query as well as the ids, so another store's product asked for by its id is simply not found.
+        return await db.Products.AsNoTracking()
+            .Where(product => product.StoreId == storeId && product.ArchivedAt == null && productIds.Contains(product.Id))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<PagedResult<Product>> ListLiveAsync(Guid storeId, int page, int pageSize, CancellationToken cancellationToken)
     {
         var live = db.Products.AsNoTracking().Where(product => product.StoreId == storeId && product.ArchivedAt == null);

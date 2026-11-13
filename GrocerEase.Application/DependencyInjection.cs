@@ -71,6 +71,7 @@ public static class DependencyInjection
 
         // Changes the status and puts every line's stock back, which must be kept together or not at all.
         services.AddTransactionalCommandHandler<CancelOrderCommand, Result<OrderResult>, CancelOrderCommandHandler>();
+        services.AddTransactionalCommandHandler<CancelMyOrderCommand, Result<OrderResult>, CancelMyOrderCommandHandler>();
 
         // Reserves the stock of every line and writes the order, which must be kept together or not at all.
         services.AddTransactionalCommandHandler<PlaceOrderCommand, Result<OrderResult>, PlaceOrderCommandHandler>();

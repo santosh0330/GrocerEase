@@ -89,7 +89,14 @@ public sealed class Order
     /// </summary>
     public bool Cancel() => MoveTo(OrderStatus.Cancelled, OrderStatus.Pending, OrderStatus.Verified);
 
-    // The whole state machine is these three calls: each says which statuses it may leave. A refused move is a value, not an exception,
+    /// <summary>
+    /// The customer takes back an order the store has not looked at yet: only from <see cref="OrderStatus.Pending"/>, and it ends in the same
+    /// <see cref="OrderStatus.Cancelled"/> as a cancellation by the store. Once the store has verified it, only the store can cancel.
+    /// Returns <c>false</c> and changes nothing from any other status. Putting the stock back is the use case's job, in the same unit of work.
+    /// </summary>
+    public bool Withdraw() => MoveTo(OrderStatus.Cancelled, OrderStatus.Pending);
+
+    // The whole state machine is these four calls: each says which statuses it may leave. A refused move is a value, not an exception,
     // because "someone already shipped it" is an expected answer to a request, not a bug.
     private bool MoveTo(OrderStatus target, params ReadOnlySpan<OrderStatus> from)
     {

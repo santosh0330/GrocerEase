@@ -22,6 +22,35 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("GrocerEase.Domain.Entities.InventoryItem", b =>
+                {
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("product_id");
+
+                    b.Property<int>("QuantityOnHand")
+                        .HasColumnType("integer")
+                        .HasColumnName("quantity_on_hand");
+
+                    b.Property<Guid>("StoreId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("store_id");
+
+                    b.HasKey("ProductId")
+                        .HasName("pk_inventory_items");
+
+                    b.HasIndex("StoreId")
+                        .HasDatabaseName("ix_inventory_items_store_id");
+
+                    b.HasIndex("ProductId", "StoreId")
+                        .HasDatabaseName("ix_inventory_items_product_id_store_id");
+
+                    b.ToTable("inventory_items", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_inventory_items_quantity_in_range", "quantity_on_hand >= 0 AND quantity_on_hand <= 1000000000");
+                        });
+                });
+
             modelBuilder.Entity("GrocerEase.Domain.Entities.Product", b =>
                 {
                     b.Property<Guid>("Id")
@@ -56,6 +85,9 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_products");
+
+                    b.HasAlternateKey("Id", "StoreId")
+                        .HasName("uq_products_id_store_id");
 
                     b.HasIndex("StoreId", "Name")
                         .IsUnique()
@@ -299,6 +331,13 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                             RoleId = new Guid("019e0000-0000-7000-8000-000000000003"),
                             Type = "permission",
                             Value = "products.manage"
+                        },
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000113"),
+                            RoleId = new Guid("019e0000-0000-7000-8000-000000000003"),
+                            Type = "permission",
+                            Value = "inventory.manage"
                         });
                 });
 
@@ -426,6 +465,17 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("ck_users_id_is_uuid_v7", "uuid_extract_version(id) = 7");
                         });
+                });
+
+            modelBuilder.Entity("GrocerEase.Domain.Entities.InventoryItem", b =>
+                {
+                    b.HasOne("GrocerEase.Domain.Entities.Product", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId", "StoreId")
+                        .HasPrincipalKey("Id", "StoreId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_inventory_items_products_product_id_store_id");
                 });
 
             modelBuilder.Entity("GrocerEase.Domain.Entities.Product", b =>

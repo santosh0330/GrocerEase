@@ -28,5 +28,8 @@ public static class Permissions
     /// <summary>Adding, editing and archiving the products of one's own store.</summary>
     public const string ProductsManage = "products.manage";
 
-    public static IReadOnlyList<string> All { get; } = [ProfileRead, RolesRead, StoresRead, StoresManage, ProductsRead, ProductsManage];
+    /// <summary>Reading and adjusting the stock of one's own store.</summary>
+    public const string InventoryManage = "inventory.manage";
+
+    public static IReadOnlyList<string> All { get; } = [ProfileRead, RolesRead, StoresRead, StoresManage, ProductsRead, ProductsManage, InventoryManage];
 }

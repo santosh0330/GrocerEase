@@ -45,6 +45,10 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
             .HasFilter("archived_at IS NULL")
             .HasDatabaseName(LiveNameIndexName);
 
+        // The target of a composite foreign key: an inventory item points at (product, store), so it cannot claim a store its product is not in.
+        // The id alone is already unique; this says that the pair is too, which a foreign key needs.
+        builder.HasAlternateKey(product => new { product.Id, product.StoreId }).HasName("uq_products_id_store_id");
+
         // RESTRICT: a store that has products cannot be deleted from under them.
         builder.HasOne<Store>()
             .WithMany()

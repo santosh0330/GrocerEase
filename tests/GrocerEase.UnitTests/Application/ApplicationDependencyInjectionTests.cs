@@ -5,6 +5,8 @@ using GrocerEase.Application.Authentication.Commands;
 using GrocerEase.Application.Authentication.Common;
 using GrocerEase.Application.Common;
 using GrocerEase.Application.Decorators;
+using GrocerEase.Application.Inventory.Commands;
+using GrocerEase.Application.Inventory.Common;
 using GrocerEase.Application.Products.Commands;
 using GrocerEase.Application.Products.Common;
 using GrocerEase.Application.Products.Queries;
@@ -77,6 +79,8 @@ public class ApplicationDependencyInjectionTests
             scope.ServiceProvider.GetRequiredService<ICommandHandler<GetProductQuery, Result<ProductResult>>>());
         Assert.IsType<ValidationDecorator<UpdateProductCommand, Result<ProductResult>>>(
             scope.ServiceProvider.GetRequiredService<ICommandHandler<UpdateProductCommand, Result<ProductResult>>>());
+        Assert.IsType<ValidationDecorator<AdjustStockCommand, Result<StockResult>>>(
+            scope.ServiceProvider.GetRequiredService<ICommandHandler<AdjustStockCommand, Result<StockResult>>>());
         Assert.IsType<ValidationDecorator<ArchiveProductCommand, Result<ProductResult>>>(
             scope.ServiceProvider.GetRequiredService<ICommandHandler<ArchiveProductCommand, Result<ProductResult>>>());
         Assert.IsType<ValidationDecorator<ListProductsQuery, Result<PagedResult<ProductResult>>>>(

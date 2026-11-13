@@ -31,4 +31,25 @@ public static class ErrorMappings
 
         return result;
     }
+
+    /// <summary>
+    /// Like <see cref="ToProblem(ControllerBase, ResultError)"/>, and when the error carries data (a change refused because the thing had
+    /// moved on, with the thing as it is now), <paramref name="shape"/> turns it into the public type and the problem gets it as
+    /// <paramref name="extensionName"/>. Application's types do not reach the client: the controller says what they look like there.
+    /// </summary>
+    public static ObjectResult ToProblem(this ControllerBase controller, ResultError error, string extensionName, Func<object, object?> shape)
+    {
+        ArgumentNullException.ThrowIfNull(controller);
+        ArgumentNullException.ThrowIfNull(error);
+        ArgumentException.ThrowIfNullOrWhiteSpace(extensionName);
+        ArgumentNullException.ThrowIfNull(shape);
+
+        var result = controller.ToProblem(error);
+        if (error.Data is not null && result.Value is ProblemDetails problem && shape(error.Data) is { } shaped)
+        {
+            problem.Extensions[extensionName] = shaped;
+        }
+
+        return result;
+    }
 }

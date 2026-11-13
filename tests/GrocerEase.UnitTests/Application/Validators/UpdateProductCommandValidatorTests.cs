@@ -9,7 +9,7 @@ public class UpdateProductCommandValidatorTests
 {
     private readonly UpdateProductCommandValidator _validator = new();
 
-    private static UpdateProductCommand Valid => new(Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7(), "Milk", "Fresh", 2.50m);
+    private static UpdateProductCommand Valid => new(Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7(), "Milk", "Fresh", 2.50m, 1);
 
     [Fact]
     public void ValidCommand_HasNoErrors() =>
@@ -32,4 +32,20 @@ public class UpdateProductCommandValidatorTests
         _validator.TestValidate(Valid with { Price = 0m }).ShouldHaveValidationErrorFor(x => x.Price);
         _validator.TestValidate(Valid with { Price = 1.005m }).ShouldHaveValidationErrorFor(x => x.Price);
     }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(int.MaxValue)]
+    public void AVersionOfOneOrMore_IsValid(int version) =>
+        _validator.TestValidate(Valid with { Version = version }).ShouldNotHaveValidationErrorFor(x => x.Version);
+
+    // Zero is what a body that sent no version becomes: refused, never applied blindly.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(int.MinValue)]
+    public void AMissingOrNonsenseVersion_IsInvalid_AndTheMessageSaysWhatToSend(int version) =>
+        _validator.TestValidate(Valid with { Version = version }).ShouldHaveValidationErrorFor(x => x.Version)
+            .WithErrorMessage("The version of the product you are changing must be sent: use the 'version' you read.");
 }

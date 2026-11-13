@@ -18,7 +18,8 @@ public static class ProductMappings
     public static UpdateProductCommand ToCommand(this UpdateProductRequest request, Guid storeId, Guid productId, Guid actorId)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return new UpdateProductCommand(storeId, productId, actorId, request.Name, request.Description ?? string.Empty, request.Price);
+        // A version that was not sent is zero, which the validator refuses: it is a 400 naming "version", not a change applied blindly.
+        return new UpdateProductCommand(storeId, productId, actorId, request.Name, request.Description ?? string.Empty, request.Price, request.Version ?? 0);
     }
 
     public static ArchiveProductCommand ToArchiveCommand(this Guid productId, Guid storeId, Guid actorId) => new(storeId, productId, actorId);

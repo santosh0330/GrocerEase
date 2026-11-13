@@ -27,11 +27,17 @@ public interface IProductRepository
     Task<PagedResult<Product>> ListLiveAsync(Guid storeId, int page, int pageSize, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Writes the name, description and price of <paramref name="product"/> over the one that is on sale in its store with its id. One
-    /// statement with the store and the "still on sale" condition inside it, so a product of another store is never touched and an
-    /// archived one is not brought back. The id and the store are not changed.
+    /// Writes the name, description and price of <paramref name="product"/> over the one that is on sale in its store with its id, <b>if it
+    /// is still at <paramref name="expectedVersion"/></b>, and makes the row the next version. One statement with the store, the "still on
+    /// sale" condition and the version inside it, so a product of another store is never touched, an archived one is not brought back, and
+    /// of two edits made from the same version one is written and the other is <see cref="ProductUpdateOutcome.Outdated"/>. The id and the
+    /// store are not changed.
     /// </summary>
-    Task<ProductUpdateOutcome> TryUpdateAsync(Product product, CancellationToken cancellationToken);
+    /// <remarks>
+    /// This is the optimistic check: nothing is locked while a person edits, and a stale edit is found out when it is written, by the
+    /// <c>WHERE</c> that matches no row. There is no exception to catch: the answer is a value.
+    /// </remarks>
+    Task<ProductUpdateOutcome> TryUpdateAsync(Product product, int expectedVersion, CancellationToken cancellationToken);
 
     /// <summary>
     /// Takes a product off sale by recording when. Returns <c>false</c>, and changes nothing, when it is not on sale in that store: it

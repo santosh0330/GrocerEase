@@ -145,7 +145,7 @@ public class ProductHandlersTests
     {
         var milk = await AddedAsync();
 
-        var result = await Update().Handle(new UpdateProductCommand(_storeId, milk.Id, _userId, "Oat milk", "Vegan", 3.20m), CancellationToken.None);
+        var result = await Update().Handle(new UpdateProductCommand(_storeId, milk.Id, _userId, "Oat milk", "Vegan", 3.20m, milk.Version), CancellationToken.None);
 
         Assert.Equal(new ProductResult(milk.Id, _storeId, "Oat milk", "Vegan", 3.20m, 2), result.Value); // an edit is the next version
         Assert.Equal("Oat milk", Assert.Single(_products.Products).Name);
@@ -156,7 +156,7 @@ public class ProductHandlersTests
     {
         var milk = await AddedAsync();
 
-        var result = await Update().Handle(new UpdateProductCommand(_storeId, milk.Id, _userId, "Milk", "New text", 9m), CancellationToken.None);
+        var result = await Update().Handle(new UpdateProductCommand(_storeId, milk.Id, _userId, "Milk", "New text", 9m, milk.Version), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
     }
@@ -167,7 +167,7 @@ public class ProductHandlersTests
         var milk = await AddedAsync("Milk");
         await AddedAsync("Bread");
 
-        var result = await Update().Handle(new UpdateProductCommand(_storeId, milk.Id, _userId, "Bread", "x", 1m), CancellationToken.None);
+        var result = await Update().Handle(new UpdateProductCommand(_storeId, milk.Id, _userId, "Bread", "x", 1m, milk.Version), CancellationToken.None);
 
         Assert.Same(ProductErrors.DuplicateName, result.Error);
         Assert.Equal("Milk", _products.Products.Single(product => product.Id == milk.Id).Name);
@@ -178,7 +178,7 @@ public class ProductHandlersTests
     {
         var milk = await AddedAsync();
 
-        var result = await Update().Handle(new UpdateProductCommand(_storeId, milk.Id, Guid.CreateVersion7(), "Hacked", "", 1m), CancellationToken.None);
+        var result = await Update().Handle(new UpdateProductCommand(_storeId, milk.Id, Guid.CreateVersion7(), "Hacked", "", 1m, milk.Version), CancellationToken.None);
 
         Assert.Same(StoreErrors.NotFound, result.Error);
         Assert.Equal("Milk", Assert.Single(_products.Products).Name);
@@ -193,7 +193,7 @@ public class ProductHandlersTests
 
         foreach (var productId in new[] { Guid.CreateVersion7(), archived.Id, foreign.Id })
         {
-            var result = await Update().Handle(new UpdateProductCommand(_storeId, productId, _userId, "X", "", 1m), CancellationToken.None);
+            var result = await Update().Handle(new UpdateProductCommand(_storeId, productId, _userId, "X", "", 1m, 1), CancellationToken.None);
 
             Assert.Same(ProductErrors.NotFound, result.Error);
         }
@@ -273,5 +273,101 @@ public class ProductHandlersTests
         Assert.Same(ProductErrors.NotFound, unknown.Error);
         Assert.Same(ProductErrors.NotFound, archivedResult.Error);
         Assert.Same(ProductErrors.NotFound, otherStore.Error);
+    }
+
+    private UpdateProductCommand EditFrom(ProductResult product, int version, string name = "Oat milk") =>
+        new(_storeId, product.Id, _userId, name, "Vegan", 3.20m, version);
+
+    [Fact]
+    public async Task Update_FromTheCurrentVersion_WorksAndIsTheNextVersion_AndEachEditAfterThatAgain()
+    {
+        var milk = await AddedAsync();
+
+        var first = await Update().Handle(EditFrom(milk, milk.Version), CancellationToken.None);
+        var second = await Update().Handle(EditFrom(milk, first.Value.Version, "Soy milk"), CancellationToken.None);
+
+        Assert.Equal((1, 2, 3), (milk.Version, first.Value.Version, second.Value.Version));
+        Assert.Equal("Soy milk", _products.Products.Single().Name);
+    }
+
+    [Fact]
+    public async Task Update_FromAnOldVersion_IsOutdated_NothingIsWritten_AndTheErrorCarriesTheProductAsItIsNow()
+    {
+        var milk = await AddedAsync();
+        await Update().Handle(EditFrom(milk, milk.Version, "First one's name"), CancellationToken.None); // someone else edited from version 1: now version 2
+
+        var result = await Update().Handle(EditFrom(milk, milk.Version, "Second one's name"), CancellationToken.None); // I still hold version 1
+
+        Assert.Equal("Product.Outdated", result.Error.Code);
+        Assert.Equal(ErrorType.Conflict, result.Error.Type);
+        var current = Assert.IsType<ProductResult>(result.Error.Data);
+        Assert.Equal(("First one's name", 2), (current.Name, current.Version)); // what the other person did, so I can see it
+        Assert.Equal(1, _products.Writes); // only the first edit was written
+        Assert.Equal("First one's name", _products.Products.Single().Name);
+    }
+
+    [Fact]
+    public async Task Update_FromAVersionThatDoesNotExistYet_IsOutdatedToo()
+    {
+        var milk = await AddedAsync();
+
+        var result = await Update().Handle(EditFrom(milk, milk.Version + 5), CancellationToken.None);
+
+        Assert.Equal("Product.Outdated", result.Error.Code);
+        Assert.Equal(0, _products.Writes);
+    }
+
+    [Fact]
+    public async Task WhenSomeoneElseEditsBetweenTheReadAndTheWrite_TheLoserIsOutdated_AndSeesTheWinnersProduct()
+    {
+        var milk = await AddedAsync();
+        // The handler reads version 1 (so the quick check passes), and before it writes, someone else's edit lands.
+        _products.BeforeUpdating = () => _products.SomeoneElseEdits(milk.Id, "The winner's name");
+
+        var result = await Update().Handle(EditFrom(milk, milk.Version), CancellationToken.None);
+
+        Assert.Equal("Product.Outdated", result.Error.Code);
+        var current = Assert.IsType<ProductResult>(result.Error.Data);
+        Assert.Equal(("The winner's name", 2), (current.Name, current.Version)); // read again: the winner's state, not the one this request read
+        Assert.Equal(0, _products.Writes); // this request wrote nothing
+    }
+
+    [Fact]
+    public async Task WhenTheProductIsArchivedBetweenTheReadAndTheWrite_TheAnswerIsNotFound_NotOutdated()
+    {
+        var milk = await AddedAsync();
+        _products.BeforeUpdating = () => Assert.True(_products.TryArchiveAsync(_storeId, milk.Id, DateTimeOffset.UtcNow, CancellationToken.None).Result);
+
+        var result = await Update().Handle(EditFrom(milk, milk.Version), CancellationToken.None);
+
+        Assert.Same(ProductErrors.NotFound, result.Error); // there is nothing left to edit, so there is no "current" to show
+    }
+
+    [Fact]
+    public async Task AStaleVersion_WinsOverANameClash_BecauseTheVersionIsCheckedFirst()
+    {
+        var milk = await AddedAsync("Milk");
+        var bread = await AddedAsync("Bread");
+        await Update().Handle(EditFrom(bread, bread.Version, "Rye"), CancellationToken.None); // bread is now version 2
+
+        var staleAndClashing = await Update().Handle(EditFrom(bread, bread.Version, "Milk"), CancellationToken.None); // version 1, and the name is taken
+        var currentAndClashing = await Update().Handle(EditFrom(bread, 2, "Milk"), CancellationToken.None);
+
+        Assert.Equal("Product.Outdated", staleAndClashing.Error.Code);
+        Assert.Same(ProductErrors.DuplicateName, currentAndClashing.Error);
+        Assert.Equal(2, _products.Products.Single(product => product.Id == bread.Id).Version); // neither bumped it
+        Assert.Equal(1, _products.Products.Single(product => product.Id == milk.Id).Version);
+    }
+
+    [Fact]
+    public async Task AStaleEditOfAProductInAStoreThatIsNotTheirs_IsStoreNotFound_AndRevealsNothingOfTheProduct()
+    {
+        var milk = await AddedAsync();
+        await Update().Handle(EditFrom(milk, milk.Version), CancellationToken.None); // now version 2
+
+        var result = await Update().Handle(EditFrom(milk, 1) with { ActorId = Guid.CreateVersion7() }, CancellationToken.None); // a stranger, with a stale version
+
+        Assert.Same(StoreErrors.NotFound, result.Error);
+        Assert.Null(result.Error.Data); // no "current": the membership is checked before anything of the product is read
     }
 }

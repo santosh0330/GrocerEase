@@ -24,9 +24,22 @@ internal sealed class FakeProductRepository : IProductRepository
         return Task.FromResult(new PagedResult<Product>(items, page, pageSize, live.Count));
     }
 
-    public Task<ProductUpdateOutcome> TryUpdateAsync(Product product, CancellationToken cancellationToken)
+    /// <summary>Runs just before an update is compared and written: a test uses it to make someone else edit the product first.</summary>
+    public Action? BeforeUpdating { get; set; }
+
+    /// <summary>What someone else does between this request's read and its write: the product is edited, so it is the next version.</summary>
+    public void SomeoneElseEdits(Guid productId, string name)
+    {
+        var index = Products.FindIndex(existing => existing.Id == productId);
+        Products[index] = Products[index].WithDetails(name, Products[index].Description, Products[index].Price);
+    }
+
+    public int Writes { get; private set; }
+
+    public Task<ProductUpdateOutcome> TryUpdateAsync(Product product, int expectedVersion, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(product);
+        BeforeUpdating?.Invoke();
 
         var index = Products.FindIndex(existing => existing.Id == product.Id && existing.StoreId == product.StoreId && !existing.IsArchived);
         if (index < 0)
@@ -34,12 +47,19 @@ internal sealed class FakeProductRepository : IProductRepository
             return Task.FromResult(ProductUpdateOutcome.NotFound);
         }
 
+        // Like the statement: the version is part of the condition, and when it does not match nothing is written (not even a name clash is looked for).
+        if (Products[index].Version != expectedVersion)
+        {
+            return Task.FromResult(ProductUpdateOutcome.Outdated);
+        }
+
         if (Products.Exists(other => other.Id != product.Id && other.StoreId == product.StoreId && !other.IsArchived && string.Equals(other.Name, product.Name, StringComparison.Ordinal)))
         {
             return Task.FromResult(ProductUpdateOutcome.DuplicateName);
         }
 
-        Products[index] = product;
+        Products[index] = new Product(product.Id, product.StoreId, product.Name, product.Description, product.Price, product.ArchivedAt, expectedVersion + 1);
+        Writes++;
         return Task.FromResult(ProductUpdateOutcome.Updated);
     }
 
@@ -52,7 +72,7 @@ internal sealed class FakeProductRepository : IProductRepository
         }
 
         var product = Products[index];
-        Products[index] = new Product(product.Id, product.StoreId, product.Name, product.Description, product.Price, archivedAt);
+        Products[index] = new Product(product.Id, product.StoreId, product.Name, product.Description, product.Price, archivedAt, product.Version + 1);
         return Task.FromResult(true);
     }
 

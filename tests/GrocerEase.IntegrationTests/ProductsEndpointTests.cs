@@ -521,7 +521,7 @@ public class ProductsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactor
         var milk = await AddProductAsync(client, token, storeId);
         await SendAsync(client, HttpMethod.Delete, $"/stores/{storeId}/products/{milk.Id}", token);
 
-        var response = await PutAsync(client, token, storeId, milk.Id, new UpdateProductRequest("Back", "", 1m));
+        var response = await PutAsync(client, token, storeId, milk.Id, new UpdateProductRequest("Back", "", 1m, 1));
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Null(await ReadAsync(client, token, storeId, milk.Id));
@@ -537,7 +537,7 @@ public class ProductsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactor
         var milk = await AddProductAsync(client, token, storeId);
         var name = $"Oat {Guid.NewGuid():N}";
 
-        var response = await PutAsync(client, token, storeId, milk.Id, new UpdateProductRequest($" {name} ", "Vegan", 3.20m));
+        var response = await PutAsync(client, token, storeId, milk.Id, new UpdateProductRequest($" {name} ", "Vegan", 3.20m, 1));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var edited = (await response.Content.ReadFromJsonAsync<ProductResponse>())!;
@@ -553,7 +553,7 @@ public class ProductsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactor
         var storeId = await CreateStoreAsync(client, admin);
         var (token, _, _) = await StoreUserOfAsync(client, admin, storeId);
         var milk = await AddProductAsync(client, token, storeId);
-        var body = new UpdateProductRequest("Hacked", "", 1m);
+        var body = new UpdateProductRequest("Hacked", "", 1m, 1);
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await PutAsync(client, null, storeId, milk.Id, body)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await PutAsync(client, (await RegisterAsync(client)).Token, storeId, milk.Id, body)).StatusCode);
@@ -572,8 +572,8 @@ public class ProductsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactor
         var (intruder, _, _) = await StoreUserOfAsync(client, admin, theirs);
         var milk = await AddProductAsync(client, ownerToken, other);
 
-        var viaTheirStore = await PutAsync(client, intruder, theirs, milk.Id, new UpdateProductRequest("Hacked", "", 1m)); // a store they run, a product they do not own
-        var viaTheStore = await PutAsync(client, intruder, other, milk.Id, new UpdateProductRequest("Hacked", "", 1m)); // the right store, which they do not run
+        var viaTheirStore = await PutAsync(client, intruder, theirs, milk.Id, new UpdateProductRequest("Hacked", "", 1m, 1)); // a store they run, a product they do not own
+        var viaTheStore = await PutAsync(client, intruder, other, milk.Id, new UpdateProductRequest("Hacked", "", 1m, 1)); // the right store, which they do not run
 
         Assert.Equal(HttpStatusCode.NotFound, viaTheirStore.StatusCode);
         Assert.Equal("Product.NotFound", (await ProblemAsync(viaTheirStore)).GetProperty("code").GetString());
@@ -590,7 +590,7 @@ public class ProductsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactor
         var storeId = await CreateStoreAsync(client, admin);
         var (token, _, _) = await StoreUserOfAsync(client, admin, storeId);
 
-        var response = await PutAsync(client, token, storeId, Guid.CreateVersion7(), new UpdateProductRequest("x", "", 1m));
+        var response = await PutAsync(client, token, storeId, Guid.CreateVersion7(), new UpdateProductRequest("x", "", 1m, 1));
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Equal("Product.NotFound", (await ProblemAsync(response)).GetProperty("code").GetString());
@@ -606,8 +606,8 @@ public class ProductsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactor
         var milk = await AddProductAsync(client, token, storeId);
         var bread = await AddProductAsync(client, token, storeId);
 
-        var clash = await PutAsync(client, token, storeId, milk.Id, new UpdateProductRequest(bread.Name, "", 1m));
-        var same = await PutAsync(client, token, storeId, milk.Id, new UpdateProductRequest(milk.Name, "New text", 9m));
+        var clash = await PutAsync(client, token, storeId, milk.Id, new UpdateProductRequest(bread.Name, "", 1m, 1));
+        var same = await PutAsync(client, token, storeId, milk.Id, new UpdateProductRequest(milk.Name, "New text", 9m, 1));
 
         Assert.Equal(HttpStatusCode.Conflict, clash.StatusCode);
         Assert.Equal("Product.DuplicateName", (await ProblemAsync(clash)).GetProperty("code").GetString());
@@ -624,7 +624,7 @@ public class ProductsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactor
         var milk = await AddProductAsync(client, token, storeId);
         await SendAsync(client, HttpMethod.Delete, $"/stores/{storeId}/members/{userId}", admin);
 
-        var response = await PutAsync(client, token, storeId, milk.Id, new UpdateProductRequest("Hacked", "", 1m));
+        var response = await PutAsync(client, token, storeId, milk.Id, new UpdateProductRequest("Hacked", "", 1m, 1));
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Equal(milk.Name, (await ReadAsync(client, admin, storeId, milk.Id))?.Name);
@@ -658,8 +658,8 @@ public class ProductsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactor
         var (token, _, _) = await StoreUserOfAsync(client, admin, storeId);
         var created = await CreateProductAsync(client, token, storeId);
 
-        var edited = (await (await PutAsync(client, token, storeId, created.Id, new UpdateProductRequest($"Renamed {Guid.NewGuid():N}", "Vegan", 3.20m))).Content.ReadFromJsonAsync<ProductResponse>())!;
-        var again = (await (await PutAsync(client, token, storeId, created.Id, new UpdateProductRequest(edited.Name, "Vegan", 3.40m))).Content.ReadFromJsonAsync<ProductResponse>())!;
+        var edited = (await (await PutAsync(client, token, storeId, created.Id, new UpdateProductRequest($"Renamed {Guid.NewGuid():N}", "Vegan", 3.20m, created.Version))).Content.ReadFromJsonAsync<ProductResponse>())!;
+        var again = (await (await PutAsync(client, token, storeId, created.Id, new UpdateProductRequest(edited.Name, "Vegan", 3.40m, edited.Version))).Content.ReadFromJsonAsync<ProductResponse>())!;
         var read = (await (await SendAsync(client, HttpMethod.Get, $"/stores/{storeId}/products/{created.Id}", token)).Content.ReadFromJsonAsync<ProductResponse>())!;
         var list = (await (await SendAsync(client, HttpMethod.Get, $"/stores/{storeId}/products", token)).Content.ReadFromJsonAsync<PagedResponse<ProductResponse>>())!;
 

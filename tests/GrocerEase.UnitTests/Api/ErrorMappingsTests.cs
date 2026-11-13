@@ -34,4 +34,30 @@ public class ErrorMappingsTests
         Assert.Equal("The email is already registered.", problem.Detail);
         Assert.Equal("User.DuplicateEmail", problem.Extensions["code"]);
     }
+
+    [Fact]
+    public void ToProblem_WithData_PutsTheShapedDataInAnExtension_AndKeepsTheCode()
+    {
+        var controller = new TestController { ProblemDetailsFactory = new StubProblemDetailsFactory() };
+        var error = new ResultError("Product.Outdated", "Changed.", ErrorType.Conflict, "the current state");
+
+        var result = controller.ToProblem(error, "current", data => new { text = data });
+
+        var problem = Assert.IsType<ProblemDetails>(result.Value);
+        Assert.Equal((StatusCodes.Status409Conflict, "Product.Outdated"), (problem.Status, problem.Extensions["code"]));
+        Assert.Equal(new { text = (object)"the current state" }, problem.Extensions["current"]);
+    }
+
+    [Fact]
+    public void ToProblem_WithNoData_OrAShapeThatDeclines_AddsNoExtension()
+    {
+        var controller = new TestController { ProblemDetailsFactory = new StubProblemDetailsFactory() };
+
+        var noData = Assert.IsType<ProblemDetails>(controller.ToProblem(new ResultError("A.B", "x", ErrorType.Conflict), "current", data => data).Value);
+        var declined = Assert.IsType<ProblemDetails>(controller.ToProblem(new ResultError("A.B", "x", ErrorType.Conflict, "data"), "current", _ => null).Value);
+
+        Assert.False(noData.Extensions.ContainsKey("current"));
+        Assert.False(declined.Extensions.ContainsKey("current"));
+        Assert.Equal("A.B", noData.Extensions["code"]);
+    }
 }

@@ -111,14 +111,29 @@ public class ProductsControllerTests
     }
 
     [Fact]
+    public async Task Update_WhenTheProductHasMovedOn_Is409WithTheCurrentProductInTheProblem_AsThePublicType()
+    {
+        var current = new ProductResult(Milk.Id, StoreId, "Changed by someone else", "Now", 9.00m, 7);
+        var update = new Spy<UpdateProductCommand, Result<ProductResult>>(Result.Failure<ProductResult>(ProductErrors.Outdated(current)));
+
+        var result = await ControllerWith(new Spy<CreateProductCommand, Result<ProductResult>>(Result.Success(Milk)), sub: CallerId.ToString(), update: update)
+            .Update(StoreId, Milk.Id, new UpdateProductRequest("x", "", 1m, 3), CancellationToken.None);
+
+        var problem = Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value);
+        Assert.Equal((StatusCodes.Status409Conflict, "Product.Outdated"), (problem.Status, problem.Extensions["code"]));
+        // The contract type, not Application's: the client sees what a product looks like everywhere else, with its version.
+        Assert.Equal(new ProductResponse(Milk.Id, StoreId, "Changed by someone else", "Now", 9.00m, 7), problem.Extensions["current"]);
+    }
+
+    [Fact]
     public async Task Update_PutsTheRouteTheCallerAndTheBodyInTheCommand_AndReturnsTheProduct()
     {
         var update = new Spy<UpdateProductCommand, Result<ProductResult>>(Result.Success(Milk));
 
         var result = await ControllerWith(new Spy<CreateProductCommand, Result<ProductResult>>(Result.Success(Milk)), sub: CallerId.ToString(), update: update)
-            .Update(StoreId, Milk.Id, new UpdateProductRequest("Oat milk", null, 3.2m), CancellationToken.None);
+            .Update(StoreId, Milk.Id, new UpdateProductRequest("Oat milk", null, 3.2m, 3), CancellationToken.None);
 
-        Assert.Equal(new UpdateProductCommand(StoreId, Milk.Id, CallerId, "Oat milk", string.Empty, 3.2m), update.Received);
+        Assert.Equal(new UpdateProductCommand(StoreId, Milk.Id, CallerId, "Oat milk", string.Empty, 3.2m, 3), update.Received);
         Assert.Equal(new ProductResponse(Milk.Id, StoreId, "Milk", "Fresh milk", 2.50m, 3), Assert.IsType<OkObjectResult>(result).Value);
     }
 
@@ -128,7 +143,7 @@ public class ProductsControllerTests
         var update = new Spy<UpdateProductCommand, Result<ProductResult>>(Result.Success(Milk));
 
         var result = await ControllerWith(new Spy<CreateProductCommand, Result<ProductResult>>(Result.Success(Milk)), update: update)
-            .Update(StoreId, Milk.Id, new UpdateProductRequest("x", "", 1m), CancellationToken.None);
+            .Update(StoreId, Milk.Id, new UpdateProductRequest("x", "", 1m, 1), CancellationToken.None);
 
         Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value).Status);
         Assert.Null(update.Received);
@@ -142,7 +157,7 @@ public class ProductsControllerTests
         var update = new Spy<UpdateProductCommand, Result<ProductResult>>(Result.Failure<ProductResult>(new ResultError(code, "x", type)));
 
         var result = await ControllerWith(new Spy<CreateProductCommand, Result<ProductResult>>(Result.Success(Milk)), sub: CallerId.ToString(), update: update)
-            .Update(StoreId, Milk.Id, new UpdateProductRequest("x", "", 1m), CancellationToken.None);
+            .Update(StoreId, Milk.Id, new UpdateProductRequest("x", "", 1m, 1), CancellationToken.None);
 
         var problem = Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value);
         Assert.Equal((status, code), (problem.Status, problem.Extensions["code"]));
@@ -270,6 +285,8 @@ public class ProductsControllerTests
         Assert.Equal(new CreateProductCommand(StoreId, CallerId, "A", "B", 1.5m), new CreateProductRequest("A", "B", 1.5m).ToCommand(StoreId, CallerId));
         Assert.Equal(new ProductResponse(Milk.Id, StoreId, "Milk", "Fresh milk", 2.50m, 3), Milk.ToResponse());
         Assert.Equal(new ArchiveProductCommand(StoreId, Milk.Id, CallerId), Milk.Id.ToArchiveCommand(StoreId, CallerId));
-        Assert.Equal(new UpdateProductCommand(StoreId, Milk.Id, CallerId, "A", "B", 1.5m), new UpdateProductRequest("A", "B", 1.5m).ToCommand(StoreId, Milk.Id, CallerId));
+        Assert.Equal(new UpdateProductCommand(StoreId, Milk.Id, CallerId, "A", "B", 1.5m, 4), new UpdateProductRequest("A", "B", 1.5m, 4).ToCommand(StoreId, Milk.Id, CallerId));
+        // A version that was not sent is zero, which the validator refuses: a 400, never a change applied blindly.
+        Assert.Equal(0, new UpdateProductRequest("A", "B", 1.5m, null).ToCommand(StoreId, Milk.Id, CallerId).Version);
     }
 }

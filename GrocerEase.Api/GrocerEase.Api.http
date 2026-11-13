@@ -154,8 +154,26 @@ Content-Type: application/json
 
 ###
 
-# Every product on sale in the store with how many are on hand (zero when it has never had stock), a page at a time.
+# Every product on sale in the store with how many are on hand (zero when it has never had stock), a page at a time, each with its low-stock level and isLow.
 GET {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/inventory?page=1&pageSize=20
+Authorization: Bearer {{login.response.body.$.token}}
+
+###
+
+# Low stock. The level at or below which a product counts as low (at the level counts), or null to clear it. A PUT: the same body twice leaves the same
+# state. A product that has never had stock gets its row at zero. 200 and the inventory entry; 400 for a level below 0 or above a billion.
+PUT {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/products/{{createProduct.response.body.$.id}}/low-stock-threshold
+Authorization: Bearer {{login.response.body.$.token}}
+Content-Type: application/json
+
+{
+  "threshold": 5
+}
+
+###
+
+# Only the products at or below their level: never an archived one, one with no level, or another store's.
+GET {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/inventory?lowStock=true&page=1&pageSize=20
 Authorization: Bearer {{login.response.body.$.token}}
 
 ###

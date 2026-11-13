@@ -107,7 +107,8 @@ curl -s http://localhost:8080/me -H "Authorization: Bearer $TOKEN"
 | `PUT /stores/{storeId}/products/{productId}`, `DELETE ...` | the same | edits the product (`200`), or archives it (`204`) |
 | `GET /stores/{storeId}/products`, `GET .../{productId}` | the `products.read` permission (every role) | a page of the products on sale in a store, or one; `404 Product.NotFound` |
 | `POST /stores/{storeId}/products/{productId}/stock-adjustments` | the `inventory.manage` permission **and** running that store | body `{ "delta": 12 }` (positive adds, negative removes); `200` and `{ productId, quantityOnHand }`; `409 Inventory.NotEnoughStock` (see [Inventory](#inventory)) |
-| `GET /stores/{storeId}/inventory` | the same | a page of every product on sale with `{ productId, productName, quantityOnHand }`, zero when it has never had stock |
+| `GET /stores/{storeId}/inventory` | the same | a page of every product on sale with `{ productId, productName, quantityOnHand, lowStockThreshold, isLow }`, zero when it has never had stock; `?lowStock=true` keeps only the products at or below their low-stock level |
+| `PUT /stores/{storeId}/products/{productId}/low-stock-threshold` | the same | body `{ "threshold": 5 }` (`null` clears it); `200` and the inventory entry; `404` for a product that is not on sale in the store (see [Low stock](#low-stock)) |
 | `POST /stores/{storeId}/orders` | the `orders.place` permission (a customer) | body `{ "deliveryAddress": "...", "lines": [{ "productId": "...", "quantity": 2 }] }`; `201` and the order; `409 Order.InsufficientStock`; limited to 20 a minute (see [Orders](#orders)) |
 | `GET /orders`, `GET /orders/{orderId}` | the `orders.read` permission (a customer) | a page of the caller's **own** orders, newest first, or one of them; someone else's is `404 Order.NotFound` |
 | `POST /orders/{orderId}/cancel` | the `orders.cancel` permission (a customer), **their own order** | withdraws an order while it is still `Pending` (`200` and the order, stock back); `409 Order.InvalidTransition` once the store has verified it; someone else's is `404 Order.NotFound` (see [Fulfilling orders](#fulfilling-orders)) |
@@ -262,6 +263,24 @@ curl -s "http://localhost:8080/stores/$STORE_ID/inventory?page=1" -H "Authorizat
 | `409` | `Inventory.NotEnoughStock` | the change would take the quantity below zero (including removing from a product that has never had stock) |
 | `409` | `Inventory.TooMuchStock` | the quantity would pass a billion |
 | `404` | `Store.NotFound` / `Product.NotFound` | a store the caller does not run, an unknown product, an archived one, or another store's |
+
+### Low stock
+
+A store user can say at what quantity a product is running out, and ask which products have fallen to it.
+
+```bash
+curl -s -X PUT http://localhost:8080/stores/$STORE_ID/products/$PRODUCT_ID/low-stock-threshold -H "Authorization: Bearer $STORE_USER_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"threshold": 5}'   # 200 { "productId": "...", "productName": "Milk", "quantityOnHand": 7, "lowStockThreshold": 5, "isLow": false }
+curl -s -X PUT ... -d '{"threshold": null}'                    # clears the level: the product is never low
+curl -s "http://localhost:8080/stores/$STORE_ID/inventory?lowStock=true" -H "Authorization: Bearer $STORE_USER_TOKEN"   # only what is at or below its level
+```
+
+- **At the level counts as low.** A level of 5 is low at 5 and not at 6; a level of 0 means "tell me when it is gone". A product with **no level is never low**, even with nothing on hand: nobody asked to be told. The entity (`InventoryItem.IsLowAt`) is the one definition, and the query repeats it in SQL; a test holds the two to the same boundary.
+- **The level lives on the stock row**, which exists only after a first adjustment. Setting a level for a product that has never had stock makes the row at zero, with the same upsert the adjustments use. A level is from 0 to a billion (`400` otherwise), and the table's `CHECK` says so too.
+- **A setting, not an amount.** It is a `PUT`: sending the same body twice leaves the same state, and the last one wins. The statement writes **only the level**, never the quantity, so setting it cannot undo a sale at the same moment, and an adjustment or an order cannot undo the level.
+- **The list is paged like every list**, and `isLow` and `lowStockThreshold` are on every entry of the ordinary inventory list too. `?lowStock=true` never shows an archived product, a product with no level, or another store's product; the total counts only the low ones. A value that is not a boolean is a `400`.
+- **Why a separate read-side repository.** "The live products whose stock is at or below its level" needs products and stock rows at once. Asking the stock table for its low rows and then the product table for names would page over archived products too, and a page would come back short while the total still counted them. So `LowStockRepository` joins them, reads only, and is the one named exception to "only a table's own repository reads it" (an architecture test says it must name the store and write nothing).
+- There is **no notification**: a list a person has to open is enough until there is email.
 
 ### Orders
 

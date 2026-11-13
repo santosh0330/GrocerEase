@@ -38,11 +38,13 @@ public class ProductsControllerTests
         Spy<CreateProductCommand, Result<ProductResult>> create,
         Spy<GetProductQuery, Result<ProductResult>>? get = null,
         string? sub = null,
+        Spy<UpdateProductCommand, Result<ProductResult>>? update = null,
         Spy<ListProductsQuery, Result<PagedResult<ProductResult>>>? list = null)
     {
         var controller = new ProductsController(
             create,
             get ?? new Spy<GetProductQuery, Result<ProductResult>>(Result.Success(Milk)),
+            update ?? new Spy<UpdateProductCommand, Result<ProductResult>>(Result.Success(Milk)),
             list ?? new Spy<ListProductsQuery, Result<PagedResult<ProductResult>>>(Result.Success(new PagedResult<ProductResult>([Milk], 1, 20, 1))))
         {
             ProblemDetailsFactory = new StubProblemDetailsFactory(),
@@ -107,6 +109,44 @@ public class ProductsControllerTests
     }
 
     [Fact]
+    public async Task Update_PutsTheRouteTheCallerAndTheBodyInTheCommand_AndReturnsTheProduct()
+    {
+        var update = new Spy<UpdateProductCommand, Result<ProductResult>>(Result.Success(Milk));
+
+        var result = await ControllerWith(new Spy<CreateProductCommand, Result<ProductResult>>(Result.Success(Milk)), sub: CallerId.ToString(), update: update)
+            .Update(StoreId, Milk.Id, new UpdateProductRequest("Oat milk", null, 3.2m), CancellationToken.None);
+
+        Assert.Equal(new UpdateProductCommand(StoreId, Milk.Id, CallerId, "Oat milk", string.Empty, 3.2m), update.Received);
+        Assert.Equal(new ProductResponse(Milk.Id, StoreId, "Milk", "Fresh milk", 2.50m), Assert.IsType<OkObjectResult>(result).Value);
+    }
+
+    [Fact]
+    public async Task Update_WithATokenThatDoesNotNameAUser_Is401_AndRunsNothing()
+    {
+        var update = new Spy<UpdateProductCommand, Result<ProductResult>>(Result.Success(Milk));
+
+        var result = await ControllerWith(new Spy<CreateProductCommand, Result<ProductResult>>(Result.Success(Milk)), update: update)
+            .Update(StoreId, Milk.Id, new UpdateProductRequest("x", "", 1m), CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value).Status);
+        Assert.Null(update.Received);
+    }
+
+    [Theory]
+    [InlineData("Product.NotFound", ErrorType.NotFound, StatusCodes.Status404NotFound)]
+    [InlineData("Product.DuplicateName", ErrorType.Conflict, StatusCodes.Status409Conflict)]
+    public async Task Update_WhenTheHandlerFails_ReturnsAProblemForThatError(string code, ErrorType type, int status)
+    {
+        var update = new Spy<UpdateProductCommand, Result<ProductResult>>(Result.Failure<ProductResult>(new ResultError(code, "x", type)));
+
+        var result = await ControllerWith(new Spy<CreateProductCommand, Result<ProductResult>>(Result.Success(Milk)), sub: CallerId.ToString(), update: update)
+            .Update(StoreId, Milk.Id, new UpdateProductRequest("x", "", 1m), CancellationToken.None);
+
+        var problem = Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value);
+        Assert.Equal((status, code), (problem.Status, problem.Extensions["code"]));
+    }
+
+    [Fact]
     public async Task List_RunsTheQueryWithTheStoreAndThePaging_AndReturnsThePageMapped()
     {
         var list = new Spy<ListProductsQuery, Result<PagedResult<ProductResult>>>(Result.Success(new PagedResult<ProductResult>([Milk], 2, 5, 11)));
@@ -164,6 +204,7 @@ public class ProductsControllerTests
 
     [Theory]
     [InlineData(nameof(ProductsController.Create), Permissions.ProductsManage)]
+    [InlineData(nameof(ProductsController.Update), Permissions.ProductsManage)]
     [InlineData(nameof(ProductsController.Get), Permissions.ProductsRead)]
     [InlineData(nameof(ProductsController.List), Permissions.ProductsRead)]
     public void EachRoute_NeedsItsPermission_NotARoleName(string action, string permission)
@@ -190,5 +231,6 @@ public class ProductsControllerTests
     {
         Assert.Equal(new CreateProductCommand(StoreId, CallerId, "A", "B", 1.5m), new CreateProductRequest("A", "B", 1.5m).ToCommand(StoreId, CallerId));
         Assert.Equal(new ProductResponse(Milk.Id, StoreId, "Milk", "Fresh milk", 2.50m), Milk.ToResponse());
+        Assert.Equal(new UpdateProductCommand(StoreId, Milk.Id, CallerId, "A", "B", 1.5m), new UpdateProductRequest("A", "B", 1.5m).ToCommand(StoreId, Milk.Id, CallerId));
     }
 }

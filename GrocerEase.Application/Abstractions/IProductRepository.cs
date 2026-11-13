@@ -1,4 +1,5 @@
 using GrocerEase.Application.Common;
+using GrocerEase.Application.Products.Common;
 using GrocerEase.Domain.Entities;
 
 namespace GrocerEase.Application.Abstractions;
@@ -18,6 +19,13 @@ public interface IProductRepository
     /// request. <paramref name="page"/> counts from 1. A page past the end is empty.
     /// </summary>
     Task<PagedResult<Product>> ListLiveAsync(Guid storeId, int page, int pageSize, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Writes the name, description and price of <paramref name="product"/> over the one that is on sale in its store with its id. One
+    /// statement with the store and the "still on sale" condition inside it, so a product of another store is never touched and an
+    /// archived one is not brought back. The id and the store are not changed.
+    /// </summary>
+    Task<ProductUpdateOutcome> TryUpdateAsync(Product product, CancellationToken cancellationToken);
 
     /// <summary>
     /// Stores a new product. Returns <c>false</c>, and stores nothing, when the store already sells a product with that name. The

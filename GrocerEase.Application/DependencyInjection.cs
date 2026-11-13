@@ -46,6 +46,7 @@ public static class DependencyInjection
 
         services.AddValidatedCommandHandler<CreateProductCommand, Result<ProductResult>, CreateProductCommandHandler>();
         services.AddValidatedCommandHandler<GetProductQuery, Result<ProductResult>, GetProductQueryHandler>();
+        services.AddValidatedCommandHandler<UpdateProductCommand, Result<ProductResult>, UpdateProductCommandHandler>();
         services.AddValidatedCommandHandler<ListProductsQuery, Result<PagedResult<ProductResult>>, ListProductsQueryHandler>();
 
         // Writes a membership and a role, which must be kept together or not at all.

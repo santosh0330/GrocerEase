@@ -15,6 +15,12 @@ public static class ProductMappings
         return new CreateProductCommand(storeId, actorId, request.Name, request.Description ?? string.Empty, request.Price);
     }
 
+    public static UpdateProductCommand ToCommand(this UpdateProductRequest request, Guid storeId, Guid productId, Guid actorId)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return new UpdateProductCommand(storeId, productId, actorId, request.Name, request.Description ?? string.Empty, request.Price);
+    }
+
     public static PagedResponse<ProductResponse> ToResponse(this PagedResult<ProductResult> page)
     {
         ArgumentNullException.ThrowIfNull(page);

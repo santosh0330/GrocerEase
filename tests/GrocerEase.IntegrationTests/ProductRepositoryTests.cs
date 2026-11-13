@@ -1,3 +1,4 @@
+using GrocerEase.Application.Products.Common;
 using GrocerEase.Domain.Entities;
 using GrocerEase.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -96,6 +97,99 @@ public class ProductRepositoryTests
 
         Assert.Empty(page.Items);
         Assert.Equal(1, page.TotalCount);
+    }
+
+    private static async Task<ProductUpdateOutcome> UpdateAsync(Product product)
+    {
+        await using var db = await NewContextAsync();
+        return await new ProductRepository(db).TryUpdateAsync(product, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task TheDetails_AreWritten_AndTheIdAndTheStoreStay()
+    {
+        var store = await StoredStoreAsync();
+        var milk = NewProduct(store);
+        Assert.True(await AddAsync(milk));
+
+        var outcome = await UpdateAsync(milk.WithDetails("Oat milk", "Vegan", 3.20m));
+
+        Assert.Equal(ProductUpdateOutcome.Updated, outcome);
+        var found = await GetAsync(store, milk.Id);
+        Assert.Equal((milk.Id, store, "Oat milk", "Vegan", 3.20m), (found?.Id, found?.StoreId, found?.Name, found?.Description, found?.Price));
+    }
+
+    [Fact]
+    public async Task AProduct_MayBeGivenItsOwnNameAgain()
+    {
+        var milk = NewProduct(await StoredStoreAsync());
+        Assert.True(await AddAsync(milk));
+
+        Assert.Equal(ProductUpdateOutcome.Updated, await UpdateAsync(milk.WithDetails(milk.Name, "New text", 9m)));
+    }
+
+    [Fact]
+    public async Task TheNameOfAnotherLiveProduct_IsADuplicate_AndNothingChanges()
+    {
+        var store = await StoredStoreAsync();
+        var milk = NewProduct(store);
+        var bread = NewProduct(store);
+        Assert.True(await AddAsync(milk));
+        Assert.True(await AddAsync(bread));
+
+        var outcome = await UpdateAsync(milk.WithDetails(bread.Name, "x", 1m));
+
+        Assert.Equal(ProductUpdateOutcome.DuplicateName, outcome);
+        Assert.Equal(milk.Name, (await GetAsync(store, milk.Id))?.Name);
+    }
+
+    [Fact]
+    public async Task AnArchivedProductsName_MayBeTaken_ByRenamingALiveOne()
+    {
+        var store = await StoredStoreAsync();
+        var old = new Product(Guid.CreateVersion7(), store, "Taken once", "", 1m, DateTimeOffset.UtcNow);
+        var live = NewProduct(store);
+        Assert.True(await AddAsync(old));
+        Assert.True(await AddAsync(live));
+
+        Assert.Equal(ProductUpdateOutcome.Updated, await UpdateAsync(live.WithDetails("Taken once", "", 1m)));
+    }
+
+    [Fact]
+    public async Task AProductOfAnotherStore_AnArchivedOne_AndAnUnknownOne_AreNotFound_AndNothingIsTouched()
+    {
+        var store = await StoredStoreAsync();
+        var milk = NewProduct(store);
+        var archived = new Product(Guid.CreateVersion7(), store, "Old", "", 1m, DateTimeOffset.UtcNow);
+        Assert.True(await AddAsync(milk));
+        Assert.True(await AddAsync(archived));
+        var throughAnotherStore = new Product(milk.Id, await StoredStoreAsync(), "Hacked", "", 1m); // the id of milk, claiming another store
+
+        Assert.Equal(ProductUpdateOutcome.NotFound, await UpdateAsync(throughAnotherStore));
+        Assert.Equal(ProductUpdateOutcome.NotFound, await UpdateAsync(archived.WithDetails("Back", "", 1m)));
+        Assert.Equal(ProductUpdateOutcome.NotFound, await UpdateAsync(NewProduct(store)));
+
+        Assert.Equal(milk.Name, (await GetAsync(store, milk.Id))?.Name);
+        Assert.Null(await GetAsync(store, archived.Id)); // an edit does not bring an archived product back
+    }
+
+    [Fact]
+    public async Task ManyProductsRenamedToTheSameNameAtTheSameTime_OneWins()
+    {
+        var store = await StoredStoreAsync();
+        var products = new List<Product>();
+        for (var i = 0; i < 8; i++)
+        {
+            var product = NewProduct(store);
+            Assert.True(await AddAsync(product));
+            products.Add(product);
+        }
+
+        var name = $"Race {Guid.NewGuid():N}";
+        var outcomes = await Task.WhenAll(products.Select(product => UpdateAsync(product.WithDetails(name, "", 1m))));
+
+        Assert.Equal(1, outcomes.Count(outcome => outcome == ProductUpdateOutcome.Updated));
+        Assert.Equal(7, outcomes.Count(outcome => outcome == ProductUpdateOutcome.DuplicateName));
     }
 
     [Fact]

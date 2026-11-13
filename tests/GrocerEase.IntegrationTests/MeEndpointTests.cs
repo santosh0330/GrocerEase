@@ -43,7 +43,7 @@ public class MeEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var me = await response.Content.ReadFromJsonAsync<CurrentUserResponse>();
         Assert.Equal((registered.Id, "Ada", "Lovelace", email, "Customer"), (me!.Id, me.FirstName, me.LastName, me.Email, me.Role));
-        Assert.Equal(["orders.place", "orders.read", "products.read", "profile.read", "stores.read"], me.Permissions, StringComparer.Ordinal);
+        Assert.Equal(["orders.cancel", "orders.place", "orders.read", "products.read", "profile.read", "stores.read"], me.Permissions, StringComparer.Ordinal);
     }
 
     [Fact]

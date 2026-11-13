@@ -19,23 +19,6 @@ namespace GrocerEase.IntegrationTests;
 /// </summary>
 public class PlaceOrderRollbackTests
 {
-    private static async Task<ServiceProvider> BuildAsync()
-    {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["ConnectionStrings:Default"] = await PostgresServer.ApplicationConnectionStringAsync(),
-                ["Jwt:SecretKey"] = ApiFactory.JwtSecretKey,
-                ["Jwt:Issuer"] = "GrocerEase",
-                ["Jwt:Audience"] = "GrocerEase",
-                ["Jwt:ExpiryMinutes"] = "10",
-                ["RefreshToken:LifetimeDays"] = "3",
-                ["RefreshToken:MaxLifetimeDays"] = "30",
-            })
-            .Build();
-        return new ServiceCollection().AddLogging().AddApplication().AddInfrastructure(configuration).BuildServiceProvider(validateScopes: true);
-    }
-
     private sealed record World(Guid StoreId, Guid CustomerId, Guid FirstId, Guid SecondId);
 
     /// <summary>A store with two products, the first (by id) holding 5 and the second 1, and a customer.</summary>
@@ -83,7 +66,7 @@ public class PlaceOrderRollbackTests
     [Fact]
     public async Task WhenTheSecondLineCannotBeFilled_TheStockTheFirstLineTookGoesBack_AndNoOrderExists()
     {
-        await using var provider = await BuildAsync();
+        await using var provider = await RealApplication.BuildAsync();
         var world = await AWorldAsync(provider);
 
         // The first line takes 2 of 5 (and succeeds); the second asks for 2 of 1 (and cannot). Before the fix: 3 left and no order.
@@ -96,7 +79,7 @@ public class PlaceOrderRollbackTests
     [Fact]
     public async Task WhenEveryLineCanBeFilled_TheStockIsTaken_AndTheOrderAndItsLinesAreKeptTogether()
     {
-        await using var provider = await BuildAsync();
+        await using var provider = await RealApplication.BuildAsync();
         var world = await AWorldAsync(provider);
 
         var result = await PlaceAsync(provider, world, firstQuantity: 2, secondQuantity: 1);
@@ -108,7 +91,7 @@ public class PlaceOrderRollbackTests
     [Fact]
     public async Task AnOrderThatFailsAtTheLastMoment_ForExampleWhenTheOrderCannotBeStored_TakesNoStock()
     {
-        await using var provider = await BuildAsync();
+        await using var provider = await RealApplication.BuildAsync();
         var world = await AWorldAsync(provider);
         // A customer who does not exist: the stock is reserved first and the order is stored last, and the foreign key then refuses the order.
         var command = new PlaceOrderCommand(world.StoreId, Guid.CreateVersion7(), "x", [new OrderLineInput(world.FirstId, 2)]);

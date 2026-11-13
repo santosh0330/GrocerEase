@@ -21,6 +21,13 @@ public static class OrderErrors
     public static readonly ResultError ChangedMeanwhile = new(
         "Order.ChangedMeanwhile", "The order was changed by someone else just now. Look at it again.", ErrorType.Conflict);
 
+    /// <summary>
+    /// Putting the stock of a cancelled line back would take it past the most a store can hold, because the store has added stock since. The
+    /// order is not cancelled: nothing is lost, and the store can make room and try again.
+    /// </summary>
+    public static ResultError CannotRestoreStock(string productName) => new(
+        "Order.CannotRestoreStock", $"The stock of '{productName}' is too high to put the cancelled quantity back. Remove some stock and cancel again.", ErrorType.Conflict);
+
     // One error for an order that never existed and one that belongs to someone else, so nobody can probe for other customers' orders.
     public static readonly ResultError NotFound = new(
         "Order.NotFound", "There is no such order.", ErrorType.NotFound);

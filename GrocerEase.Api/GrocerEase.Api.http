@@ -144,18 +144,28 @@ Authorization: Bearer {{login.response.body.$.token}}
 
 # Stock. Same rule as products: the store user of that store. A change is an amount (positive adds, negative removes), never a new total.
 # 200 { "productId", "quantityOnHand" }; removing more than there is gives 409 "Inventory.NotEnoughStock"; a change of zero is 400.
+# "reason" is optional: "Received" (a delivery: always an addition) or "Correction" (the count was wrong, or something was lost: either way). Left out, adding is a
+# delivery and removing is a correction. Any other reason, or a delivery that removes, is 400. Every change is written to the stock ledger.
 POST {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/products/{{createProduct.response.body.$.id}}/stock-adjustments
 Authorization: Bearer {{login.response.body.$.token}}
 Content-Type: application/json
 
 {
-  "delta": 12
+  "delta": 12,
+  "reason": "Received"
 }
 
 ###
 
 # Every product on sale in the store with how many are on hand (zero when it has never had stock), a page at a time, each with its low-stock level and isLow.
 GET {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/inventory?page=1&pageSize=20
+Authorization: Bearer {{login.response.body.$.token}}
+
+###
+
+# The stock ledger: the history of one product's quantity, NEWEST first, a page at a time. Every change is a line: by how much (delta, negative when stock was
+# removed), why (OpeningBalance, Received, Correction, OrderPlaced, OrderCancelled), who did it (actorId), which order (orderId), and when. The lines add up to the quantity.
+GET {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/products/{{createProduct.response.body.$.id}}/stock-movements?page=1&pageSize=20
 Authorization: Bearer {{login.response.body.$.token}}
 
 ###

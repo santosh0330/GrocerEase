@@ -66,7 +66,7 @@ Nothing in the application connects as the PostgreSQL superuser. `docker/postgre
 |---|---|---|
 | `POSTGRES_USER` (superuser) | the image, for start-up and health checks only | everything; no application uses it |
 | `grocerease_migrator` | schema migrations (the `migrate` service) | owns the database and creates and changes tables; not a superuser |
-| `grocerease_app` | the API | read and write rows in the tables; **cannot** create, alter or drop anything, see the migration history, or connect to other databases |
+| `grocerease_app` | the API | read and write rows in the tables, **except** the stock ledger (`stock_movements`), where it can only add and read rows, never change or delete one; **cannot** create, alter or drop anything, see the migration history, or connect to other databases |
 
 If the API is ever tricked into running arbitrary SQL, this limits the damage to the rows it could already touch.
 
@@ -106,7 +106,8 @@ curl -s http://localhost:8080/me -H "Authorization: Bearer $TOKEN"
 | `POST /stores/{storeId}/products` | the `products.manage` permission **and** running that store (a store user) | `201` and the product `{ id, storeId, name, description, price }`; `409 Product.DuplicateName` (see [Products](#products)) |
 | `PUT /stores/{storeId}/products/{productId}`, `DELETE ...` | the same | edits the product (`200`), or archives it (`204`) |
 | `GET /stores/{storeId}/products`, `GET .../{productId}` | the `products.read` permission (every role) | a page of the products on sale in a store, or one; `404 Product.NotFound` |
-| `POST /stores/{storeId}/products/{productId}/stock-adjustments` | the `inventory.manage` permission **and** running that store | body `{ "delta": 12 }` (positive adds, negative removes); `200` and `{ productId, quantityOnHand }`; `409 Inventory.NotEnoughStock` (see [Inventory](#inventory)) |
+| `POST /stores/{storeId}/products/{productId}/stock-adjustments` | the `inventory.manage` permission **and** running that store | body `{ "delta": 12, "reason": "Received" }` (positive adds, negative removes; `reason` is optional: `Received` or `Correction`); `200` and `{ productId, quantityOnHand }`; `409 Inventory.NotEnoughStock` (see [Inventory](#inventory)) |
+| `GET /stores/{storeId}/products/{productId}/stock-movements` | the same | a page of the product's stock history, **newest first**: `{ id, productId, delta, reason, actorId, orderId, createdAt }`; they add up to the quantity (see [The stock ledger](#the-stock-ledger)) |
 | `GET /stores/{storeId}/inventory` | the same | a page of every product on sale with `{ productId, productName, quantityOnHand, lowStockThreshold, isLow }`, zero when it has never had stock; `?lowStock=true` keeps only the products at or below their low-stock level |
 | `PUT /stores/{storeId}/products/{productId}/low-stock-threshold` | the same | body `{ "threshold": 5 }` (`null` clears it); `200` and the inventory entry; `404` for a product that is not on sale in the store (see [Low stock](#low-stock)) |
 | `POST /stores/{storeId}/orders` | the `orders.place` permission (a customer) | body `{ "deliveryAddress": "...", "lines": [{ "productId": "...", "quantity": 2 }] }`; `201` and the order; `409 Order.InsufficientStock`; limited to 20 a minute (see [Orders](#orders)) |
@@ -253,6 +254,7 @@ curl -s -X POST ... -d '{"delta": -5}'                          # 200 ... "quant
 curl -s "http://localhost:8080/stores/$STORE_ID/inventory?page=1" -H "Authorization: Bearer $STORE_USER_TOKEN"   # every product on sale, with its quantity
 ```
 
+- **Every change leaves a line in [the ledger](#the-stock-ledger)**, saying by how much, why, who did it and which order it was for.
 - **A change is an amount, never a new total.** `{"delta": 12}` means "12 more arrived"; there is no "set it to 40", because that would overwrite whatever changed while the person was counting. A change of zero, or of more than a billion either way, is a `400`.
 - **The quantity is never below zero, however many requests arrive at once.** Each change is **one SQL statement with the limits inside it** (`UPDATE ... SET quantity = quantity + @delta WHERE ... AND quantity + @delta >= 0`, and an `INSERT ... ON CONFLICT DO UPDATE` for adding), not a read followed by a write: twenty requests removing one each from stock of five give exactly five `200` and fifteen `409`, and a quantity of zero. The table's `CHECK` is the last line of defence.
 - **No row means none.** The row for a product is made by its first addition; before that it has no stock, removing is refused, and the list shows zero.
@@ -263,6 +265,36 @@ curl -s "http://localhost:8080/stores/$STORE_ID/inventory?page=1" -H "Authorizat
 | `409` | `Inventory.NotEnoughStock` | the change would take the quantity below zero (including removing from a product that has never had stock) |
 | `409` | `Inventory.TooMuchStock` | the quantity would pass a billion |
 | `404` | `Store.NotFound` / `Product.NotFound` | a store the caller does not run, an unknown product, an archived one, or another store's |
+
+### The stock ledger
+
+The quantity can be **explained**. Every change to it leaves a line in an append-only history, and the lines add up to the quantity.
+
+```bash
+curl -s -X POST http://localhost:8080/stores/$STORE_ID/products/$PRODUCT_ID/stock-adjustments -H "Authorization: Bearer $STORE_USER_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"delta": -2, "reason": "Correction"}'    # two bottles broke
+curl -s "http://localhost:8080/stores/$STORE_ID/products/$PRODUCT_ID/stock-movements?page=1" -H "Authorization: Bearer $STORE_USER_TOKEN"
+# 200 { "items": [ { "delta": -2, "reason": "Correction", "actorId": "...", "orderId": null, "createdAt": "..." },
+#                  { "delta": -3, "reason": "OrderPlaced", "actorId": "<the customer>", "orderId": "...", ... },
+#                  { "delta": 10, "reason": "Received", ... } ], "totalCount": 3, ... }
+```
+
+| Reason | Written by | Direction | Actor | Order |
+|---|---|---|---|---|
+| `OpeningBalance` | the migration that made the ledger, once per product that already had stock | adds | none | none |
+| `Received` | a store user adjusting by hand: a delivery | always adds | the store user | none |
+| `Correction` | a store user adjusting by hand: the count was wrong, or something was lost | either | the store user | none |
+| `OrderPlaced` | placing an order, one movement per line | removes | the customer | the order |
+| `OrderCancelled` | cancelling an order, by the store or by the customer, one per line | adds | whoever cancelled | the order |
+
+- **The sum of a product's movements is its quantity.** That is the test that matters, and it is asserted after a mixed run of adjustments, orders and both kinds of cancellation, after concurrent orders and cancellations, and at the end of every race test. If the two ever differ, some writer changed the quantity without the ledger, or the other way round.
+- **The movement is written by the same SQL statement that changes the quantity** (a data-modifying `WITH`: the first part updates the stock, the second inserts the movement for exactly the rows the first returned). There is no moment between the two, whatever happens to the transaction around them, and a **refused change writes nothing**. An architecture test reads the compiled SQL and fails if a statement writes a stock row without writing the ledger in the same statement.
+- **It is append-only, and the database enforces it.** The migration takes `UPDATE` and `DELETE` away from the application's database role on this table (it can add and read, nothing else), so no bug in the application can rewrite history. The table also refuses a row that makes no sense, whatever wrote it: a change of nothing, a delivery that removes, an order's movement without an order, a movement without an actor (apart from the opening balance).
+- **The ledger adds up from day one.** The migration writes one `OpeningBalance` movement for every product that already had stock (a product at zero has nothing to explain).
+- **An order's stock is taken before the order row is written**, in the same transaction, so the movement's foreign key to the order is `DEFERRABLE INITIALLY DEFERRED`: it is checked at commit.
+- **Who may read it:** `inventory.manage` and running the store, like the stock itself; a store that is not yours is `404 Store.NotFound`, and a product that is not on sale in the store (unknown, archived, another store's) is `404 Product.NotFound`.
+- **A reason by hand** is `Received` or `Correction`, in any case, by name. The others are what an order or the migration do, and a person cannot claim them: a `400` naming `reason`. A delivery that removes is a `400` naming `delta` (use `Correction`). Left out, the sign decides: adding is a delivery, removing is a correction.
+- **Setting a low-stock level writes no movement**: it changes no quantity (a product that had no stock row gets one at zero, which no movements are needed to explain).
 
 ### Low stock
 
@@ -298,7 +330,7 @@ curl -s http://localhost:8080/orders/$ORDER_ID -H "Authorization: Bearer $CUSTOM
 - **The stock is reserved when the order is placed, all or nothing.** Every line takes its stock with the guarded statement the [inventory](#inventory) uses; if any line cannot be filled, the stock the earlier lines took goes back and no order exists (`409 Order.InsufficientStock`, naming the product). So twenty customers ordering one each from stock of five give five orders and a quantity of zero, and the last item goes to exactly one customer.
 - **A line is a product as it was bought.** Its name and unit price are copied, so a later price change, rename or archive does not rewrite the order. The total is computed from the lines.
 - **A product may appear once** in an order (ask for a bigger quantity), an order has at most 100 lines, and a line asks for 1 to a billion. An unknown store, an unknown or archived product, and another store's product are `404`, and nothing is reserved.
-- **Lines are reserved in order of product id**, whatever order they were asked for, so two orders for the same products cannot deadlock on each other's rows.
+- **Lines are reserved in order of product id**, whatever order they were asked for, so two orders for the same products cannot deadlock on each other's rows. Each reservation leaves an `OrderPlaced` movement in [the stock ledger](#the-stock-ledger), for that order and by that customer.
 - A new order is `Pending`. The store user moves it to `Verified`, `Shipped` or `Cancelled` (see [Fulfilling orders](#fulfilling-orders)); there is no payment.
 - **Placing an order is limited to 20 a minute per client address** (see [Rate limits](#rate-limits)).
 

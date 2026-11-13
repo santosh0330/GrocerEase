@@ -157,7 +157,7 @@ public class InventoryControllerTests
     [InlineData(null)]
     public async Task SetLowStockThreshold_PutsTheRouteTheCallerAndTheLevelInTheCommand_AndReturnsTheEntry(int? level)
     {
-        var threshold = new ThresholdSpy(Result.Success(new InventoryEntryResult(ProductId, "Milk", 3, level)));
+        var threshold = new ThresholdSpy(Result.Success(InventoryEntryResult.FromItem("Milk", new InventoryItem(ProductId, StoreId, 3, level))));
 
         var result = await ControllerWith(new Spy(Result.Success(new StockResult(ProductId, 1))), CallerId.ToString(), threshold: threshold)
             .SetLowStockThreshold(StoreId, ProductId, new SetLowStockThresholdRequest(level), CancellationToken.None);

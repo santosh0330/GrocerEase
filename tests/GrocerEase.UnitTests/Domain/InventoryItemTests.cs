@@ -65,7 +65,18 @@ public class InventoryItemTests
     [InlineData(1_000, null, false)]
     public void IsLow_IsAtOrBelowTheLevel(int quantity, int? level, bool expected)
     {
-        Assert.Equal(expected, new InventoryItem(ProductId, StoreId, quantity, level).IsLow);
-        Assert.Equal(expected, InventoryItem.IsLowAt(quantity, level)); // the one definition, for a quantity not in an entity
+        var item = new InventoryItem(ProductId, StoreId, quantity, level);
+
+        Assert.Equal(expected, item.IsLow);
+        Assert.Equal(expected, InventoryItem.IsLowExpression.Compile()(item)); // the property is the expression, compiled: there is no second definition
+    }
+
+    [Fact]
+    public void TheExpression_IsWhatAQueryIsGiven_SoItIsAFilterOverStockRowsAndNotAMethodCall()
+    {
+        var items = new[] { new InventoryItem(ProductId, StoreId, 4, 5), new InventoryItem(ProductId, StoreId, 6, 5), new InventoryItem(ProductId, StoreId, 0) };
+
+        // Applied to an IQueryable the way the repository applies it (here in memory): the same rows the property picks out.
+        Assert.Equal(items.Where(item => item.IsLow), items.AsQueryable().Where(InventoryItem.IsLowExpression));
     }
 }

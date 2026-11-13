@@ -50,23 +50,25 @@ public class LowStockRepositoryTests
     }
 
     [Fact]
-    public async Task AtTheLevelIsLow_OneAboveIsNot_AndTheBoundaryIsTheSameAsTheEntitys()
+    public async Task AtTheLevelIsLow_OneAboveIsNot_AndTheDatabaseAgreesWithTheEntityAtEveryQuantityAroundIt()
     {
         var store = await AStoreAsync();
-        var below = await AProductAsync(store, "Below", 4, 5);
-        var at = await AProductAsync(store, "At", 5, 5);
-        await AProductAsync(store, "Above", 6, 5);
-
-        var page = await ListAsync(store);
-
-        Assert.Equal([at, below], page.Items.Select(entry => entry.ProductId)); // by name: "At" before "Below"
-        Assert.All(page.Items, entry => Assert.True(entry.IsLow));
-        Assert.Equal(2, page.TotalCount);
-        // The SQL and the entity agree on every quantity around the boundary: the entity is the definition, the query a copy of it.
-        foreach (var quantity in new[] { 4, 5, 6 })
+        var byQuantity = new Dictionary<int, Guid>();
+        foreach (var quantity in new[] { 3, 4, 5, 6, 7 })
         {
-            Assert.Equal(quantity <= 5, InventoryItem.IsLowAt(quantity, 5));
+            byQuantity[quantity] = await AProductAsync(store, $"P{quantity}", quantity, 5);
         }
+
+        var listed = (await ListAsync(store)).Items.Select(entry => entry.ProductId).ToHashSet();
+
+        // The expression is the one definition, and EF turned it into SQL: whatever the entity says about a row, the database must say too.
+        foreach (var (quantity, id) in byQuantity)
+        {
+            Assert.Equal(new InventoryItem(Guid.CreateVersion7(), store, quantity, 5).IsLow, listed.Contains(id));
+        }
+
+        Assert.Equal([3, 4, 5], byQuantity.Where(pair => listed.Contains(pair.Value)).Select(pair => pair.Key).Order()); // at the level is in; above it is out
+        Assert.All((await ListAsync(store)).Items, entry => Assert.True(entry.IsLow));
     }
 
     [Fact]

@@ -35,7 +35,7 @@ public sealed class ListInventoryQueryHandler(
 
         // A product with no stock row has none on hand, and no level.
         return Result.Success(products.Map(product => items.TryGetValue(product.Id, out var item)
-            ? new InventoryEntryResult(product.Id, product.Name, item.QuantityOnHand, item.LowStockThreshold)
-            : new InventoryEntryResult(product.Id, product.Name, 0)));
+            ? InventoryEntryResult.FromItem(product.Name, item)
+            : InventoryEntryResult.WithNoStock(product.Id, product.Name)));
     }
 }

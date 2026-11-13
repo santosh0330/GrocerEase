@@ -4,6 +4,7 @@ using GrocerEase.Application.Inventory.Commands;
 using GrocerEase.Application.Inventory.Common;
 using GrocerEase.Application.Products.Common;
 using GrocerEase.Application.Stores.Common;
+using GrocerEase.Domain.Entities;
 
 namespace GrocerEase.Application.Inventory.Handlers;
 
@@ -30,8 +31,9 @@ public sealed class SetLowStockThresholdCommandHandler(StoreAccess storeAccess, 
             return Result.Failure<InventoryEntryResult>(ProductErrors.NotFound);
         }
 
+        // The statement returns the quantity; the row it describes is the quantity and the level just set, so the entity says whether it is low.
         return await inventoryRepository.SetLowStockThresholdAsync(command.StoreId, command.ProductId, command.Threshold, cancellationToken) is { } quantity
-            ? Result.Success(new InventoryEntryResult(product.Id, product.Name, quantity, command.Threshold))
+            ? Result.Success(InventoryEntryResult.FromItem(product.Name, new InventoryItem(product.Id, command.StoreId, quantity, command.Threshold)))
             : Result.Failure<InventoryEntryResult>(ProductErrors.NotFound); // archived in the instant between: the same answer
     }
 }

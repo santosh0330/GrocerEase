@@ -1,6 +1,7 @@
 using GrocerEase.Application.Abstractions;
 using GrocerEase.Application.Common;
 using GrocerEase.Application.Inventory.Common;
+using GrocerEase.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace GrocerEase.Infrastructure.Persistence;
@@ -13,24 +14,19 @@ public sealed class LowStockRepository(AppDbContext db) : ILowStockRepository
 {
     public async Task<PagedResult<InventoryEntryResult>> ListLowAsync(Guid storeId, int page, int pageSize, CancellationToken cancellationToken)
     {
-        // At or below the level, as InventoryItem.IsLowAt says. A row with no level (null) is never low: in SQL, "x <= null" is not true, and the
-        // explicit test says so. The join is on the product, and both sides are in the store.
+        // "Low" is not written here: InventoryItem.IsLowExpression is, and Entity Framework turns that same expression into the SQL. The join
+        // adds what the stock table cannot say (the name, and whether the product is still on sale), and both sides are in the store.
         var low =
-            from item in db.InventoryItems.AsNoTracking()
+            from item in db.InventoryItems.AsNoTracking().Where(InventoryItem.IsLowExpression)
             join product in db.Products.AsNoTracking() on item.ProductId equals product.Id
-            where item.StoreId == storeId
-                && product.StoreId == storeId
-                && product.ArchivedAt == null
-                && item.LowStockThreshold != null
-                && item.QuantityOnHand <= item.LowStockThreshold
-            select new { product.Id, product.Name, item.QuantityOnHand, item.LowStockThreshold };
+            where item.StoreId == storeId && product.StoreId == storeId && product.ArchivedAt == null
+            select new { Item = item, product.Name };
 
         // Two queries, as for every list: a product that becomes low between them makes the total one more than the page shows.
         var total = await low.CountAsync(cancellationToken);
-        var rows = await low.OrderBy(row => row.Name).ThenBy(row => row.Id)
+        var rows = await low.OrderBy(row => row.Name).ThenBy(row => row.Item.ProductId)
             .Skip((page - 1) * pageSize).Take(pageSize)
             .ToListAsync(cancellationToken);
-        return new PagedResult<InventoryEntryResult>(
-            [.. rows.Select(row => new InventoryEntryResult(row.Id, row.Name, row.QuantityOnHand, row.LowStockThreshold))], page, pageSize, total);
+        return new PagedResult<InventoryEntryResult>([.. rows.Select(row => InventoryEntryResult.FromItem(row.Name, row.Item))], page, pageSize, total);
     }
 }

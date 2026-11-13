@@ -171,9 +171,9 @@ expect "email is stored in lower case" "$(admin_sql 'select email from users')" 
 expect "the password is not stored" "$(admin_sql "select count(*) from users where password_hash like '%Sup3r%'")" "0"
 expect "timestamps are filled in" "$(admin_sql 'select created_at is not null and updated_at is not null from users')" "t"
 expect "a new user holds the Customer role" "$(admin_sql 'select r.name from users u join roles r on r.id = u.role_id')" "Customer"
-expect "all migrations are recorded, in their own schema" "$(admin_sql 'select count(*) from migrations."__EFMigrationsHistory"')" "19"
+expect "all migrations are recorded, in their own schema" "$(admin_sql 'select count(*) from migrations."__EFMigrationsHistory"')" "20"
 expect "the roles are seeded, under their fixed ids" "$(admin_sql "select string_agg(id || ':' || name, ',' order by name) from roles")" "019e0000-0000-7000-8000-000000000002:Admin,019e0000-0000-7000-8000-000000000001:Customer,019e0000-0000-7000-8000-000000000003:StoreUser"
-expect "the roles grant what they should" "$(admin_sql "select string_agg(r.name || ':' || c.claim_value, ',' order by r.name, c.claim_value) from role_claims c join roles r on r.id = c.role_id where c.claim_type = 'permission'")" "Admin:products.read,Admin:profile.read,Admin:roles.read,Admin:stores.manage,Admin:stores.read,Customer:orders.cancel,Customer:orders.place,Customer:orders.read,Customer:products.read,Customer:profile.read,Customer:stores.read,StoreUser:inventory.manage,StoreUser:orders.manage,StoreUser:products.manage,StoreUser:products.read,StoreUser:profile.read,StoreUser:stores.read"
+expect "the roles grant what they should" "$(admin_sql "select string_agg(r.name || ':' || c.claim_value, ',' order by r.name, c.claim_value) from role_claims c join roles r on r.id = c.role_id where c.claim_type = 'permission'")" "Admin:orders.read.all,Admin:products.read,Admin:profile.read,Admin:roles.read,Admin:stores.manage,Admin:stores.read,Customer:orders.cancel,Customer:orders.place,Customer:orders.read,Customer:products.read,Customer:profile.read,Customer:stores.read,StoreUser:inventory.manage,StoreUser:orders.manage,StoreUser:products.manage,StoreUser:products.read,StoreUser:profile.read,StoreUser:stores.read"
 
 step "refresh tokens are stored as hashes only"
 registered_hash="$(printf %s "$registered_refresh_token" | openssl dgst -sha256 -hex | awk '{print $NF}')"
@@ -240,12 +240,12 @@ expect "a token issued before the change keeps the old role" "$(get /roles "$cus
 expect "refreshing gives a token with the current role" "$(post /auth/refresh "{\"refreshToken\":\"$customer_refresh_token\"}")" "200"
 admin_token="$(jq -r .token "$work/body.json")"
 expect "the new token says Admin" "$(jwt_claim "$admin_token" role)" "Admin"
-expect "and carries what an admin may do" "$(jwt_claim_json "$admin_token" permission)" '["products.read","profile.read","roles.read","stores.manage","stores.read"]'
+expect "and carries what an admin may do" "$(jwt_claim_json "$admin_token" permission)" '["orders.read.all","products.read","profile.read","roles.read","stores.manage","stores.read"]'
 expect "GET /roles as an admin" "$(get /roles "$admin_token")" "200"
 expect "GET /roles lists both roles" "$(jq -r '[.[].name] | join(",")' "$work/get.json")" "Admin,Customer,StoreUser"
-expect "GET /roles says what each role may do" "$(jq -c '[.[] | {name, permissions}]' "$work/get.json")" '[{"name":"Admin","permissions":["products.read","profile.read","roles.read","stores.manage","stores.read"]},{"name":"Customer","permissions":["orders.cancel","orders.place","orders.read","products.read","profile.read","stores.read"]},{"name":"StoreUser","permissions":["inventory.manage","orders.manage","products.manage","products.read","profile.read","stores.read"]}]'
+expect "GET /roles says what each role may do" "$(jq -c '[.[] | {name, permissions}]' "$work/get.json")" '[{"name":"Admin","permissions":["orders.read.all","products.read","profile.read","roles.read","stores.manage","stores.read"]},{"name":"Customer","permissions":["orders.cancel","orders.place","orders.read","products.read","profile.read","stores.read"]},{"name":"StoreUser","permissions":["inventory.manage","orders.manage","products.manage","products.read","profile.read","stores.read"]}]'
 expect "GET /me shows the new role" "$(get /me "$admin_token" > /dev/null; jq -r .role "$work/get.json")" "Admin"
-expect "and the new permissions" "$(jq -c .permissions "$work/get.json")" '["products.read","profile.read","roles.read","stores.manage","stores.read"]'
+expect "and the new permissions" "$(jq -c .permissions "$work/get.json")" '["orders.read.all","products.read","profile.read","roles.read","stores.manage","stores.read"]'
 
 step "stores: an admin creates a store and assigns a customer to it, which makes them a store user"
 # A third user, who registers and then waits to be assigned. Refresh, not login, gives the new token (login is limited to 5 a minute).

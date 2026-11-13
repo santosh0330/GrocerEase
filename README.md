@@ -153,7 +153,7 @@ Every user holds **exactly one role**, stored in `users.role_id`. A role **grant
 | Role | Id | Who | May do |
 |---|---|---|---|
 | `Customer` | `019e0000-0000-7000-8000-000000000001` | everyone who registers | `profile.read`, `stores.read`, `products.read`, `orders.place`, `orders.read`, `orders.cancel` |
-| `Admin` | `019e0000-0000-7000-8000-000000000002` | made by hand, see below | `profile.read`, `roles.read`, `stores.read`, `stores.manage`, `products.read` |
+| `Admin` | `019e0000-0000-7000-8000-000000000002` | made by hand, see below | `profile.read`, `roles.read`, `stores.read`, `stores.manage`, `products.read`, `orders.read.all` |
 | `StoreUser` | `019e0000-0000-7000-8000-000000000003` | a customer an admin assigned to a store | `profile.read`, `stores.read`, `products.read`, `products.manage`, `inventory.manage`, `orders.manage` |
 
 | Permission | Needed by |
@@ -169,6 +169,7 @@ Every user holds **exactly one role**, stored in `users.role_id`. A role **grant
 | `orders.read` | reading one's **own** orders |
 | `orders.cancel` | `POST /orders/{orderId}/cancel`: a customer cancels their **own** order while it is pending |
 | `orders.manage` | the orders of a store: list them, verify, ship, cancel, **in a store the caller runs** |
+| `orders.read.all` | reading the orders of **every** store, read only (see [Orders](#orders)) |
 
 The token carries the role's name as `role` and the permissions as a `permission` array (`["products.read","profile.read","stores.read"]`). A route names the permission it needs, `[Authorize(Policy = "roles.read")]`, not a role: the policy checks the `permission` claims of the token, so giving the permission to another role changes no endpoint. `GET /me` shows the role and the permissions the token carries.
 

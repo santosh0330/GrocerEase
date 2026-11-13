@@ -479,6 +479,13 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                             RoleId = new Guid("019e0000-0000-7000-8000-000000000001"),
                             Type = "permission",
                             Value = "orders.cancel"
+                        },
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000118"),
+                            RoleId = new Guid("019e0000-0000-7000-8000-000000000002"),
+                            Type = "permission",
+                            Value = "orders.read.all"
                         });
                 });
 

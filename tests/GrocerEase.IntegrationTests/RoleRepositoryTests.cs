@@ -73,9 +73,9 @@ public class RoleRepositoryTests
         var listed = await repository.ListAsync(CancellationToken.None);
 
         Assert.Equal([Permissions.OrdersCancel, Permissions.OrdersPlace, Permissions.OrdersRead, Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead], customer?.GrantedPermissions, StringComparer.Ordinal);
-        Assert.Equal([Permissions.ProductsRead, Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresManage, Permissions.StoresRead], admin?.GrantedPermissions, StringComparer.Ordinal);
+        Assert.Equal([Permissions.OrdersReadAll, Permissions.ProductsRead, Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresManage, Permissions.StoresRead], admin?.GrantedPermissions, StringComparer.Ordinal);
         Assert.Equal(
-            [Permissions.ProductsRead, Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresManage, Permissions.StoresRead],
+            [Permissions.OrdersReadAll, Permissions.ProductsRead, Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresManage, Permissions.StoresRead],
             listed.Single(role => string.Equals(role.Name, RoleNames.Admin, StringComparison.Ordinal)).GrantedPermissions,
             StringComparer.Ordinal);
     }

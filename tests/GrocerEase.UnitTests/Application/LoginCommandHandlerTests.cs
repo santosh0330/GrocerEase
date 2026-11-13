@@ -68,7 +68,7 @@ public class LoginCommandHandlerTests
 
         await handler.Handle(new LoginCommand("ada@example.com", "s3cret!"), CancellationToken.None);
 
-        Assert.Equal([Permissions.ProductsRead, Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresManage, Permissions.StoresRead], _tokens.LastRole?.GrantedPermissions, StringComparer.Ordinal);
+        Assert.Equal([Permissions.OrdersReadAll, Permissions.ProductsRead, Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresManage, Permissions.StoresRead], _tokens.LastRole?.GrantedPermissions, StringComparer.Ordinal);
     }
 
     [Fact]

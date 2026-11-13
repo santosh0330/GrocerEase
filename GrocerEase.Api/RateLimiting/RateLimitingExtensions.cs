@@ -16,6 +16,9 @@ public static class RateLimitingExtensions
 
     public const string HealthPolicy = "health";
 
+    /// <summary>Placing an order: a write that takes stock and writes several rows, so it is the first store endpoint to be limited.</summary>
+    public const string PlaceOrderPolicy = "place-order";
+
     /// <summary>The stable <c>code</c> in the problem response, so clients can switch on it like on every other error.</summary>
     public const string TooManyRequestsCode = "RateLimit.TooManyRequests";
 
@@ -36,6 +39,7 @@ public static class RateLimitingExtensions
         AddPolicySettings(services, configuration, RegisterPolicy, "RateLimiting:Register");
         AddPolicySettings(services, configuration, RefreshPolicy, "RateLimiting:Refresh");
         AddPolicySettings(services, configuration, HealthPolicy, "RateLimiting:Health");
+        AddPolicySettings(services, configuration, PlaceOrderPolicy, "RateLimiting:PlaceOrder");
 
         services.AddRateLimiter(_ => { });
         services.AddOptions<RateLimiterOptions>().Configure<IOptionsMonitor<RateLimitSettings>>((options, settingsByPolicy) =>
@@ -45,6 +49,7 @@ public static class RateLimitingExtensions
             AddSlidingWindowPolicy(options, RegisterPolicy, settingsByPolicy.Get(RegisterPolicy));
             AddSlidingWindowPolicy(options, RefreshPolicy, settingsByPolicy.Get(RefreshPolicy));
             AddSlidingWindowPolicy(options, HealthPolicy, settingsByPolicy.Get(HealthPolicy));
+            AddSlidingWindowPolicy(options, PlaceOrderPolicy, settingsByPolicy.Get(PlaceOrderPolicy));
             options.OnRejected = (context, _) => WriteRejectionAsync(context, settingsByPolicy);
         });
 

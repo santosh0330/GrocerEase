@@ -1,4 +1,5 @@
 using GrocerEase.Api.Mapping;
+using GrocerEase.Api.RateLimiting;
 using GrocerEase.Application.Abstractions;
 using GrocerEase.Application.Common;
 using GrocerEase.Application.Orders.Commands;
@@ -9,6 +10,7 @@ using GrocerEase.Contracts.Orders;
 using GrocerEase.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace GrocerEase.Api.Controllers;
 
@@ -29,12 +31,14 @@ public sealed class OrdersController(
     // The route says which store the order is for, like the other store-owned routes; the order itself is then read at /orders/{id}.
     [HttpPost("/stores/{storeId:guid}/orders")]
     [Authorize(Policy = Permissions.OrdersPlace)]
+    [EnableRateLimiting(RateLimitingExtensions.PlaceOrderPolicy)]
     [ProducesResponseType<OrderResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, ProblemJson)]
     public async Task<IActionResult> Place(Guid storeId, PlaceOrderRequest request, CancellationToken cancellationToken)
     {
         if (User.GetUserId() is not { } customerId)

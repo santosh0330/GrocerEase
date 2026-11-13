@@ -43,6 +43,7 @@ public class ApiFactory : WebApplicationFactory<Program>
                 ["RateLimiting:Register:PermitLimit"] = "1000",
                 ["RateLimiting:Refresh:PermitLimit"] = "1000",
                 ["RateLimiting:Health:PermitLimit"] = "1000",
+                ["RateLimiting:PlaceOrder:PermitLimit"] = "1000",
             }));
     }
 }

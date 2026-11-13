@@ -154,6 +154,95 @@ public class OrderRepositoryTests
         Assert.Equal(ids.OrderByDescending(id => id), [.. first.Items.Select(order => order.Id), .. second.Items.Select(order => order.Id)]);
     }
 
+    private static async Task<Order?> GetForStoreAsync(Guid storeId, Guid orderId)
+    {
+        await using var db = await NewContextAsync();
+        return await new OrderRepository(db).GetForStoreAsync(storeId, orderId, CancellationToken.None);
+    }
+
+    private static async Task<GrocerEase.Application.Common.PagedResult<Order>> ListForStoreAsync(Guid storeId, OrderStatus? status = null, int page = 1, int pageSize = 20)
+    {
+        await using var db = await NewContextAsync();
+        return await new OrderRepository(db).ListForStoreAsync(storeId, status, page, pageSize, CancellationToken.None);
+    }
+
+    private static async Task SetStatusAsync(Order order, string status) =>
+        await PostgresServer.ExecuteAsync(await PostgresServer.ApplicationConnectionStringAsync(), $"update orders set status = '{status}' where id = '{order.Id}'");
+
+    [Fact]
+    public async Task AnOrder_IsFoundInItsOwnStore_WithItsLines_AndNotThroughAnotherStore()
+    {
+        var world = await AWorldAsync();
+        var elsewhere = await AWorldAsync();
+        var placed = await PlaceAsync(world);
+
+        var found = await GetForStoreAsync(world.StoreId, placed.Id);
+
+        Assert.NotNull(found);
+        Assert.Equal((placed.Id, world.CustomerId, 2), (found.Id, found.CustomerId, found.Lines.Count));
+        Assert.Null(await GetForStoreAsync(elsewhere.StoreId, placed.Id));
+        Assert.Null(await GetForStoreAsync(world.StoreId, Guid.CreateVersion7()));
+    }
+
+    [Fact]
+    public async Task TheStoresList_HoldsOnlyThatStoresOrders_OldestFirst_FromEveryCustomer_WithTheirLines()
+    {
+        var world = await AWorldAsync();
+        var elsewhere = await AWorldAsync();
+        var other = await NewCustomerAsync();
+        var newest = await PlaceAsync(world, placedAt: DateTimeOffset.UtcNow.AddHours(-1));
+        var oldest = await PlaceAsync(world, customerId: other, placedAt: DateTimeOffset.UtcNow.AddHours(-3));
+        var middle = await PlaceAsync(world, placedAt: DateTimeOffset.UtcNow.AddHours(-2));
+        await PlaceAsync(elsewhere); // another store's
+
+        var page = await ListForStoreAsync(world.StoreId);
+
+        Assert.Equal([oldest.Id, middle.Id, newest.Id], page.Items.Select(order => order.Id));
+        Assert.Equal(3, page.TotalCount);
+        Assert.All(page.Items, order => Assert.Equal(2, order.Lines.Count));
+    }
+
+    [Fact]
+    public async Task TheStatusFilter_KeepsOnlyThatStatus_AndTheTotalCountsOnlyThose()
+    {
+        var world = await AWorldAsync();
+        var pending = await PlaceAsync(world, placedAt: DateTimeOffset.UtcNow.AddHours(-1));
+        var verified = await PlaceAsync(world, placedAt: DateTimeOffset.UtcNow.AddHours(-2));
+        var shipped = await PlaceAsync(world, placedAt: DateTimeOffset.UtcNow.AddHours(-3));
+        await SetStatusAsync(verified, "Verified");
+        await SetStatusAsync(shipped, "Shipped");
+
+        var onlyPending = await ListForStoreAsync(world.StoreId, OrderStatus.Pending);
+        var onlyShipped = await ListForStoreAsync(world.StoreId, OrderStatus.Shipped);
+        var noneCancelled = await ListForStoreAsync(world.StoreId, OrderStatus.Cancelled);
+
+        Assert.Equal([pending.Id], onlyPending.Items.Select(order => order.Id));
+
+        Assert.Equal(1, onlyPending.TotalCount);
+        Assert.Equal([shipped.Id], onlyShipped.Items.Select(order => order.Id));
+        Assert.Equal(1, onlyShipped.TotalCount);
+        Assert.Equal((0, 0), (noneCancelled.Items.Count, noneCancelled.TotalCount));
+        Assert.Equal(OrderStatus.Verified, (await GetForStoreAsync(world.StoreId, verified.Id))!.Status); // read back through the private setter
+    }
+
+    [Fact]
+    public async Task TheStoresList_IsPaged_ByTheOldestFirst_AndTheIdBreaksTies()
+    {
+        var world = await AWorldAsync();
+        var instant = DateTimeOffset.UtcNow;
+        var ids = new List<Guid>();
+        for (var i = 0; i < 5; i++)
+        {
+            ids.Add((await PlaceAsync(world, placedAt: instant)).Id);
+        }
+
+        var pages = new[] { await ListForStoreAsync(world.StoreId, null, 1, 2), await ListForStoreAsync(world.StoreId, null, 2, 2), await ListForStoreAsync(world.StoreId, null, 3, 2) };
+
+        Assert.Equal(ids.Order(), pages.SelectMany(page => page.Items.Select(order => order.Id)));
+        Assert.All(pages, page => Assert.Equal(5, page.TotalCount));
+        Assert.Empty((await ListForStoreAsync(world.StoreId, null, 9, 2)).Items);
+    }
+
     [Fact]
     public async Task AnOrderForAStoreThatDoesNotExist_IsAnException_NotAnOrdinaryRefusal()
     {

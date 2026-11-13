@@ -85,12 +85,12 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_orders");
 
-                    b.HasIndex("StoreId")
-                        .HasDatabaseName("ix_orders_store_id");
-
                     b.HasIndex("CustomerId", "PlacedAt", "Id")
                         .IsDescending(false, true, true)
                         .HasDatabaseName("ix_orders_customer_id_placed_at");
+
+                    b.HasIndex("StoreId", "PlacedAt", "Id")
+                        .HasDatabaseName("ix_orders_store_id_placed_at");
 
                     b.ToTable("orders", null, t =>
                         {

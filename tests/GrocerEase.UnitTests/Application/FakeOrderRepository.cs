@@ -4,7 +4,7 @@ using GrocerEase.Domain.Entities;
 
 namespace GrocerEase.UnitTests.Application;
 
-/// <summary>A list standing in for the database in handler tests. It follows the port's contract: every read names the customer, newest first.</summary>
+/// <summary>A list standing in for the database in handler tests. It follows the port's contract: every read names the customer (newest first) or the store (oldest first).</summary>
 internal sealed class FakeOrderRepository : IOrderRepository
 {
     public List<Order> Orders { get; } = [];
@@ -18,6 +18,16 @@ internal sealed class FakeOrderRepository : IOrderRepository
 
     public Task<Order?> GetForCustomerAsync(Guid customerId, Guid orderId, CancellationToken cancellationToken) =>
         Task.FromResult(Orders.SingleOrDefault(order => order.Id == orderId && order.CustomerId == customerId));
+
+    public Task<Order?> GetForStoreAsync(Guid storeId, Guid orderId, CancellationToken cancellationToken) =>
+        Task.FromResult(Orders.SingleOrDefault(order => order.Id == orderId && order.StoreId == storeId));
+
+    public Task<PagedResult<Order>> ListForStoreAsync(Guid storeId, OrderStatus? status, int page, int pageSize, CancellationToken cancellationToken)
+    {
+        var ofTheStore = Orders.Where(order => order.StoreId == storeId && (status is null || order.Status == status))
+            .OrderBy(order => order.PlacedAt).ThenBy(order => order.Id).ToList();
+        return Task.FromResult(new PagedResult<Order>([.. ofTheStore.Skip((page - 1) * pageSize).Take(pageSize)], page, pageSize, ofTheStore.Count));
+    }
 
     public Task<PagedResult<Order>> ListForCustomerAsync(Guid customerId, int page, int pageSize, CancellationToken cancellationToken)
     {

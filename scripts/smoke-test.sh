@@ -171,7 +171,7 @@ expect "email is stored in lower case" "$(admin_sql 'select email from users')" 
 expect "the password is not stored" "$(admin_sql "select count(*) from users where password_hash like '%Sup3r%'")" "0"
 expect "timestamps are filled in" "$(admin_sql 'select created_at is not null and updated_at is not null from users')" "t"
 expect "a new user holds the Customer role" "$(admin_sql 'select r.name from users u join roles r on r.id = u.role_id')" "Customer"
-expect "all migrations are recorded, in their own schema" "$(admin_sql 'select count(*) from migrations."__EFMigrationsHistory"')" "18"
+expect "all migrations are recorded, in their own schema" "$(admin_sql 'select count(*) from migrations."__EFMigrationsHistory"')" "19"
 expect "the roles are seeded, under their fixed ids" "$(admin_sql "select string_agg(id || ':' || name, ',' order by name) from roles")" "019e0000-0000-7000-8000-000000000002:Admin,019e0000-0000-7000-8000-000000000001:Customer,019e0000-0000-7000-8000-000000000003:StoreUser"
 expect "the roles grant what they should" "$(admin_sql "select string_agg(r.name || ':' || c.claim_value, ',' order by r.name, c.claim_value) from role_claims c join roles r on r.id = c.role_id where c.claim_type = 'permission'")" "Admin:products.read,Admin:profile.read,Admin:roles.read,Admin:stores.manage,Admin:stores.read,Customer:orders.cancel,Customer:orders.place,Customer:orders.read,Customer:products.read,Customer:profile.read,Customer:stores.read,StoreUser:inventory.manage,StoreUser:orders.manage,StoreUser:products.manage,StoreUser:products.read,StoreUser:profile.read,StoreUser:stores.read"
 
@@ -305,8 +305,32 @@ expect "a customer can read the product" "$(send_as GET "/stores/$store_id/produ
 expect "and browse the store, a page at a time" "$(send_as GET "/stores/$store_id/products?pageSize=1" "$member_token")" "200"
 expect "the page says how long the list is" "$(jq -c '[(.items | length), .page, .pageSize, .totalCount]' "$work/body.json")" "[1,1,1,1]"
 expect "a page size over the limit is refused" "$(send_as GET "/stores/$store_id/products?pageSize=101" "$member_token")" "400"
-expect "the store user edits the product" "$(send_as PUT "/stores/$store_id/products/$product_id" "$owner_token" '{"name":"Oat milk","description":"Vegan","price":3.2}')" "200"
+expect "a new product is version one" "$(admin_sql "select version from products where id = '$product_id'")" "1"
+expect "the store user edits the product, from the version they read" "$(send_as PUT "/stores/$store_id/products/$product_id" "$owner_token" '{"name":"Oat milk","description":"Vegan","price":3.2,"version":1}')" "200"
+expect "and an edit is the next version" "$(jq -r .version "$work/body.json")" "2"
+expect "a second person, who also read version one, is refused" "$(send_as PUT "/stores/$store_id/products/$product_id" "$owner_token" '{"name":"Soy milk","description":"Other","price":9,"version":1}')" "409"
+expect "with a stable code" "$(jq -r .code "$work/body.json")" "Product.Outdated"
+expect "and the problem shows the product as it is now, so they can see what changed" "$(jq -c '[.current.name, .current.version, (.current.price == 3.2)]' "$work/body.json")" '["Oat milk",2,true]'
+expect "nothing of the refused edit was applied" "$(admin_sql "select name || ':' || version from products where id = '$product_id'")" "Oat milk:2"
+expect "an edit with no version is refused, never applied blindly" "$(send_as PUT "/stores/$store_id/products/$product_id" "$owner_token" '{"name":"Soy milk","description":"Other","price":9}')" "400"
+expect "naming the field" "$(jq -c '.errors | has("version")' "$work/body.json")" "true"
+expect "retrying on top of the version in the refusal works" "$(send_as PUT "/stores/$store_id/products/$product_id" "$owner_token" '{"name":"Soy milk","description":"Other","price":9,"version":2}')" "200"
+expect "that is version three" "$(jq -r .version "$work/body.json")" "3"
+# Ten edits from the same version at the same moment: the database writes one, and the other nine are told the product changed.
+for i in $(seq 1 10); do
+  ( curl -sS -o "$work/edit-body-$i" -w '%{http_code}\n' -X PUT "http://localhost:8080/stores/$store_id/products/$product_id" \
+      -H "Authorization: Bearer $owner_token" -H 'Content-Type: application/json' \
+      -d "{\"name\":\"Edit $i\",\"description\":\"by $i\",\"price\":$i,\"version\":3}" > "$work/edit-$i" ) &
+done
+wait
+expect "ten edits from version three at once: one succeeds" "$(cat "$work"/edit-* | grep -c '^200$')" "1"
+expect "and nine are told the product changed" "$(cat "$work"/edit-* | grep -c '^409$')" "9"
+expect "it was written once: version four, holding one person's whole edit" "$(admin_sql "select version || ':' || (description = 'by ' || substring(name from 6)) from products where id = '$product_id'")" "4:true"
+expect "a stale edit of a product in a store that is not theirs is not found, and shows nothing" "$(send_as PUT "/stores/$other_store_id/products/$product_id" "$owner_token" '{"name":"x","description":"","price":1,"version":1}')" "404"
+expect "no current product in that answer" "$(jq -c 'has("current")' "$work/body.json")" "false"
 expect "and archives it" "$(send_as DELETE "/stores/$store_id/products/$product_id" "$owner_token")" "204"
+expect "archiving is a change too: version five" "$(admin_sql "select version from products where id = '$product_id'")" "5"
+expect "an edit of the archived product is not found, whatever version is sent" "$(send_as PUT "/stores/$store_id/products/$product_id" "$owner_token" '{"name":"Back","description":"","price":1,"version":5}')" "404"
 expect "it is gone from the catalogue" "$(send_as GET "/stores/$store_id/products/$product_id" "$member_token")" "404"
 expect "but its row stays, archived" "$(admin_sql "select archived_at is not null from products where id = '$product_id'")" "t"
 expect "its name is free again" "$(send_as POST "/stores/$store_id/products" "$owner_token" '{"name":"Oat milk","price":3.2}')" "201"

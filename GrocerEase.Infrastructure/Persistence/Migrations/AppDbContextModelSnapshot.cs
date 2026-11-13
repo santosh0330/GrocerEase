@@ -51,6 +51,105 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GrocerEase.Domain.Entities.Order", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuidv7()");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("customer_id");
+
+                    b.Property<string>("DeliveryAddress")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("delivery_address");
+
+                    b.Property<DateTimeOffset>("PlacedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("placed_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("StoreId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("store_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_orders");
+
+                    b.HasIndex("StoreId")
+                        .HasDatabaseName("ix_orders_store_id");
+
+                    b.HasIndex("CustomerId", "PlacedAt", "Id")
+                        .IsDescending(false, true, true)
+                        .HasDatabaseName("ix_orders_customer_id_placed_at");
+
+                    b.ToTable("orders", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_orders_id_is_uuid_v7", "uuid_extract_version(id) = 7");
+
+                            t.HasCheckConstraint("ck_orders_status_is_known", "status IN ('Pending', 'Verified', 'Shipped', 'Cancelled')");
+                        });
+                });
+
+            modelBuilder.Entity("GrocerEase.Domain.Entities.OrderLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuidv7()");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("order_id");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("product_id");
+
+                    b.Property<string>("ProductName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("product_name");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("quantity");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("unit_price");
+
+                    b.HasKey("Id")
+                        .HasName("pk_order_lines");
+
+                    b.HasIndex("ProductId")
+                        .HasDatabaseName("ix_order_lines_product_id");
+
+                    b.HasIndex("OrderId", "ProductId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_order_lines_order_id_product_id");
+
+                    b.ToTable("order_lines", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_order_lines_id_is_uuid_v7", "uuid_extract_version(id) = 7");
+
+                            t.HasCheckConstraint("ck_order_lines_quantity_in_range", "quantity >= 1 AND quantity <= 1000000000");
+
+                            t.HasCheckConstraint("ck_order_lines_unit_price_is_positive", "unit_price > 0");
+                        });
+                });
+
             modelBuilder.Entity("GrocerEase.Domain.Entities.Product", b =>
                 {
                     b.Property<Guid>("Id")
@@ -478,6 +577,40 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_inventory_items_products_product_id_store_id");
                 });
 
+            modelBuilder.Entity("GrocerEase.Domain.Entities.Order", b =>
+                {
+                    b.HasOne("GrocerEase.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_orders_users_customer_id");
+
+                    b.HasOne("GrocerEase.Domain.Entities.Store", null)
+                        .WithMany()
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_orders_stores_store_id");
+                });
+
+            modelBuilder.Entity("GrocerEase.Domain.Entities.OrderLine", b =>
+                {
+                    b.HasOne("GrocerEase.Domain.Entities.Order", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_order_lines_orders_order_id");
+
+                    b.HasOne("GrocerEase.Domain.Entities.Product", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_order_lines_products_product_id");
+                });
+
             modelBuilder.Entity("GrocerEase.Domain.Entities.Product", b =>
                 {
                     b.HasOne("GrocerEase.Domain.Entities.Store", null)
@@ -533,6 +666,11 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_users_roles_role_id");
+                });
+
+            modelBuilder.Entity("GrocerEase.Domain.Entities.Order", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("GrocerEase.Domain.Entities.Role", b =>

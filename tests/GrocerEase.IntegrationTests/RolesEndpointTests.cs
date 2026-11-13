@@ -83,7 +83,7 @@ public class RolesEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
             [(RoleIds.Admin, RoleNames.Admin), (RoleIds.Customer, RoleNames.Customer), (RoleIds.StoreUser, RoleNames.StoreUser)],
             roles.Select(role => (role.Id, role.Name)));
         Assert.Equal([Permissions.ProductsRead, Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresManage, Permissions.StoresRead], roles[0].Permissions, StringComparer.Ordinal);
-        Assert.Equal([Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead], roles[1].Permissions, StringComparer.Ordinal);
+        Assert.Equal([Permissions.OrdersPlace, Permissions.OrdersRead, Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead], roles[1].Permissions, StringComparer.Ordinal);
         Assert.Equal([Permissions.InventoryManage, Permissions.ProductsManage, Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead], roles[2].Permissions, StringComparer.Ordinal);
     }
 

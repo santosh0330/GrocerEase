@@ -15,6 +15,12 @@ public interface IProductRepository
     Task<Product?> GetLiveAsync(Guid storeId, Guid productId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// The products among <paramref name="productIds"/> that are on sale in that store. One that is archived, unknown or another store's
+    /// is simply not in the result, so a caller that asked for three and got two knows one is not available.
+    /// </summary>
+    Task<IReadOnlyList<Product>> GetLiveByIdsAsync(Guid storeId, IReadOnlyCollection<Guid> productIds, CancellationToken cancellationToken);
+
+    /// <summary>
     /// One page of the products that are on sale in that store, ordered by name and then by id so that the order is the same on every
     /// request. <paramref name="page"/> counts from 1. A page past the end is empty.
     /// </summary>

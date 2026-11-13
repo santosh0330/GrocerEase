@@ -13,6 +13,9 @@ internal sealed class FakeProductRepository : IProductRepository
     public Task<Product?> GetLiveAsync(Guid storeId, Guid productId, CancellationToken cancellationToken) =>
         Task.FromResult(Products.SingleOrDefault(product => product.Id == productId && product.StoreId == storeId && !product.IsArchived));
 
+    public Task<IReadOnlyList<Product>> GetLiveByIdsAsync(Guid storeId, IReadOnlyCollection<Guid> productIds, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<Product>>([.. Products.Where(product => product.StoreId == storeId && !product.IsArchived && productIds.Contains(product.Id))]);
+
     public Task<PagedResult<Product>> ListLiveAsync(Guid storeId, int page, int pageSize, CancellationToken cancellationToken)
     {
         var live = Products.Where(product => product.StoreId == storeId && !product.IsArchived).ToList();

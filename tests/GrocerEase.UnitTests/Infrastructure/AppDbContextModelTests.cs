@@ -56,7 +56,7 @@ public class AppDbContextModelTests
             [.. claims.Where(claim => claim.RoleId == roleId && string.Equals(claim.Type, Permissions.ClaimType, StringComparison.Ordinal))
                 .Select(claim => claim.Value).Order(StringComparer.Ordinal)];
 
-        Assert.Equal([Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead], Of(claims, RoleIds.Customer), StringComparer.Ordinal);
+        Assert.Equal([Permissions.OrdersPlace, Permissions.OrdersRead, Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead], Of(claims, RoleIds.Customer), StringComparer.Ordinal);
         Assert.Equal(
             [Permissions.ProductsRead, Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresManage, Permissions.StoresRead],
             Of(claims, RoleIds.Admin),
@@ -65,7 +65,7 @@ public class AppDbContextModelTests
             [Permissions.InventoryManage, Permissions.ProductsManage, Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead],
             Of(claims, RoleIds.StoreUser),
             StringComparer.Ordinal);
-        Assert.Equal(13, claims.Count);
+        Assert.Equal(15, claims.Count);
     }
 
     [Fact]

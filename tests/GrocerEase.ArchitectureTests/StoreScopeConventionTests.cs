@@ -140,6 +140,85 @@ public class StoreScopeConventionTests
         Assert.True(strangers.Count == 0, $"Only {repository} may read or change {table}, so every query is scoped by store in one place: {string.Join(", ", strangers)}");
     }
 
+    // What a read model must not do: write. Reading the IL for calls into Entity Framework that change data or run raw SQL (a write can hide in a
+    // string). The check is on the type EF methods are declared in, so a List.Add in a read model is not mistaken for a write.
+    private static readonly string[] WritingCalls =
+    [
+        "SaveChanges", "SaveChangesAsync", "ExecuteUpdate", "ExecuteUpdateAsync", "ExecuteDelete", "ExecuteDeleteAsync",
+        "ExecuteSql", "ExecuteSqlAsync", "ExecuteSqlRaw", "ExecuteSqlRawAsync", "SqlQuery", "SqlQueryRaw", "FromSql", "FromSqlRaw", "FromSqlInterpolated",
+        "Add", "AddAsync", "AddRange", "AddRangeAsync", "Remove", "RemoveRange", "Update", "UpdateRange", "Attach",
+    ];
+
+    private static List<string> WritingCallsIn(string topLevelTypeName)
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(Infrastructure.Location);
+
+        static TypeDefinition TopLevel(TypeDefinition type) => type.DeclaringType is null ? type : TopLevel(type.DeclaringType);
+
+        return [.. assembly.MainModule.GetTypes()
+            .Where(type => string.Equals(TopLevel(type).Name, topLevelTypeName, StringComparison.Ordinal))
+            .SelectMany(type => type.Methods.Where(method => method.HasBody).SelectMany(method => method.Body.Instructions))
+            .Where(instruction => instruction.OpCode.Code is Code.Call or Code.Callvirt && instruction.Operand is MethodReference)
+            .Select(instruction => (MethodReference)instruction.Operand)
+            .Where(called => called.DeclaringType.FullName.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal)
+                && WritingCalls.Contains(called.Name, StringComparer.Ordinal))
+            .Select(called => called.Name)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)];
+    }
+
+    // The ports a read model implements: the repository interfaces of Application.Abstractions that its class implements.
+    private static List<Type> PortsOf(string readModel) =>
+        [.. Infrastructure.GetTypes().Single(type => string.Equals(type.Name, readModel, StringComparison.Ordinal)).GetInterfaces()
+            .Where(port => string.Equals(port.Namespace, "GrocerEase.Application.Abstractions", StringComparison.Ordinal))];
+
+    private static List<string> MethodsWithoutAStoreId(IEnumerable<Type> ports) =>
+        [.. ports.SelectMany(port => port.GetMethods())
+            .Where(method => !method.GetParameters().Any(parameter =>
+                parameter.ParameterType == typeof(Guid) && string.Equals(parameter.Name, "storeId", StringComparison.Ordinal)))
+            .Select(method => $"{method.DeclaringType?.Name}.{method.Name}")];
+
+    [Fact]
+    public void ARepositoryThatReadsSeveralStoreOwnedTables_IsANamedReadModel_ThatNamesTheStoreAndWritesNothing()
+    {
+        var offenders = ReadModels.SelectMany(readModel => PortsOf(readModel).Count == 0
+            ? [$"{readModel} implements no port"]
+            : MethodsWithoutAStoreId(PortsOf(readModel)).Select(method => $"{method} takes no storeId")
+                .Concat(WritingCallsIn(readModel).Select(call => $"{readModel} calls {call}"))).ToList();
+
+        Assert.True(offenders.Count == 0, $"A read model may join store-owned tables only if it names the store and writes nothing: {string.Join("; ", offenders)}");
+    }
+
+    [Fact]
+    public void ARepositoryThatReadsTwoStoreOwnedTables_IsInTheReadModelList()
+    {
+        // The exception is closed: any repository that reads more than one store-owned table, other than the listed read models, would already
+        // be flagged by the rule above. This pins the other direction: each read model really does read the tables it is allowed to.
+        foreach (var readModel in ReadModels)
+        {
+            var tables = new[] { typeof(InventoryItem), typeof(Product) }.Where(entity => TopLevelTypesThatQuery(entity).Contains(readModel, StringComparer.Ordinal)).ToList();
+
+            Assert.True(tables.Count >= 2, $"{readModel} is listed as a read model but reads {tables.Count} of the tables: a read model that reads one table belongs in that table's repository.");
+        }
+    }
+
+    private interface IBlindReadModel
+    {
+        Task<int> CountAsync(int page, CancellationToken cancellationToken); // forgot the store
+    }
+
+    [Fact]
+    public void TheReadModelRules_CanFail_BecauseTheyCatchAPortWithoutAStoreId_AndSeeWritesWhereThereAreSome()
+    {
+        Assert.Equal(["IBlindReadModel.CountAsync"], MethodsWithoutAStoreId([typeof(IBlindReadModel)]), StringComparer.Ordinal);
+        Assert.Empty(MethodsWithoutAStoreId(PortsOf(nameof(LowStockRepository))));
+        // The same scanner sees the writes of the repositories that write, so an empty answer for the read model means something.
+        Assert.Contains("ExecuteUpdateAsync", WritingCallsIn(nameof(OrderRepository)), StringComparer.Ordinal);
+        Assert.Contains("SqlQuery", WritingCallsIn(nameof(InventoryItemRepository)), StringComparer.Ordinal);
+        Assert.Contains("SaveChangesAsync", WritingCallsIn(nameof(ProductRepository)), StringComparer.Ordinal);
+        Assert.Empty(WritingCallsIn(nameof(LowStockRepository)));
+    }
+
     [Fact]
     public void EveryStoreOwnedEntity_HasATestedRepositoryRule()
     {

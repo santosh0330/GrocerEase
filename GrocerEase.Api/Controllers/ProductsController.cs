@@ -65,7 +65,8 @@ public sealed class ProductsController(
         return result.Match<IActionResult>(products => Ok(products.ToResponse()), error => this.ToProblem(error));
     }
 
-    // Replaces the name, description and price. The id and the store do not change.
+    // Replaces the name, description and price, on top of the version the caller read (required). The id and the store do not change. If someone
+    // changed the product after the caller read it, nothing is saved: 409 Product.Outdated, with the current product.
     [HttpPut("{productId:guid}")]
     [Authorize(Policy = Permissions.ProductsManage)]
     [ProducesResponseType<ProductResponse>(StatusCodes.Status200OK)]
@@ -82,7 +83,11 @@ public sealed class ProductsController(
         }
 
         var result = await updateHandler.Handle(request.ToCommand(storeId, productId, callerId), cancellationToken);
-        return result.Match<IActionResult>(product => Ok(product.ToResponse()), error => this.ToProblem(error));
+
+        // A 409 Product.Outdated carries the product as it is now (as "current"), so the client can show the difference and try again from it.
+        return result.Match<IActionResult>(
+            product => Ok(product.ToResponse()),
+            error => this.ToProblem(error, "current", data => data is ProductResult current ? current.ToResponse() : null));
     }
 
     // "Deletes" the product by archiving it: 204, it leaves the catalogue, and its name is free again.

@@ -11,4 +11,7 @@ public enum ProductUpdateOutcome
 
     /// <summary>The store already sells another product with that name.</summary>
     DuplicateName,
+
+    /// <summary>The product is on sale in that store, but it is no longer at the version the change was made from. Nothing was written.</summary>
+    Outdated,
 }

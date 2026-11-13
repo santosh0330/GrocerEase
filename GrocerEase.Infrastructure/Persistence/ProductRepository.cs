@@ -43,15 +43,16 @@ public sealed class ProductRepository(AppDbContext db) : IProductRepository
         return new PagedResult<Product>(items, page, pageSize, total);
     }
 
-    public async Task<ProductUpdateOutcome> TryUpdateAsync(Product product, CancellationToken cancellationToken)
+    public async Task<ProductUpdateOutcome> TryUpdateAsync(Product product, int expectedVersion, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(product);
 
         try
         {
-            // UPDATE products SET name, description, price WHERE id = @id AND store_id = @store AND archived_at IS NULL
+            // UPDATE products SET name, description, price, version = version + 1
+            // WHERE id = @id AND store_id = @store AND archived_at IS NULL AND version = @expected
             var changed = await db.Products
-                .Where(existing => existing.Id == product.Id && existing.StoreId == product.StoreId && existing.ArchivedAt == null)
+                .Where(existing => existing.Id == product.Id && existing.StoreId == product.StoreId && existing.ArchivedAt == null && existing.Version == expectedVersion)
                 .ExecuteUpdateAsync(
                     setters => setters
                         .SetProperty(existing => existing.Name, product.Name)
@@ -59,7 +60,16 @@ public sealed class ProductRepository(AppDbContext db) : IProductRepository
                         .SetProperty(existing => existing.Price, product.Price)
                         .SetProperty(existing => existing.Version, existing => existing.Version + 1), // every change to the row is a new version
                     cancellationToken);
-            return changed == 1 ? ProductUpdateOutcome.Updated : ProductUpdateOutcome.NotFound;
+            if (changed == 1)
+            {
+                return ProductUpdateOutcome.Updated;
+            }
+
+            // Nothing matched: either there is no such product on sale in this store, or there is and it has moved on to another version.
+            // (Archived in the instant between the two statements is "not found", which is true.)
+            var isStillOnSale = await db.Products.AnyAsync(
+                existing => existing.Id == product.Id && existing.StoreId == product.StoreId && existing.ArchivedAt == null, cancellationToken);
+            return isStillOnSale ? ProductUpdateOutcome.Outdated : ProductUpdateOutcome.NotFound;
         }
         catch (PostgresException exception) when (IsDuplicateName(exception))
         {

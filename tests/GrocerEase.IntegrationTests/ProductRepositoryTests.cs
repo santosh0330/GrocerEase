@@ -99,10 +99,13 @@ public class ProductRepositoryTests
         Assert.Equal(1, page.TotalCount);
     }
 
-    private static async Task<ProductUpdateOutcome> UpdateAsync(Product product)
+    // An edited copy (Product.WithDetails) is the next version, so it was made from the one before.
+    private static async Task<ProductUpdateOutcome> UpdateAsync(Product edited) => await UpdateFromAsync(edited, edited.Version - 1);
+
+    private static async Task<ProductUpdateOutcome> UpdateFromAsync(Product edited, int expectedVersion)
     {
         await using var db = await NewContextAsync();
-        return await new ProductRepository(db).TryUpdateAsync(product, CancellationToken.None);
+        return await new ProductRepository(db).TryUpdateAsync(edited, expectedVersion, CancellationToken.None);
     }
 
     [Fact]
@@ -358,4 +361,117 @@ public class ProductRepositoryTests
     [Fact]
     public async Task AProductOfAStoreThatDoesNotExist_IsAnException_NotAnOrdinaryRefusal() =>
         await Assert.ThrowsAsync<DbUpdateException>(async () => await AddAsync(NewProduct(Guid.CreateVersion7())));
+
+    [Fact]
+    public async Task AnEditFromTheCurrentVersion_IsWritten_AndIsTheNextVersion()
+    {
+        var store = await StoredStoreAsync();
+        var milk = NewProduct(store);
+        Assert.True(await AddAsync(milk));
+
+        Assert.Equal(ProductUpdateOutcome.Updated, await UpdateFromAsync(milk.WithDetails("Oat milk", "Vegan", 3.20m), expectedVersion: 1));
+        Assert.Equal(ProductUpdateOutcome.Updated, await UpdateFromAsync(milk.WithDetails("Soy milk", "Vegan", 3.30m), expectedVersion: 2));
+
+        var found = (await GetAsync(store, milk.Id))!;
+        Assert.Equal(("Soy milk", 3), (found.Name, found.Version));
+    }
+
+    [Theory]
+    [InlineData(0)] // never read
+    [InlineData(2)] // from the future
+    [InlineData(99)]
+    public async Task AnEditFromAVersionThatIsNotTheCurrentOne_IsOutdated_AndChangesNothing(int staleOrFuture)
+    {
+        var store = await StoredStoreAsync();
+        var milk = NewProduct(store);
+        Assert.True(await AddAsync(milk)); // version 1
+
+        var outcome = await UpdateFromAsync(milk.WithDetails("Hacked", "x", 1m), staleOrFuture);
+
+        Assert.Equal(ProductUpdateOutcome.Outdated, outcome);
+        var found = (await GetAsync(store, milk.Id))!;
+        Assert.Equal((milk.Name, 1), (found.Name, found.Version));
+    }
+
+    [Fact]
+    public async Task AnEditFromAnOldVersion_AfterAnotherEditWon_IsOutdated_AndTheWinnersValuesStand()
+    {
+        var store = await StoredStoreAsync();
+        var milk = NewProduct(store);
+        Assert.True(await AddAsync(milk));
+        Assert.Equal(ProductUpdateOutcome.Updated, await UpdateFromAsync(milk.WithDetails("Winner", "first", 5m), 1)); // two people read version 1; this one saves first
+
+        var loser = await UpdateFromAsync(milk.WithDetails("Loser", "second", 6m), 1);
+
+        Assert.Equal(ProductUpdateOutcome.Outdated, loser);
+        var found = (await GetAsync(store, milk.Id))!;
+        Assert.Equal(("Winner", "first", 5m, 2), (found.Name, found.Description, found.Price, found.Version));
+    }
+
+    [Fact]
+    public async Task AStaleVersion_IsCheckedBeforeANameClash_SoItIsOutdated_NotADuplicate()
+    {
+        var store = await StoredStoreAsync();
+        var milk = NewProduct(store, "Milk");
+        var bread = NewProduct(store, "Bread");
+        Assert.True(await AddAsync(milk));
+        Assert.True(await AddAsync(bread));
+
+        var outcome = await UpdateFromAsync(bread.WithDetails("Milk", "", 1m), expectedVersion: 7); // the name is taken, but the version is wrong first
+
+        Assert.Equal(ProductUpdateOutcome.Outdated, outcome);
+    }
+
+    [Fact]
+    public async Task AnEditOfAProductThatIsNotOnSale_OrNotInThatStore_IsNotFound_WhateverTheVersion()
+    {
+        var store = await StoredStoreAsync();
+        var other = await StoredStoreAsync();
+        var milk = NewProduct(store);
+        Assert.True(await AddAsync(milk));
+        var archived = NewProduct(store, "Old");
+        Assert.True(await AddAsync(archived));
+        await using (var db = await NewContextAsync())
+        {
+            Assert.True(await new ProductRepository(db).TryArchiveAsync(store, archived.Id, DateTimeOffset.UtcNow, CancellationToken.None));
+        }
+
+        Assert.Equal(ProductUpdateOutcome.NotFound, await UpdateFromAsync(archived.WithDetails("Back", "", 1m), 1)); // archived (now version 2, but not on sale)
+        Assert.Equal(ProductUpdateOutcome.NotFound, await UpdateFromAsync(archived.WithDetails("Back", "", 1m), 2));
+        Assert.Equal(ProductUpdateOutcome.NotFound, await UpdateFromAsync(new Product(milk.Id, other, "Hacked", "", 1m), 1)); // through another store
+        Assert.Equal(1, await VersionInDatabaseAsync(milk.Id)); // not Outdated, not touched: nothing about it is revealed
+    }
+
+    [Fact]
+    public async Task TwelveEditsFromTheSameVersionAtTheSameTime_ExactlyOneIsWritten_AndTheRestAreOutdated()
+    {
+        var store = await StoredStoreAsync();
+        var milk = NewProduct(store);
+        Assert.True(await AddAsync(milk));
+
+        var outcomes = await Task.WhenAll(Enumerable.Range(0, 12).Select(i =>
+            Task.Run(() => UpdateFromAsync(milk.WithDetails($"Name {i}", $"by {i}", 1m + i), expectedVersion: 1))));
+
+        Assert.Equal(1, outcomes.Count(outcome => outcome == ProductUpdateOutcome.Updated));
+        Assert.Equal(11, outcomes.Count(outcome => outcome == ProductUpdateOutcome.Outdated));
+        var found = (await GetAsync(store, milk.Id))!;
+        Assert.Equal(2, found.Version); // written once, not twelve times
+        Assert.Matches("^Name [0-9]+$", found.Name); // one whole edit: a name and a description from the same person
+        Assert.Equal($"by {found.Name["Name ".Length..]}", found.Description);
+    }
+
+    [Fact]
+    public async Task EditsChainingFromEachOthersVersions_AllSucceed_OneAtATime_AndTheVersionCountsThem()
+    {
+        var store = await StoredStoreAsync();
+        var milk = NewProduct(store);
+        Assert.True(await AddAsync(milk));
+
+        for (var version = 1; version <= 10; version++)
+        {
+            Assert.Equal(ProductUpdateOutcome.Updated, await UpdateFromAsync(milk.WithDetails($"Name {version}", "", 1m), version));
+        }
+
+        Assert.Equal(11, await VersionInDatabaseAsync(milk.Id));
+    }
 }

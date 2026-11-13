@@ -108,7 +108,7 @@ public class PlaceOrderEndpointTests(ApiFactory factory) : IClassFixture<ApiFact
         var customer = (await RegisterAsync(client)).Token;
         var placed = await CreatedAsync(await PlaceAsync(client, customer, shop.StoreId, Order(lines: (shop.Milk.Id, 2))));
 
-        await SendAsync(client, HttpMethod.Put, $"/stores/{shop.StoreId}/products/{shop.Milk.Id}", shop.StoreUser, new UpdateProductRequest("Renamed", "", 99m));
+        await SendAsync(client, HttpMethod.Put, $"/stores/{shop.StoreId}/products/{shop.Milk.Id}", shop.StoreUser, new UpdateProductRequest("Renamed", "", 99m, shop.Milk.Version));
         await SendAsync(client, HttpMethod.Delete, $"/stores/{shop.StoreId}/products/{shop.Milk.Id}", shop.StoreUser);
 
         var read = (await (await SendAsync(client, HttpMethod.Get, $"/orders/{placed.Id}", customer)).Content.ReadFromJsonAsync<OrderResponse>())!;

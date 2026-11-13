@@ -171,9 +171,9 @@ expect "email is stored in lower case" "$(admin_sql 'select email from users')" 
 expect "the password is not stored" "$(admin_sql "select count(*) from users where password_hash like '%Sup3r%'")" "0"
 expect "timestamps are filled in" "$(admin_sql 'select created_at is not null and updated_at is not null from users')" "t"
 expect "a new user holds the Customer role" "$(admin_sql 'select r.name from users u join roles r on r.id = u.role_id')" "Customer"
-expect "all migrations are recorded, in their own schema" "$(admin_sql 'select count(*) from migrations."__EFMigrationsHistory"')" "10"
+expect "all migrations are recorded, in their own schema" "$(admin_sql 'select count(*) from migrations."__EFMigrationsHistory"')" "11"
 expect "the roles are seeded, under their fixed ids" "$(admin_sql "select string_agg(id || ':' || name, ',' order by name) from roles")" "019e0000-0000-7000-8000-000000000002:Admin,019e0000-0000-7000-8000-000000000001:Customer,019e0000-0000-7000-8000-000000000003:StoreUser"
-expect "the roles grant what they should" "$(admin_sql "select string_agg(r.name || ':' || c.claim_value, ',' order by r.name, c.claim_value) from role_claims c join roles r on r.id = c.role_id where c.claim_type = 'permission'")" "Admin:products.read,Admin:profile.read,Admin:roles.read,Admin:stores.manage,Admin:stores.read,Customer:products.read,Customer:profile.read,Customer:stores.read,StoreUser:products.manage,StoreUser:products.read,StoreUser:profile.read,StoreUser:stores.read"
+expect "the roles grant what they should" "$(admin_sql "select string_agg(r.name || ':' || c.claim_value, ',' order by r.name, c.claim_value) from role_claims c join roles r on r.id = c.role_id where c.claim_type = 'permission'")" "Admin:products.read,Admin:profile.read,Admin:roles.read,Admin:stores.manage,Admin:stores.read,Customer:products.read,Customer:profile.read,Customer:stores.read,StoreUser:inventory.manage,StoreUser:products.manage,StoreUser:products.read,StoreUser:profile.read,StoreUser:stores.read"
 
 step "refresh tokens are stored as hashes only"
 registered_hash="$(printf %s "$registered_refresh_token" | openssl dgst -sha256 -hex | awk '{print $NF}')"
@@ -188,13 +188,13 @@ expect "the migrator owns the table" "$(admin_sql "select tableowner from pg_tab
 expect "the migrator owns the refresh token table" "$(admin_sql "select tableowner from pg_tables where tablename = 'refresh_tokens'")" "grocerease_migrator"
 expect "the migrator owns the roles table" "$(admin_sql "select tableowner from pg_tables where tablename = 'roles'")" "grocerease_migrator"
 expect "the migrator owns the role claims table" "$(admin_sql "select tableowner from pg_tables where tablename = 'role_claims'")" "grocerease_migrator"
-expect "the migrator owns the stores and products tables" "$(admin_sql "select string_agg(tableowner, ',') from pg_tables where tablename in ('stores', 'store_members', 'products')")" "grocerease_migrator,grocerease_migrator,grocerease_migrator"
+expect "the migrator owns the stores, products and inventory tables" "$(admin_sql "select string_agg(tableowner, ',') from pg_tables where tablename in ('stores', 'store_members', 'products', 'inventory_items')")" "grocerease_migrator,grocerease_migrator,grocerease_migrator,grocerease_migrator"
 app_sql() { compose exec -T db sh -c 'PGPASSWORD="$APP_PASSWORD" psql -h localhost -U grocerease_app -d "$POSTGRES_DB" -Atc "$1" 2>&1' sh "$1"; }
 expect "the app role can read rows" "$(app_sql 'select count(*) from users')" "1"
 expect "the app role can use the refresh token table" "$(app_sql 'select count(*) from refresh_tokens')" "3"
 expect "the app role can read the roles" "$(app_sql 'select count(*) from roles')" "3"
-expect "the app role can read the role claims" "$(app_sql 'select count(*) from role_claims')" "12"
-expect "the app role can use the stores tables" "$(app_sql 'select count(*) from stores')$(app_sql 'select count(*) from store_members')$(app_sql 'select count(*) from products')" "000"
+expect "the app role can read the role claims" "$(app_sql 'select count(*) from role_claims')" "13"
+expect "the app role can use the stores tables" "$(app_sql 'select count(*) from stores')$(app_sql 'select count(*) from store_members')$(app_sql 'select count(*) from products')$(app_sql 'select count(*) from inventory_items')" "0000"
 if out="$(app_sql 'create table should_fail (id int)')"; then fail "the app role was allowed to create a table"; fi
 echo "$out" | grep -q "permission denied" || fail "unexpected answer to CREATE TABLE as the app role: $out"
 if out="$(app_sql 'select * from migrations."__EFMigrationsHistory"')"; then fail "the app role can read the migration history"; fi
@@ -238,7 +238,7 @@ expect "the new token says Admin" "$(jwt_claim "$admin_token" role)" "Admin"
 expect "and carries what an admin may do" "$(jwt_claim_json "$admin_token" permission)" '["products.read","profile.read","roles.read","stores.manage","stores.read"]'
 expect "GET /roles as an admin" "$(get /roles "$admin_token")" "200"
 expect "GET /roles lists both roles" "$(jq -r '[.[].name] | join(",")' "$work/get.json")" "Admin,Customer,StoreUser"
-expect "GET /roles says what each role may do" "$(jq -c '[.[] | {name, permissions}]' "$work/get.json")" '[{"name":"Admin","permissions":["products.read","profile.read","roles.read","stores.manage","stores.read"]},{"name":"Customer","permissions":["products.read","profile.read","stores.read"]},{"name":"StoreUser","permissions":["products.manage","products.read","profile.read","stores.read"]}]'
+expect "GET /roles says what each role may do" "$(jq -c '[.[] | {name, permissions}]' "$work/get.json")" '[{"name":"Admin","permissions":["products.read","profile.read","roles.read","stores.manage","stores.read"]},{"name":"Customer","permissions":["products.read","profile.read","stores.read"]},{"name":"StoreUser","permissions":["inventory.manage","products.manage","products.read","profile.read","stores.read"]}]'
 expect "GET /me shows the new role" "$(get /me "$admin_token" > /dev/null; jq -r .role "$work/get.json")" "Admin"
 expect "and the new permissions" "$(jq -c .permissions "$work/get.json")" '["products.read","profile.read","roles.read","stores.manage","stores.read"]'
 
@@ -261,7 +261,7 @@ expect "an admin assigns the customer to the store" "$(send_as POST "/stores/$st
 expect "the database says store user, in one store" "$(admin_sql "select r.name || ':' || (select count(*) from store_members m where m.user_id = u.id) from users u join roles r on r.id = u.role_id where u.email = '$member_email'")" "StoreUser:1"
 expect "their old token still says Customer" "$(jwt_claim "$member_token" role)" "Customer"
 expect "refreshing gives them a token that says StoreUser" "$(post /auth/refresh "{\"refreshToken\":\"$member_refresh_token\"}")" "200"
-expect "with the store user's permissions" "$(jwt_claim_json "$(jq -r .token "$work/body.json")" permission)" '["products.manage","products.read","profile.read","stores.read"]'
+expect "with the store user's permissions" "$(jwt_claim_json "$(jq -r .token "$work/body.json")" permission)" '["inventory.manage","products.manage","products.read","profile.read","stores.read"]'
 expect "a store user cannot create a store" "$(send_as POST /stores "$(jq -r .token "$work/body.json")" '{"name":"Nope","address":"x"}')" "403"
 expect "assigning them again is refused" "$(send_as POST "/stores/$store_id/members" "$admin_token" "{\"email\":\"$member_email\"}")" "409"
 expect "with a stable code" "$(jq -r .code "$work/body.json")" "User.NotACustomer"
@@ -276,6 +276,12 @@ owner_refresh_token="$(jq -r .refreshToken "$work/body.json")"
 owner_id="$(jq -r .id "$work/body.json")"
 expect "an admin creates a second store" "$(send_as POST /stores "$admin_token" '{"name":"Green Basket","address":"2 Park Lane"}')" "201"
 other_store_id="$(jq -r .id "$work/body.json")"
+other_owner_email="smoke.other.$(date +%s)@example.com"
+expect "register a store user for the other store" "$(post /auth/register "{\"firstName\":\"Cy\",\"lastName\":\"Rai\",\"email\":\"$other_owner_email\",\"password\":\"Sup3r-s3cret!\"}")" "200"
+other_owner_refresh="$(jq -r .refreshToken "$work/body.json")"
+expect "an admin assigns them to the other store" "$(send_as POST "/stores/$other_store_id/members" "$admin_token" "{\"email\":\"$other_owner_email\"}")" "200"
+expect "refreshing gives them a token that says StoreUser" "$(post /auth/refresh "{\"refreshToken\":\"$other_owner_refresh\"}")" "200"
+other_owner_token="$(jq -r .token "$work/body.json")"
 expect "an admin assigns them to the first store" "$(send_as POST "/stores/$store_id/members" "$admin_token" "{\"email\":\"$owner_email\"}")" "200"
 expect "refreshing gives them a token that says StoreUser" "$(post /auth/refresh "{\"refreshToken\":\"$owner_refresh_token\"}")" "200"
 owner_token="$(jq -r .token "$work/body.json")"
@@ -301,6 +307,34 @@ expect "but its row stays, archived" "$(admin_sql "select archived_at is not nul
 expect "its name is free again" "$(send_as POST "/stores/$store_id/products" "$owner_token" '{"name":"Oat milk","price":3.2}')" "201"
 expect "the list of stores is paged too" "$(send_as GET "/stores?pageSize=1" "$member_token")" "200"
 expect "with its total" "$(jq -c '[(.items | length), (.totalCount >= 2)]' "$work/body.json")" "[1,true]"
+
+step "inventory: stock is changed by amounts, never below zero, and only by the people who run the store"
+expect "the store user has a product to stock" "$(send_as POST "/stores/$store_id/products" "$owner_token" '{"name":"Eggs","price":3}')" "201"
+egg_id="$(jq -r .id "$work/body.json")"
+expect "a customer cannot change stock" "$(send_as POST "/stores/$store_id/products/$egg_id/stock-adjustments" "$member_token" '{"delta":5}')" "403"
+expect "an admin cannot either" "$(send_as POST "/stores/$store_id/products/$egg_id/stock-adjustments" "$admin_token" '{"delta":5}')" "403"
+expect "removing from a product that never had stock is refused" "$(send_as POST "/stores/$store_id/products/$egg_id/stock-adjustments" "$owner_token" '{"delta":-1}')" "409"
+expect "with a stable code" "$(jq -r .code "$work/body.json")" "Inventory.NotEnoughStock"
+expect "the store user adds stock" "$(send_as POST "/stores/$store_id/products/$egg_id/stock-adjustments" "$owner_token" '{"delta":5}')" "200"
+expect "and the quantity is what was added" "$(jq -r .quantityOnHand "$work/body.json")" "5"
+expect "a change of zero is a validation error" "$(send_as POST "/stores/$store_id/products/$egg_id/stock-adjustments" "$owner_token" '{"delta":0}')" "400"
+expect "the other store's user cannot touch it: the store is not found" "$(send_as POST "/stores/$store_id/products/$egg_id/stock-adjustments" "$other_owner_token" '{"delta":-5}')" "404"
+expect "and nothing changed" "$(admin_sql "select quantity_on_hand from inventory_items where product_id = '$egg_id'")" "5"
+# Twelve removals of one at the same moment, from stock of five: the database lets exactly five through, and the quantity ends at zero.
+for i in $(seq 1 12); do
+  send_codes_file="$work/removal-$i"
+  ( curl -sS -o /dev/null -w '%{http_code}\n' -X POST "http://localhost:8080/stores/$store_id/products/$egg_id/stock-adjustments" \
+      -H "Authorization: Bearer $owner_token" -H 'Content-Type: application/json' -d '{"delta":-1}' > "$send_codes_file" ) &
+done
+wait
+expect "twelve removals at once from stock of five: five succeed" "$(cat "$work"/removal-* | grep -c '^200$')" "5"
+expect "and seven are refused" "$(cat "$work"/removal-* | grep -c '^409$')" "7"
+expect "the quantity is zero, never below" "$(admin_sql "select quantity_on_hand from inventory_items where product_id = '$egg_id'")" "0"
+expect "the inventory lists the store's products with their stock" "$(send_as GET "/stores/$store_id/inventory" "$owner_token")" "200"
+expect "eggs have none left" "$(jq -r '.items[] | select(.productName == "Eggs") | .quantityOnHand' "$work/body.json")" "0"
+expect "a customer cannot read the inventory" "$(send_as GET "/stores/$store_id/inventory" "$member_token")" "403"
+
+step "a store user taken out of the store loses access at once, token or no token"
 expect "an admin takes the store user out" "$(send_as DELETE "/stores/$store_id/members/$owner_id" "$admin_token")" "204"
 expect "their token still says StoreUser, but it opens nothing: the store is not found for them" "$(send_as POST "/stores/$store_id/products" "$owner_token" '{"name":"Cheese","price":4}')" "404"
 

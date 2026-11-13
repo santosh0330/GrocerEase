@@ -290,4 +290,91 @@ public class StoreScopeConventionTests
         Assert.Contains(TopLevelTypesThatQuery(typeof(StoreMember)), name => string.Equals(name, nameof(StoreMemberRepository), StringComparison.Ordinal));
         Assert.Contains(TopLevelTypesWhoseSqlNames("inventory_items"), name => string.Equals(name, nameof(InventoryItemRepository), StringComparison.Ordinal));
     }
+
+    // ---- The cross-store readers: the one deliberate exception to "ask for store-owned data in a store". ----
+
+    private static readonly Assembly Api = typeof(GrocerEase.Api.Controllers.AdminOrdersController).Assembly;
+
+    // Every class of the three outer assemblies that takes the dependency (or a generic that mentions it) in a constructor.
+    private static List<string> TypesTaking(Type dependency) =>
+        [.. new[] { Application, Infrastructure, Api }.SelectMany(assembly => assembly.GetTypes())
+            // A record's compiler-made copy constructor takes the record itself: the type is not its own user.
+            .Where(type => type.IsClass && type != dependency && type.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                .Any(constructor => constructor.GetParameters().Any(parameter => Mentions(parameter.ParameterType, dependency))))
+            .Select(type => type.Name).Order(StringComparer.Ordinal)];
+
+    private static List<Type> PortsOfCrossStoreReader(string reader) => PortsOf(reader);
+
+    [Fact]
+    public void ACrossStoreReader_WritesNothing_AndImplementsAPortOfItsOwn()
+    {
+        var offenders = CrossStoreReaders.SelectMany(reader => PortsOfCrossStoreReader(reader).Count == 0
+            ? [$"{reader} implements no port"]
+            : WritingCallsIn(reader).Select(call => $"{reader} calls {call}")).ToList();
+
+        Assert.True(offenders.Count == 0, $"A reader that crosses stores may only read, or it is a write that nothing scopes by store: {string.Join("; ", offenders)}");
+    }
+
+    [Fact]
+    public void ACrossStoreReader_IsNotARepository_SoNoRepositoryRuleIsRelaxedForIt()
+    {
+        // Its port must not end in "Repository": those are held to "every method names a store or a customer", and this one cannot.
+        var repositories = CrossStoreReaders.SelectMany(PortsOfCrossStoreReader).Where(port => port.Name.EndsWith("Repository", StringComparison.Ordinal)).Select(port => port.Name).ToList();
+
+        Assert.True(repositories.Count == 0, $"A reader across stores must not hide among the repositories: {string.Join(", ", repositories)}");
+    }
+
+    [Fact]
+    public void ACrossStoreReader_IsUsedByItsOwnUseCaseOnly_AndThatUseCaseByItsOwnGuardedController()
+    {
+        // The port is reachable from one handler, and the handler from one controller: a second user of either would be a second way to read every store's orders.
+        Assert.Equal([nameof(GrocerEase.Application.Orders.Handlers.ListAllOrdersQueryHandler)], TypesTaking(typeof(IAdminOrderReader)), StringComparer.Ordinal);
+        Assert.Equal([nameof(GrocerEase.Api.Controllers.AdminOrdersController)], TypesTaking(typeof(GrocerEase.Application.Orders.Queries.ListAllOrdersQuery)), StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public void EveryRouteOfTheControllerThatReadsEveryStore_NeedsThePermissionMadeForIt_AndOnlyReads()
+    {
+        var actions = typeof(GrocerEase.Api.Controllers.AdminOrdersController).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+
+        Assert.NotEmpty(actions);
+        Assert.All(actions, action =>
+        {
+            var authorize = action.GetCustomAttribute<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>();
+            Assert.Equal(Permissions.OrdersReadAll, authorize?.Policy);
+            Assert.Null(action.GetCustomAttribute<Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute>());
+            Assert.Equal(["GET"], action.GetCustomAttributes().OfType<Microsoft.AspNetCore.Mvc.Routing.HttpMethodAttribute>().SelectMany(attribute => attribute.HttpMethods), StringComparer.Ordinal);
+        });
+    }
+
+    [Fact]
+    public void EveryCrossStoreReader_ReallyReadsAStoreOwnedTable()
+    {
+        // The list is closed, and each entry earns its place: a reader that touches no store-owned table is not an exception to anything.
+        foreach (var reader in CrossStoreReaders)
+        {
+            var tables = StoreOwnedEntities().Where(entity => TopLevelTypesThatQuery(entity).Contains(reader, StringComparer.Ordinal)).ToList();
+
+            Assert.True(tables.Count >= 1, $"{reader} is listed as a cross-store reader but reads no store-owned table: take it off the list.");
+        }
+    }
+
+    private sealed class CarelessUser(IAdminOrderReader reader)
+    {
+        public IAdminOrderReader Reader { get; } = reader;
+    }
+
+    [Fact]
+    public void TheCrossStoreRules_CanFail_BecauseTheyFindAnExtraUser_AndSeeWritesWhereThereAreSome()
+    {
+        Assert.Contains(nameof(CarelessUser), TypesTakingIn(typeof(IAdminOrderReader), [typeof(CarelessUser)]), StringComparer.Ordinal);
+        Assert.Empty(WritingCallsIn(nameof(AdminOrderReader)));
+        Assert.Contains("ExecuteUpdateAsync", WritingCallsIn(nameof(OrderRepository)), StringComparer.Ordinal); // the scanner sees the writes of a writer
+        Assert.Contains(typeof(IAdminOrderReader), PortsOfCrossStoreReader(nameof(AdminOrderReader))); // and the reader is tied to its port
+    }
+
+    private static List<string> TypesTakingIn(Type dependency, IEnumerable<Type> types) =>
+        [.. types.Where(type => type.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+            .Any(constructor => constructor.GetParameters().Any(parameter => Mentions(parameter.ParameterType, dependency))))
+            .Select(type => type.Name)];
 }

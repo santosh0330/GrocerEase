@@ -6,6 +6,8 @@ using GrocerEase.Application.Abstractions;
 using GrocerEase.Application.Common;
 using GrocerEase.Application.Inventory.Commands;
 using GrocerEase.Application.Inventory.Common;
+using GrocerEase.Application.Inventory.Queries;
+using GrocerEase.Contracts.Common;
 using GrocerEase.Contracts.Inventory;
 using GrocerEase.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
@@ -31,9 +33,20 @@ public class InventoryControllerTests
     private static readonly Guid ProductId = Guid.CreateVersion7();
     private static readonly Guid CallerId = Guid.CreateVersion7();
 
-    private static InventoryController ControllerWith(Spy adjust, string? sub = null)
+    private sealed class ListSpy(Result<PagedResult<InventoryEntryResult>> result) : ICommandHandler<ListInventoryQuery, Result<PagedResult<InventoryEntryResult>>>
     {
-        var controller = new InventoryController(adjust)
+        public ListInventoryQuery? Received { get; private set; }
+
+        public Task<Result<PagedResult<InventoryEntryResult>>> Handle(ListInventoryQuery command, CancellationToken cancellationToken)
+        {
+            Received = command;
+            return Task.FromResult(result);
+        }
+    }
+
+    private static InventoryController ControllerWith(Spy adjust, string? sub = null, ListSpy? list = null)
+    {
+        var controller = new InventoryController(adjust, list ?? new ListSpy(Result.Success(new PagedResult<InventoryEntryResult>([], 1, 20, 0))))
         {
             ProblemDetailsFactory = new StubProblemDetailsFactory(),
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
@@ -80,9 +93,45 @@ public class InventoryControllerTests
     }
 
     [Fact]
-    public void TheRoute_NeedsThePermissionToManageInventory_NotARoleName()
+    public async Task List_PutsTheStoreTheCallerAndThePagingInTheQuery_AndReturnsThePageMapped()
     {
-        var authorize = typeof(InventoryController).GetMethod(nameof(InventoryController.Adjust))!.GetCustomAttribute<AuthorizeAttribute>();
+        var list = new ListSpy(Result.Success(new PagedResult<InventoryEntryResult>([new InventoryEntryResult(ProductId, "Milk", 7)], 2, 5, 11)));
+
+        var result = await ControllerWith(new Spy(Result.Success(new StockResult(ProductId, 1))), CallerId.ToString(), list).List(StoreId, CancellationToken.None, 2, 5);
+
+        Assert.Equal(new ListInventoryQuery(StoreId, CallerId, 2, 5), list.Received);
+        var body = Assert.IsType<PagedResponse<InventoryEntryResponse>>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal([new InventoryEntryResponse(ProductId, "Milk", 7)], body.Items);
+        Assert.Equal((2, 5, 11), (body.Page, body.PageSize, body.TotalCount));
+    }
+
+    [Fact]
+    public async Task List_WithATokenThatDoesNotNameAUser_Is401_AndRunsNothing()
+    {
+        var list = new ListSpy(Result.Success(new PagedResult<InventoryEntryResult>([], 1, 20, 0)));
+
+        var result = await ControllerWith(new Spy(Result.Success(new StockResult(ProductId, 1))), list: list).List(StoreId, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value).Status);
+        Assert.Null(list.Received);
+    }
+
+    [Fact]
+    public async Task List_AStoreThatIsNotTheirs_Is404()
+    {
+        var list = new ListSpy(Result.Failure<PagedResult<InventoryEntryResult>>(GrocerEase.Application.Stores.Common.StoreErrors.NotFound));
+
+        var result = await ControllerWith(new Spy(Result.Success(new StockResult(ProductId, 1))), CallerId.ToString(), list).List(StoreId, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status404NotFound, Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value).Status);
+    }
+
+    [Theory]
+    [InlineData(nameof(InventoryController.Adjust))]
+    [InlineData(nameof(InventoryController.List))]
+    public void EachRoute_NeedsThePermissionToManageInventory_NotARoleName(string action)
+    {
+        var authorize = typeof(InventoryController).GetMethod(action)!.GetCustomAttribute<AuthorizeAttribute>();
 
         Assert.Equal(Permissions.InventoryManage, authorize?.Policy);
         Assert.Null(authorize?.Roles);

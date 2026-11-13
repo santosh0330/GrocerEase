@@ -11,6 +11,10 @@ internal sealed class FakeInventoryItemRepository : IInventoryItemRepository
 {
     public Dictionary<(Guid StoreId, Guid ProductId), int> Quantities { get; } = [];
 
+    public Task<IReadOnlyDictionary<Guid, int>> GetQuantitiesAsync(Guid storeId, IReadOnlyCollection<Guid> productIds, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyDictionary<Guid, int>>(
+            Quantities.Where(entry => entry.Key.StoreId == storeId && productIds.Contains(entry.Key.ProductId)).ToDictionary(entry => entry.Key.ProductId, entry => entry.Value));
+
     public Task<int?> TryAdjustAsync(Guid storeId, Guid productId, int delta, CancellationToken cancellationToken)
     {
         Quantities.TryGetValue((storeId, productId), out var current);

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using GrocerEase.Contracts.Common;
 using GrocerEase.Contracts.Inventory;
 using static GrocerEase.IntegrationTests.ApiScenario;
 
@@ -242,5 +243,125 @@ public class StockAdjustmentEndpointTests(ApiFactory factory) : IClassFixture<Ap
 
         Assert.All(responses, response => Assert.Equal(HttpStatusCode.OK, response.StatusCode));
         Assert.Equal(24, await QuantityAsync(productId));
+    }
+
+    private static async Task<PagedResponse<InventoryEntryResponse>> InventoryAsync(HttpClient client, string token, Guid storeId, string query = "")
+    {
+        var response = await SendAsync(client, HttpMethod.Get, $"/stores/{storeId}/inventory{query}", token);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<PagedResponse<InventoryEntryResponse>>())!;
+    }
+
+    [Fact]
+    public async Task TheInventory_ListsEveryProductOnSale_WithItsQuantity_ZeroWhenItHasNone_InOrderOfName()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        var (token, _, _) = await StoreUserOfAsync(client, admin, storeId);
+        var milk = await CreateProductAsync(client, token, storeId, "Milk");
+        var bread = await CreateProductAsync(client, token, storeId, "Bread");
+        var gone = await CreateProductAsync(client, token, storeId, "Gone");
+        await AdjustAsync(client, token, storeId, milk.Id, new AdjustStockRequest(7));
+        await AdjustAsync(client, token, storeId, gone.Id, new AdjustStockRequest(3));
+        await SendAsync(client, HttpMethod.Delete, $"/stores/{storeId}/products/{gone.Id}", token); // archived: leaves the list, with its stock
+
+        var page = await InventoryAsync(client, token, storeId);
+
+        Assert.Equal([new InventoryEntryResponse(bread.Id, "Bread", 0), new InventoryEntryResponse(milk.Id, "Milk", 7)], page.Items);
+        Assert.Equal((1, 20, 2), (page.Page, page.PageSize, page.TotalCount));
+    }
+
+    [Fact]
+    public async Task TheInventory_IsPaged()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        var (token, _, _) = await StoreUserOfAsync(client, admin, storeId);
+        foreach (var name in new[] { "E", "B", "D", "A", "C" })
+        {
+            var product = await CreateProductAsync(client, token, storeId, name);
+            await AdjustAsync(client, token, storeId, product.Id, new AdjustStockRequest(name[0] - 'A' + 1)); // A=1 ... E=5
+        }
+
+        var second = await InventoryAsync(client, token, storeId, "?page=2&pageSize=2");
+        var past = await InventoryAsync(client, token, storeId, "?page=9");
+
+        Assert.Equal([("C", 3), ("D", 4)], second.Items.Select(entry => (entry.ProductName, entry.QuantityOnHand)));
+        Assert.Equal(5, second.TotalCount);
+        Assert.Empty(past.Items);
+    }
+
+    [Fact]
+    public async Task TheInventory_ShowsOnlyThisStoresStock()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var (storeA, storeB) = (await CreateStoreAsync(client, admin), await CreateStoreAsync(client, admin));
+        var (tokenA, _, _) = await StoreUserOfAsync(client, admin, storeA);
+        var (tokenB, _, _) = await StoreUserOfAsync(client, admin, storeB);
+        var milkA = await CreateProductAsync(client, tokenA, storeA, "Milk");
+        var milkB = await CreateProductAsync(client, tokenB, storeB, "Milk");
+        await AdjustAsync(client, tokenA, storeA, milkA.Id, new AdjustStockRequest(7));
+        await AdjustAsync(client, tokenB, storeB, milkB.Id, new AdjustStockRequest(99));
+
+        var a = await InventoryAsync(client, tokenA, storeA);
+        var b = await InventoryAsync(client, tokenB, storeB);
+
+        Assert.Equal([new InventoryEntryResponse(milkA.Id, "Milk", 7)], a.Items);
+        Assert.Equal([new InventoryEntryResponse(milkB.Id, "Milk", 99)], b.Items);
+    }
+
+    [Fact]
+    public async Task TheInventory_WithNoToken_Is401_AndACustomerOrAnAdminIs403()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        var path = $"/stores/{storeId}/inventory";
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await SendAsync(client, HttpMethod.Get, path, null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await SendAsync(client, HttpMethod.Get, path, (await RegisterAsync(client)).Token)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await SendAsync(client, HttpMethod.Get, path, admin)).StatusCode);
+    }
+
+    [Fact]
+    public async Task TheInventory_OfAStoreThatIsNotTheirs_Is404_TheSameAsAStoreThatDoesNotExist_AndATakenOutStoreUserIsRefusedAtOnce()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        var (token, _, _) = await StoreUserOfAsync(client, admin, await CreateStoreAsync(client, admin)); // runs another store
+        var (own, ownUserId, _) = await StoreUserOfAsync(client, admin, storeId);
+
+        var notTheirs = await SendAsync(client, HttpMethod.Get, $"/stores/{storeId}/inventory", token);
+        var unknown = await SendAsync(client, HttpMethod.Get, $"/stores/{Guid.CreateVersion7()}/inventory", token);
+        await SendAsync(client, HttpMethod.Delete, $"/stores/{storeId}/members/{ownUserId}", admin);
+        var takenOut = await SendAsync(client, HttpMethod.Get, $"/stores/{storeId}/inventory", own); // a token that still says StoreUser
+
+        Assert.Equal(HttpStatusCode.NotFound, notTheirs.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, takenOut.StatusCode);
+        var (a, b) = (await ProblemAsync(notTheirs), await ProblemAsync(unknown));
+        Assert.Equal(
+            (a.GetProperty("code").GetString(), a.GetProperty("detail").GetString()),
+            (b.GetProperty("code").GetString(), b.GetProperty("detail").GetString()));
+    }
+
+    [Theory]
+    [InlineData("?page=0", "page")]
+    [InlineData("?pageSize=101", "pageSize")]
+    public async Task TheInventory_PagingOutsideTheLimits_Is400_NamingTheParameter(string query, string parameter)
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        var (token, _, _) = await StoreUserOfAsync(client, admin, storeId);
+
+        var response = await SendAsync(client, HttpMethod.Get, $"/stores/{storeId}/inventory{query}", token);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.True((await ProblemAsync(response)).GetProperty("errors").TryGetProperty(parameter, out _));
     }
 }

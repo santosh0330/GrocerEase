@@ -10,6 +10,16 @@ namespace GrocerEase.Infrastructure.Persistence;
 /// </summary>
 public sealed class InventoryItemRepository(AppDbContext db) : IInventoryItemRepository
 {
+    public async Task<IReadOnlyDictionary<Guid, int>> GetQuantitiesAsync(Guid storeId, IReadOnlyCollection<Guid> productIds, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(productIds);
+
+        // No tracking: stock is changed by statements, never through the context. The store is in the query as well as the ids.
+        return await db.InventoryItems.AsNoTracking()
+            .Where(item => item.StoreId == storeId && productIds.Contains(item.ProductId))
+            .ToDictionaryAsync(item => item.ProductId, item => item.QuantityOnHand, cancellationToken);
+    }
+
     public async Task<int?> TryAdjustAsync(Guid storeId, Guid productId, int delta, CancellationToken cancellationToken)
     {
         // EF reads the single column of a raw query as the type asked for, if the column is named "Value". RETURNING gives the new quantity,

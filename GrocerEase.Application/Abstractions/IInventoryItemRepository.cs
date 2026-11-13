@@ -18,4 +18,10 @@ public interface IInventoryItemRepository
     /// store; a product archived in the instant between is harmless, since the stock of an archived product is simply not shown.
     /// </remarks>
     Task<int?> TryAdjustAsync(Guid storeId, Guid productId, int delta, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The quantity on hand of each of these products in that store. A product with no stock row is not in the result: it has none. Other
+    /// stores' rows are never returned, whatever ids are asked for.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, int>> GetQuantitiesAsync(Guid storeId, IReadOnlyCollection<Guid> productIds, CancellationToken cancellationToken);
 }

@@ -33,6 +33,51 @@ public class InventoryItemRepositoryTests
     private static async Task<int?> QuantityAsync(Guid productId) =>
         await PostgresServer.ScalarAsync<int?>(await PostgresServer.ApplicationConnectionStringAsync(), $"select quantity_on_hand from inventory_items where product_id = '{productId}'");
 
+    private static async Task<IReadOnlyDictionary<Guid, int>> QuantitiesAsync(Guid storeId, params Guid[] productIds)
+    {
+        await using var db = await NewContextAsync();
+        return await new InventoryItemRepository(db).GetQuantitiesAsync(storeId, productIds, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task TheQuantities_AreThoseOfTheAskedProductsInThatStore_AndAProductWithNoRowIsNotInThem()
+    {
+        var (store, milk) = await AProductAsync();
+        var bread = new Product(Guid.CreateVersion7(), store, "Bread", "", 1m);
+        await using (var db = await NewContextAsync())
+        {
+            Assert.True(await new ProductRepository(db).TryAddAsync(bread, CancellationToken.None));
+        }
+
+        await AdjustAsync(store, milk, 7);
+
+        var quantities = await QuantitiesAsync(store, milk, bread.Id);
+
+        Assert.Equal(new Dictionary<Guid, int> { [milk] = 7 }, quantities); // bread has no row: none
+    }
+
+    [Fact]
+    public async Task TheQuantities_NeverIncludeAnotherStoresStock_WhateverIdsAreAsked()
+    {
+        var (store, milk) = await AProductAsync();
+        var (otherStore, otherProduct) = await AProductAsync();
+        await AdjustAsync(store, milk, 7);
+        await AdjustAsync(otherStore, otherProduct, 99);
+
+        var quantities = await QuantitiesAsync(store, milk, otherProduct); // asks for another store's product by its id
+
+        Assert.Equal(new Dictionary<Guid, int> { [milk] = 7 }, quantities);
+    }
+
+    [Fact]
+    public async Task AskingForNoProducts_GivesNothing()
+    {
+        var (store, milk) = await AProductAsync();
+        await AdjustAsync(store, milk, 7);
+
+        Assert.Empty(await QuantitiesAsync(store));
+    }
+
     [Fact]
     public async Task AddingStock_ToAProductWithNoRow_MakesTheRow()
     {

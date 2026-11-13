@@ -188,6 +188,12 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("store_id");
 
+                    b.Property<int>("Version")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("version");
+
                     b.HasKey("Id")
                         .HasName("pk_products");
 
@@ -204,6 +210,8 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_products_id_is_uuid_v7", "uuid_extract_version(id) = 7");
 
                             t.HasCheckConstraint("ck_products_price_is_positive", "price > 0");
+
+                            t.HasCheckConstraint("ck_products_version_is_positive", "version >= 1");
                         });
                 });
 

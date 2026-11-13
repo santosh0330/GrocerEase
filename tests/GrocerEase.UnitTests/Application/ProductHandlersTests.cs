@@ -147,7 +147,7 @@ public class ProductHandlersTests
 
         var result = await Update().Handle(new UpdateProductCommand(_storeId, milk.Id, _userId, "Oat milk", "Vegan", 3.20m), CancellationToken.None);
 
-        Assert.Equal(new ProductResult(milk.Id, _storeId, "Oat milk", "Vegan", 3.20m), result.Value);
+        Assert.Equal(new ProductResult(milk.Id, _storeId, "Oat milk", "Vegan", 3.20m, 2), result.Value); // an edit is the next version
         Assert.Equal("Oat milk", Assert.Single(_products.Products).Name);
     }
 

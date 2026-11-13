@@ -37,6 +37,9 @@ public static class Permissions
     /// <summary>Reading one's own orders.</summary>
     public const string OrdersRead = "orders.read";
 
+    /// <summary>Seeing the orders of one's own store and moving them along: verify, ship, cancel.</summary>
+    public const string OrdersManage = "orders.manage";
+
     public static IReadOnlyList<string> All { get; } =
-        [ProfileRead, RolesRead, StoresRead, StoresManage, ProductsRead, ProductsManage, InventoryManage, OrdersPlace, OrdersRead];
+        [ProfileRead, RolesRead, StoresRead, StoresManage, ProductsRead, ProductsManage, InventoryManage, OrdersPlace, OrdersRead, OrdersManage];
 }

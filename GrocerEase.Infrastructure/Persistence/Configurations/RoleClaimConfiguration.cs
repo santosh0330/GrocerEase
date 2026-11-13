@@ -30,6 +30,7 @@ public sealed class RoleClaimConfiguration : IEntityTypeConfiguration<RoleClaim>
     private static readonly Guid StoreUserInventoryManage = new("019e0000-0000-7000-8000-000000000113");
     private static readonly Guid CustomerOrdersPlace = new("019e0000-0000-7000-8000-000000000114");
     private static readonly Guid CustomerOrdersRead = new("019e0000-0000-7000-8000-000000000115");
+    private static readonly Guid StoreUserOrdersManage = new("019e0000-0000-7000-8000-000000000116");
 
     public void Configure(EntityTypeBuilder<RoleClaim> builder)
     {
@@ -62,7 +63,7 @@ public sealed class RoleClaimConfiguration : IEntityTypeConfiguration<RoleClaim>
             .OnDelete(DeleteBehavior.Cascade)
             .IsRequired();
 
-        // What each role may do. Customer: read the own profile. Admin: that, and read the roles. StoreUser: read the own profile. Everyone may read stores; only the admin manages them. Everyone may browse products; only a store user manages them, and the stock of their store. Only a customer orders, and reads their own orders.
+        // What each role may do. Customer: read the own profile. Admin: that, and read the roles. StoreUser: read the own profile. Everyone may read stores; only the admin manages them. Everyone may browse products; only a store user manages them, and the stock of their store. Only a customer orders, and reads their own orders; only a store user moves the orders of their store.
         builder.HasData(
             new RoleClaim(CustomerProfileRead, RoleIds.Customer, Permissions.ClaimType, Permissions.ProfileRead),
             new RoleClaim(AdminProfileRead, RoleIds.Admin, Permissions.ClaimType, Permissions.ProfileRead),
@@ -78,6 +79,7 @@ public sealed class RoleClaimConfiguration : IEntityTypeConfiguration<RoleClaim>
             new RoleClaim(StoreUserProductsManage, RoleIds.StoreUser, Permissions.ClaimType, Permissions.ProductsManage),
             new RoleClaim(StoreUserInventoryManage, RoleIds.StoreUser, Permissions.ClaimType, Permissions.InventoryManage),
             new RoleClaim(CustomerOrdersPlace, RoleIds.Customer, Permissions.ClaimType, Permissions.OrdersPlace),
-            new RoleClaim(CustomerOrdersRead, RoleIds.Customer, Permissions.ClaimType, Permissions.OrdersRead));
+            new RoleClaim(CustomerOrdersRead, RoleIds.Customer, Permissions.ClaimType, Permissions.OrdersRead),
+            new RoleClaim(StoreUserOrdersManage, RoleIds.StoreUser, Permissions.ClaimType, Permissions.OrdersManage));
     }
 }

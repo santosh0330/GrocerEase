@@ -165,7 +165,7 @@ public class AssignStoreMemberEndpointTests(ApiFactory factory) : IClassFixture<
             .Content.ReadFromJsonAsync<AuthenticationResponse>();
         Assert.Equal(RoleNames.StoreUser, RoleOf(refreshed!.Token));
         Assert.Equal(RoleNames.StoreUser, RoleOf((await LoginAsync(client, email)).Token));
-        Assert.Equal(["inventory.manage", "products.manage", "products.read", "profile.read", "stores.read"], PermissionsOf(refreshed.Token), StringComparer.Ordinal);
+        Assert.Equal(["inventory.manage", "orders.manage", "products.manage", "products.read", "profile.read", "stores.read"], PermissionsOf(refreshed.Token), StringComparer.Ordinal);
     }
 
     [Fact]

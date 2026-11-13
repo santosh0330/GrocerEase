@@ -13,13 +13,15 @@ internal sealed class FakeLowStockRepository(FakeProductRepository products, Fak
 {
     public Task<PagedResult<InventoryEntryResult>> ListLowAsync(Guid storeId, int page, int pageSize, CancellationToken cancellationToken)
     {
+        // Through the entity, like the real query goes through the same expression: the fake has no second definition of "low".
         var low = products.Products
             .Where(product => product.StoreId == storeId && product.ArchivedAt is null)
-            .Where(product => stock.Thresholds.TryGetValue((storeId, product.Id), out var level)
-                && stock.Quantities.TryGetValue((storeId, product.Id), out var quantity)
-                && InventoryItem.IsLowAt(quantity, level))
-            .OrderBy(product => product.Name, StringComparer.Ordinal).ThenBy(product => product.Id)
-            .Select(product => new InventoryEntryResult(product.Id, product.Name, stock.Quantities[(storeId, product.Id)], stock.Thresholds[(storeId, product.Id)]))
+            .Select(product => (product, item: stock.Quantities.TryGetValue((storeId, product.Id), out var quantity)
+                ? new InventoryItem(product.Id, storeId, quantity, stock.Thresholds.TryGetValue((storeId, product.Id), out var level) ? level : null)
+                : null))
+            .Where(pair => pair.item is { IsLow: true })
+            .OrderBy(pair => pair.product.Name, StringComparer.Ordinal).ThenBy(pair => pair.product.Id)
+            .Select(pair => InventoryEntryResult.FromItem(pair.product.Name, pair.item!))
             .ToList();
         return Task.FromResult(new PagedResult<InventoryEntryResult>([.. low.Skip((page - 1) * pageSize).Take(pageSize)], page, pageSize, low.Count));
     }

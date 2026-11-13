@@ -1,3 +1,5 @@
+using System.Linq.Expressions;
+
 namespace GrocerEase.Domain.Entities;
 
 /// <summary>
@@ -50,12 +52,18 @@ public sealed class InventoryItem
     /// </summary>
     public int? LowStockThreshold { get; }
 
-    /// <summary>Whether the product is running out. <b>At</b> the level counts: a level of 5 is low at 5, and not at 6.</summary>
-    public bool IsLow => IsLowAt(QuantityOnHand, LowStockThreshold);
-
     /// <summary>
-    /// The one definition of "low", for a quantity and a level that are not in an entity (a product with no stock row has quantity zero).
-    /// The low-stock query repeats it in SQL (<c>quantity_on_hand &lt;= low_stock_threshold</c>), and a test holds the two to the same boundary.
+    /// The one definition of "running out": a level is set, and the quantity is <b>at or below</b> it (a level of 5 is low at 5, and not at 6).
+    /// It is an expression, not a method, so it is written once and used twice: compiled, it answers for an entity in memory
+    /// (<see cref="IsLow"/>); handed to a query (<c>Where(InventoryItem.IsLowExpression)</c>), Entity Framework translates it to SQL. Nothing
+    /// else says what "low" means, so the two cannot drift apart.
     /// </summary>
-    public static bool IsLowAt(int quantityOnHand, int? lowStockThreshold) => lowStockThreshold is { } level && quantityOnHand <= level;
+    public static readonly Expression<Func<InventoryItem, bool>> IsLowExpression =
+        item => item.LowStockThreshold != null && item.QuantityOnHand <= item.LowStockThreshold;
+
+    // Compiled once. Declared after the expression: static fields are initialised in the order they are written.
+    private static readonly Func<InventoryItem, bool> CompiledIsLow = IsLowExpression.Compile();
+
+    /// <summary>Whether the product is running out, by <see cref="IsLowExpression"/>.</summary>
+    public bool IsLow => CompiledIsLow(this);
 }

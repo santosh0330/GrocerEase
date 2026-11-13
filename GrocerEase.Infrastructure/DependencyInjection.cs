@@ -52,6 +52,7 @@ public static class DependencyInjection
         services.AddScoped<IInventoryItemRepository, InventoryItemRepository>();
         services.AddScoped<ILowStockRepository, LowStockRepository>();
         services.AddScoped<IOrderRepository, OrderRepository>();
+        services.AddScoped<IAdminOrderReader, AdminOrderReader>();
         services.AddScoped<IUnitOfWork, EfUnitOfWork>(); // scoped: it begins a transaction on the same context the repositories use
 
         // Answers "can this instance reach and use its database?" for the /health endpoint. The timeout stops a hung database

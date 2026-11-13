@@ -32,6 +32,12 @@ public class StoreScopeConventionTests
     /// </summary>
     private static readonly string[] ReadModels = [nameof(LowStockRepository)];
 
+    /// <summary>
+    /// The one place that reads a store-owned table <b>across</b> stores, on purpose: the admin's view of every store's orders. It cannot be a
+    /// read model above (those must name the store on every method), and it is not a repository, so it is named here, one by one, like them.
+    /// </summary>
+    private static readonly string[] CrossStoreReaders = [nameof(AdminOrderReader)];
+
     private static List<Type> StoreOwnedEntities() =>
         [.. Domain.GetTypes()
             .Where(type => type.IsClass && string.Equals(type.Namespace, "GrocerEase.Domain.Entities", StringComparison.Ordinal)
@@ -138,7 +144,7 @@ public class StoreScopeConventionTests
     public void AStoreOwnedTable_IsChangedOnlyByItsRepository_AndReadOnlyByItAndTheNamedReadModels(Type entity, string table, string repository)
     {
         var strangers = TopLevelTypesThatQuery(entity).Union(TopLevelTypesWhoseSqlNames(table), StringComparer.Ordinal)
-            .Except([nameof(AppDbContext), repository, .. ReadModels], StringComparer.Ordinal)
+            .Except([nameof(AppDbContext), repository, .. ReadModels, .. CrossStoreReaders], StringComparer.Ordinal)
             .ToList();
 
         Assert.True(strangers.Count == 0, $"Only {repository} may change {table} (and, besides the named read models, read it), so every write is scoped by store in one place: {string.Join(", ", strangers)}");

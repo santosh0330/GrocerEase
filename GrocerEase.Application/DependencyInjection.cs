@@ -66,6 +66,7 @@ public static class DependencyInjection
         services.AddValidatedCommandHandler<GetMyOrderQuery, Result<OrderResult>, GetMyOrderQueryHandler>();
         services.AddValidatedCommandHandler<ListMyOrdersQuery, Result<PagedResult<OrderResult>>, ListMyOrdersQueryHandler>();
         services.AddValidatedCommandHandler<ListStoreOrdersQuery, Result<PagedResult<OrderResult>>, ListStoreOrdersQueryHandler>();
+        services.AddValidatedCommandHandler<ListAllOrdersQuery, Result<PagedResult<OrderResult>>, ListAllOrdersQueryHandler>();
 
         // One statement that changes the status only if nobody changed it first: no unit of work needed.
         services.AddValidatedCommandHandler<VerifyOrderCommand, Result<OrderResult>, VerifyOrderCommandHandler>();

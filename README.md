@@ -114,7 +114,8 @@ curl -s http://localhost:8080/me -H "Authorization: Bearer $TOKEN"
 | `GET /orders`, `GET /orders/{orderId}` | the `orders.read` permission (a customer) | a page of the caller's **own** orders, newest first, or one of them; someone else's is `404 Order.NotFound` |
 | `POST /orders/{orderId}/cancel` | the `orders.cancel` permission (a customer), **their own order** | withdraws an order while it is still `Pending` (`200` and the order, stock back); `409 Order.InvalidTransition` once the store has verified it; someone else's is `404 Order.NotFound` (see [Fulfilling orders](#fulfilling-orders)) |
 | `GET /stores/{storeId}/orders` | the `orders.manage` permission **and** running that store (a store user) | a page of the store's orders, **oldest first**, optionally `?status=Pending` (any case); `400` for a status that is not one (see [Fulfilling orders](#fulfilling-orders)) |
-| `POST /stores/{storeId}/orders/{orderId}/verify`, `.../ship`, `.../cancel` | the same | moves the order along (`200` and the order); `409 Order.InvalidTransition`, `409 Order.ChangedMeanwhile`; cancelling puts the stock back |
+| `GET /admin/orders` | the `orders.read.all` permission (the admin) | a page of the orders of **every** store, **newest first**, optionally `?storeId=` and `?status=`; read only, there is no way for the admin to move an order (see [Every store's orders](#every-stores-orders)) |
+| `POST /stores/{storeId}/orders/{orderId}/verify`, `.../ship`, `.../cancel` | the `orders.manage` permission **and** running that store | moves the order along (`200` and the order); `409 Order.InvalidTransition`, `409 Order.ChangedMeanwhile`; cancelling puts the stock back |
 
 An access token lives 10 minutes (`Jwt:ExpiryMinutes`); the refresh token keeps the session going. A request without a valid token never reaches the route. It gets `application/problem+json` with a `code` to switch on, plus a `WWW-Authenticate` header:
 
@@ -393,6 +394,22 @@ Pending ──verify──▶ Verified ──ship──▶ Shipped (final)
 | `409` | `Order.CannotRestoreStock` | cancelling would take a product's stock past its limit |
 | `404` | `Store.NotFound` / `Order.NotFound` | not your store, or not an order of this store |
 | `400` | | `?status=` is not `Pending`, `Verified`, `Shipped` or `Cancelled`; a bad `page` or `pageSize` |
+
+### Every store's orders
+
+The admin runs no store, so they see none of the store routes (`GET /stores/{storeId}/orders` is `403` for an admin). They have a view of their own, and it only reads.
+
+```bash
+curl -s "http://localhost:8080/admin/orders?page=1&pageSize=20"                              -H "Authorization: Bearer $ADMIN_TOKEN"   # every store, newest first
+curl -s "http://localhost:8080/admin/orders?storeId=$STORE_ID&status=Shipped"                -H "Authorization: Bearer $ADMIN_TOKEN"   # one store, one status
+```
+
+- **A permission of its own.** `orders.read.all` is the admin's alone. It is not `orders.manage`: that one is for the orders of one's own store and moves them along. A store user, who may read the orders of *their* store, and a customer both get `403` here.
+- **A route of its own, not a second policy on the store route.** Two policies on one action must *both* pass, so they would lock out the very people each one is meant to let in.
+- **Read only.** There is no verify, ship or cancel for the admin: a `POST` to `/admin/orders/...` finds no route. If the admin should move orders, that is a different decision.
+- **Newest first**, unlike the store's queue (oldest first): the admin watches what is happening, a store user works through what has waited longest. The same `status` names, `page` and `pageSize` rules and `400`s as the store's list; `?storeId=` must be a real id (`400` for `not-a-guid` or the all-zero one).
+- **A store that does not exist is an empty page, not a `404`.** Here the store is a filter on the list, not the thing being asked for.
+- **It reads through its own small port.** `IOrderRepository` only offers methods that name a store or a customer, and an architecture test holds it to that, so the admin's cross-store read is a separate reader that only reads, used by one use case and one controller. The same test names it as the one exception.
 
 ### Paging
 

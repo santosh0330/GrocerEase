@@ -252,6 +252,14 @@ Authorization: Bearer {{login.response.body.$.token}}
 
 ###
 
+# The ADMIN reads the orders of every store, read only, NEWEST first (log in as an admin: orders.read.all is theirs alone). A store user or a customer gets 403.
+# ?storeId= narrows it to one store (a store that does not exist is an empty page), ?status= to Pending, Verified, Shipped or Cancelled (any case).
+# There is no verify, ship or cancel for the admin. 400 for a bad status, page, pageSize or storeId.
+GET {{GrocerEase.Api_HostAddress}}/admin/orders?storeId={{createStore.response.body.$.id}}&status=Pending&page=1&pageSize=20
+Authorization: Bearer {{login.response.body.$.token}}
+
+###
+
 # Health, readiness: open to anyone, no token. Runs every check, including the database.
 # 200 { "status": "Healthy", "totalDurationMs": 4.1, "checks": [ { "name": "database", "status": "Healthy", "durationMs": 3.8 } ] }
 # 503 with "status": "Unhealthy" when the database cannot be reached or has not been migrated. It never says why: that goes to the log.

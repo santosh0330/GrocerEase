@@ -48,6 +48,22 @@ public class ValidationExceptionHandlerTests
     }
 
     [Fact]
+    public async Task NestedProperties_AreKeyedByTheirJsonPath()
+    {
+        var context = new DefaultHttpContext();
+        var exception = new ValidationException(
+        [
+            new ValidationFailure("Lines[0].Quantity", "Quantity must be positive"),
+            new ValidationFailure("Lines[1].ProductId", "Product is required"),
+        ]);
+
+        await new ValidationExceptionHandler(_service).TryHandleAsync(context, exception, CancellationToken.None);
+
+        var problem = Assert.IsType<ValidationProblemDetails>(_service.Written?.ProblemDetails);
+        Assert.Equal(["lines[0].quantity", "lines[1].productId"], problem.Errors.Keys.Order(StringComparer.Ordinal), StringComparer.Ordinal);
+    }
+
+    [Fact]
     public async Task OtherExceptions_AreLeftForTheNextHandler()
     {
         var context = new DefaultHttpContext();

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using FluentValidation;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
@@ -18,13 +17,8 @@ public sealed class ValidationExceptionHandler(IProblemDetailsService problemDet
             return false;
         }
 
-        // Keys match the JSON the client sent (firstName, not FirstName).
-        var errors = validationException.Errors
-            .GroupBy(failure => JsonNamingPolicy.CamelCase.ConvertName(failure.PropertyName), StringComparer.Ordinal)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Select(failure => failure.ErrorMessage).ToArray(),
-                StringComparer.Ordinal);
+        var errors = ErrorKeys.Rekey(validationException.Errors
+            .Select(failure => KeyValuePair.Create(failure.PropertyName, new[] { failure.ErrorMessage })));
 
         httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
         return await problemDetailsService.TryWriteAsync(new ProblemDetailsContext

@@ -268,7 +268,7 @@ public class StockAdjustmentEndpointTests(ApiFactory factory) : IClassFixture<Ap
 
         var page = await InventoryAsync(client, token, storeId);
 
-        Assert.Equal([new InventoryEntryResponse(bread.Id, "Bread", 0), new InventoryEntryResponse(milk.Id, "Milk", 7)], page.Items);
+        Assert.Equal([new InventoryEntryResponse(bread.Id, "Bread", 0, null, false), new InventoryEntryResponse(milk.Id, "Milk", 7, null, false)], page.Items);
         Assert.Equal((1, 20, 2), (page.Page, page.PageSize, page.TotalCount));
     }
 
@@ -309,8 +309,8 @@ public class StockAdjustmentEndpointTests(ApiFactory factory) : IClassFixture<Ap
         var a = await InventoryAsync(client, tokenA, storeA);
         var b = await InventoryAsync(client, tokenB, storeB);
 
-        Assert.Equal([new InventoryEntryResponse(milkA.Id, "Milk", 7)], a.Items);
-        Assert.Equal([new InventoryEntryResponse(milkB.Id, "Milk", 99)], b.Items);
+        Assert.Equal([new InventoryEntryResponse(milkA.Id, "Milk", 7, null, false)], a.Items);
+        Assert.Equal([new InventoryEntryResponse(milkB.Id, "Milk", 99, null, false)], b.Items);
     }
 
     [Fact]

@@ -27,7 +27,7 @@ public class InventoryItemsTableMigrationTests
             from information_schema.columns where table_schema = 'public' and table_name = 'inventory_items'
             """);
 
-        Assert.Equal("product_id:uuid:NO, store_id:uuid:NO, quantity_on_hand:integer:NO", columns);
+        Assert.Equal("product_id:uuid:NO, store_id:uuid:NO, quantity_on_hand:integer:NO, low_stock_threshold:integer:YES", columns);
     }
 
     [Fact]

@@ -19,7 +19,7 @@ public static class InventoryMappings
     {
         ArgumentNullException.ThrowIfNull(page);
         return new PagedResponse<InventoryEntryResponse>(
-            [.. page.Items.Select(entry => new InventoryEntryResponse(entry.ProductId, entry.ProductName, entry.QuantityOnHand))], page.Page, page.PageSize, page.TotalCount);
+            [.. page.Items.Select(entry => new InventoryEntryResponse(entry.ProductId, entry.ProductName, entry.QuantityOnHand, entry.LowStockThreshold, entry.IsLow))], page.Page, page.PageSize, page.TotalCount);
     }
 
     public static StockResponse ToResponse(this StockResult result)

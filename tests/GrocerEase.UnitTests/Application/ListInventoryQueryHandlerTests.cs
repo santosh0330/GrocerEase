@@ -40,9 +40,29 @@ public class ListInventoryQueryHandlerTests
         var result = await Handler().Handle(new ListInventoryQuery(_storeId, _userId, 1, 20), CancellationToken.None);
 
         Assert.Equal(
-            [new InventoryEntryResult(bread.Id, "Bread", 0), new InventoryEntryResult(milk.Id, "Milk", 7)], // ordered by name
+            [new InventoryEntryResult(bread.Id, "Bread", 0), new InventoryEntryResult(milk.Id, "Milk", 7)], // ordered by name, no level set
             result.Value.Items);
         Assert.Equal(2, result.Value.TotalCount);
+    }
+
+    [Fact]
+    public async Task EachEntryCarriesItsLowStockLevel_AndWhetherItIsLow_AtTheLevelCounting()
+    {
+        var below = AddProduct("Below", 4);
+        var at = AddProduct("At", 5);
+        var above = AddProduct("Above", 6);
+        AddProduct("NoLevel", 0);
+        AddProduct("NoRow");
+        foreach (var product in new[] { below, at, above })
+        {
+            _stock.Thresholds[(_storeId, product.Id)] = 5;
+        }
+
+        var result = await Handler().Handle(new ListInventoryQuery(_storeId, _userId, 1, 20), CancellationToken.None);
+
+        Assert.Equal(
+            [("Above", 6, 5, false), ("At", 5, 5, true), ("Below", 4, 5, true), ("NoLevel", 0, null, false), ("NoRow", 0, null, false)],
+            result.Value.Items.Select(entry => (entry.ProductName, entry.QuantityOnHand, entry.LowStockThreshold, entry.IsLow)));
     }
 
     [Fact]

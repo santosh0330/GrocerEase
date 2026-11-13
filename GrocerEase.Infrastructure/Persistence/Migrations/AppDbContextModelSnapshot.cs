@@ -28,6 +28,10 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("product_id");
 
+                    b.Property<int?>("LowStockThreshold")
+                        .HasColumnType("integer")
+                        .HasColumnName("low_stock_threshold");
+
                     b.Property<int>("QuantityOnHand")
                         .HasColumnType("integer")
                         .HasColumnName("quantity_on_hand");
@@ -47,6 +51,8 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
 
                     b.ToTable("inventory_items", null, t =>
                         {
+                            t.HasCheckConstraint("ck_inventory_items_low_stock_threshold_in_range", "low_stock_threshold IS NULL OR (low_stock_threshold >= 0 AND low_stock_threshold <= 1000000000)");
+
                             t.HasCheckConstraint("ck_inventory_items_quantity_in_range", "quantity_on_hand >= 0 AND quantity_on_hand <= 1000000000");
                         });
                 });

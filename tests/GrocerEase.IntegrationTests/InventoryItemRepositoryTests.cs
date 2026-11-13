@@ -36,7 +36,8 @@ public class InventoryItemRepositoryTests
     private static async Task<IReadOnlyDictionary<Guid, int>> QuantitiesAsync(Guid storeId, params Guid[] productIds)
     {
         await using var db = await NewContextAsync();
-        return await new InventoryItemRepository(db).GetQuantitiesAsync(storeId, productIds, CancellationToken.None);
+        var items = await new InventoryItemRepository(db).GetItemsAsync(storeId, productIds, CancellationToken.None);
+        return items.ToDictionary(item => item.Key, item => item.Value.QuantityOnHand);
     }
 
     [Fact]
@@ -54,6 +55,27 @@ public class InventoryItemRepositoryTests
         var quantities = await QuantitiesAsync(store, milk, bread.Id);
 
         Assert.Equal(new Dictionary<Guid, int> { [milk] = 7 }, quantities); // bread has no row: none
+    }
+
+    [Fact]
+    public async Task TheItems_CarryTheLowStockLevel_WhereOneIsSet_AndNullWhereNoneIs()
+    {
+        var (store, milk) = await AProductAsync();
+        var bread = new Product(Guid.CreateVersion7(), store, "Bread", "", 1m);
+        await using (var db = await NewContextAsync())
+        {
+            Assert.True(await new ProductRepository(db).TryAddAsync(bread, CancellationToken.None));
+        }
+
+        await AdjustAsync(store, milk, 7);
+        await AdjustAsync(store, bread.Id, 2);
+        await PostgresServer.ExecuteAsync(await PostgresServer.ApplicationConnectionStringAsync(), $"update inventory_items set low_stock_threshold = 5 where product_id = '{milk}'");
+        await using var read = await NewContextAsync();
+
+        var items = await new InventoryItemRepository(read).GetItemsAsync(store, [milk, bread.Id], CancellationToken.None);
+
+        Assert.Equal((7, 5, false), (items[milk].QuantityOnHand, items[milk].LowStockThreshold, items[milk].IsLow));
+        Assert.Equal((2, (int?)null, false), (items[bread.Id].QuantityOnHand, items[bread.Id].LowStockThreshold, items[bread.Id].IsLow));
     }
 
     [Fact]

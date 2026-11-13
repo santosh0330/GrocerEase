@@ -32,7 +32,7 @@ public class JwtValidationParametersTests
         new JwtTokenGenerator(Options.Create(Settings), new FixedTimeProvider(now))
             .GenerateToken(
                 new User(Guid.CreateVersion7(), "Ada", "Lovelace", "ada@example.com", "hash", RoleIds.Customer),
-                CustomerWithItsPermission());
+                CustomerWithItsPermission()).Token;
 
     private static Role CustomerWithItsPermission()
     {

@@ -1,3 +1,4 @@
+using GrocerEase.Application.Authentication.Common;
 using GrocerEase.Domain.Entities;
 using GrocerEase.Infrastructure.Authentication;
 using Microsoft.Extensions.Options;
@@ -61,7 +62,7 @@ public class JwtTokenGeneratorTests
     [Fact]
     public async Task GenerateToken_ReturnsATokenThatValidatesWithTheSameKeyIssuerAndAudience()
     {
-        var token = Generator().GenerateToken(Ada(), CustomerRole);
+        var token = Generator().GenerateToken(Ada(), CustomerRole).Token;
 
         var result = await ValidateAsync(token, Rules());
 
@@ -71,7 +72,7 @@ public class JwtTokenGeneratorTests
     [Fact]
     public void GenerateToken_IsSignedWithHmacSha256()
     {
-        var jwt = new JsonWebToken(Generator().GenerateToken(Ada(), CustomerRole));
+        var jwt = new JsonWebToken(Generator().GenerateToken(Ada(), CustomerRole).Token);
 
         Assert.Equal("HS256", jwt.Alg);
     }
@@ -81,7 +82,7 @@ public class JwtTokenGeneratorTests
     {
         var user = Ada();
 
-        var jwt = new JsonWebToken(Generator().GenerateToken(user, CustomerRole));
+        var jwt = new JsonWebToken(Generator().GenerateToken(user, CustomerRole).Token);
 
         Assert.Equal(user.Id.ToString(), jwt.Subject);
         Assert.Equal("ada@example.com", jwt.GetClaim(JwtRegisteredClaimNames.Email).Value);
@@ -94,9 +95,9 @@ public class JwtTokenGeneratorTests
     [Fact]
     public void GenerateToken_CarriesTheNameOfTheRoleTheUserHolds()
     {
-        var customer = new JsonWebToken(Generator().GenerateToken(Ada(), CustomerRole));
+        var customer = new JsonWebToken(Generator().GenerateToken(Ada(), CustomerRole).Token);
         var admin = new JsonWebToken(Generator().GenerateToken(
-            new User(Guid.CreateVersion7(), "Grace", "Hopper", "grace@example.com", "hash", RoleIds.Admin), AdminRole));
+            new User(Guid.CreateVersion7(), "Grace", "Hopper", "grace@example.com", "hash", RoleIds.Admin), AdminRole).Token);
 
         Assert.Equal("Customer", customer.GetClaim(JwtClaims.Role).Value);
         Assert.Equal("Admin", admin.GetClaim(JwtClaims.Role).Value);
@@ -105,9 +106,9 @@ public class JwtTokenGeneratorTests
     [Fact]
     public void GenerateToken_CarriesWhatTheRoleMayDo_OneEntryPerPermission_InAStableOrder()
     {
-        var customer = new JsonWebToken(Generator().GenerateToken(Ada(), CustomerRole));
+        var customer = new JsonWebToken(Generator().GenerateToken(Ada(), CustomerRole).Token);
         var admin = new JsonWebToken(Generator().GenerateToken(
-            new User(Guid.CreateVersion7(), "Grace", "Hopper", "grace@example.com", "hash", RoleIds.Admin), AdminRole));
+            new User(Guid.CreateVersion7(), "Grace", "Hopper", "grace@example.com", "hash", RoleIds.Admin), AdminRole).Token);
 
         Assert.Equal([Permissions.ProfileRead], PermissionsIn(customer), StringComparer.Ordinal);
         Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead], PermissionsIn(admin), StringComparer.Ordinal); // sorted, though granted the other way round
@@ -116,7 +117,7 @@ public class JwtTokenGeneratorTests
     [Fact]
     public void GenerateToken_WritesThePermissionsAsAJsonArray_EvenForOne()
     {
-        var jwt = new JsonWebToken(Generator().GenerateToken(Ada(), CustomerRole));
+        var jwt = new JsonWebToken(Generator().GenerateToken(Ada(), CustomerRole).Token);
 
         Assert.Equal(System.Text.Json.JsonValueKind.Array, jwt.GetPayloadValue<System.Text.Json.JsonElement>(JwtClaims.Permission).ValueKind);
     }
@@ -126,7 +127,7 @@ public class JwtTokenGeneratorTests
     {
         var nothing = RoleWith(RoleIds.Customer, RoleNames.Customer);
 
-        var jwt = new JsonWebToken(Generator().GenerateToken(Ada(), nothing));
+        var jwt = new JsonWebToken(Generator().GenerateToken(Ada(), nothing).Token);
 
         Assert.False(jwt.TryGetClaim(JwtClaims.Permission, out _));
         Assert.Equal("Customer", jwt.GetClaim(JwtClaims.Role).Value); // the role is still named
@@ -138,7 +139,7 @@ public class JwtTokenGeneratorTests
         var role = RoleWith(RoleIds.Customer, RoleNames.Customer, Permissions.ProfileRead);
         role.AddClaim("department", "kitchen");
 
-        var jwt = new JsonWebToken(Generator().GenerateToken(Ada(), role));
+        var jwt = new JsonWebToken(Generator().GenerateToken(Ada(), role).Token);
 
         Assert.Equal([Permissions.ProfileRead], PermissionsIn(jwt), StringComparer.Ordinal);
     }
@@ -152,7 +153,7 @@ public class JwtTokenGeneratorTests
             Guid.CreateVersion7(), new string('a', User.MaxNameLength), new string('b', User.MaxNameLength),
             new string('c', User.MaxEmailLength - 12) + "@example.com", "hash", RoleIds.Admin);
 
-        var token = Generator().GenerateToken(user, AdminRole);
+        var token = Generator().GenerateToken(user, AdminRole).Token;
 
         Assert.InRange(token.Length, 1, GrocerEase.Application.Authentication.Validators.RefreshCommandValidator.MaxRefreshTokenLength);
     }
@@ -170,7 +171,7 @@ public class JwtTokenGeneratorTests
     {
         var customer = Ada(); // holds Customer
 
-        var exception = Assert.Throws<ArgumentException>(() => Generator().GenerateToken(customer, AdminRole));
+        var exception = Assert.Throws<ArgumentException>(() => Generator().GenerateToken(customer, AdminRole).Token);
 
         Assert.Contains("Admin", exception.Message, StringComparison.Ordinal);
     }
@@ -180,7 +181,7 @@ public class JwtTokenGeneratorTests
     {
         var user = Ada();
 
-        var jwt = new JsonWebToken(Generator().GenerateToken(user, CustomerRole));
+        var jwt = new JsonWebToken(Generator().GenerateToken(user, CustomerRole).Token);
 
         Assert.DoesNotContain(jwt.Claims, claim => claim.Value.Contains(user.PasswordHash, StringComparison.Ordinal));
         Assert.False(jwt.TryGetClaim("password", out _));
@@ -192,10 +193,60 @@ public class JwtTokenGeneratorTests
     {
         var now = new DateTimeOffset(2030, 1, 1, 12, 0, 0, TimeSpan.Zero);
 
-        var jwt = new JsonWebToken(Generator(now, Settings(expiryMinutes: 15)).GenerateToken(Ada(), CustomerRole));
+        var jwt = new JsonWebToken(Generator(now, Settings(expiryMinutes: 15)).GenerateToken(Ada(), CustomerRole).Token);
 
         Assert.Equal(now.AddMinutes(15).UtcDateTime, jwt.ValidTo);
         Assert.Equal(now.UtcDateTime, jwt.ValidFrom);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(10)]
+    [InlineData(60)]
+    [InlineData(1440)]
+    public void GenerateToken_SaysItExpiresAtTheExactInstantItsExpClaimHolds_WhateverTheSetting(int minutes)
+    {
+        var now = new DateTimeOffset(2030, 1, 1, 12, 0, 0, TimeSpan.Zero);
+
+        var issued = Generator(now, Settings(expiryMinutes: minutes)).GenerateToken(Ada(), CustomerRole);
+
+        var exp = new JsonWebToken(issued.Token).GetPayloadValue<long>(JwtRegisteredClaimNames.Exp);
+        Assert.Equal(now.AddMinutes(minutes), issued.ExpiresAt);
+        Assert.Equal(issued.ExpiresAt.ToUnixTimeSeconds(), exp);
+    }
+
+    [Fact]
+    public void GenerateToken_WithAClockThatHasFractionsOfASecond_StillSaysTheWholeSecondTheTokenHolds()
+    {
+        // A JWT cannot say a fraction of a second. Were the response to carry 12:10:00.9 and the token 12:10:00, a client that trusted the response
+        // would believe the token lived almost a second longer than it does.
+        var now = new DateTimeOffset(2030, 1, 1, 12, 0, 0, 900, TimeSpan.Zero);
+
+        var issued = Generator(now, Settings(expiryMinutes: 10)).GenerateToken(Ada(), CustomerRole);
+
+        Assert.Equal(new DateTimeOffset(2030, 1, 1, 12, 10, 0, TimeSpan.Zero), issued.ExpiresAt);
+        Assert.Equal(TimeSpan.Zero, issued.ExpiresAt.Offset);
+        Assert.Equal(issued.ExpiresAt.ToUnixTimeSeconds(), new JsonWebToken(issued.Token).GetPayloadValue<long>(JwtRegisteredClaimNames.Exp));
+    }
+
+    [Fact]
+    public void GenerateToken_ExpiryMovesWithTheSetting()
+    {
+        var now = new DateTimeOffset(2030, 1, 1, 12, 0, 0, TimeSpan.Zero);
+
+        var soon = Generator(now, Settings(expiryMinutes: 5)).GenerateToken(Ada(), CustomerRole);
+        var later = Generator(now, Settings(expiryMinutes: 30)).GenerateToken(Ada(), CustomerRole);
+
+        Assert.Equal(TimeSpan.FromMinutes(25), later.ExpiresAt - soon.ExpiresAt);
+    }
+
+    [Fact]
+    public void IssuedAccessToken_ToString_DoesNotContainTheToken_ButSaysWhenItExpires()
+    {
+        var text = new IssuedAccessToken("jwt-value", new DateTimeOffset(2030, 1, 1, 12, 10, 0, TimeSpan.Zero)).ToString();
+
+        Assert.DoesNotContain("jwt-value", text, StringComparison.Ordinal);
+        Assert.Contains("2030-01-01T12:10:00", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -203,7 +254,7 @@ public class JwtTokenGeneratorTests
     {
         var issuedTwoHoursAgo = DateTimeOffset.UtcNow.AddHours(-2);
 
-        var token = Generator(issuedTwoHoursAgo, Settings(expiryMinutes: 60)).GenerateToken(Ada(), CustomerRole);
+        var token = Generator(issuedTwoHoursAgo, Settings(expiryMinutes: 60)).GenerateToken(Ada(), CustomerRole).Token;
         var result = await ValidateAsync(token, Rules());
 
         Assert.False(result.IsValid);
@@ -213,7 +264,7 @@ public class JwtTokenGeneratorTests
     [Fact]
     public async Task GenerateToken_ProducesATokenThatIsRejectedWithAnotherKey()
     {
-        var token = Generator().GenerateToken(Ada(), CustomerRole);
+        var token = Generator().GenerateToken(Ada(), CustomerRole).Token;
 
         var result = await ValidateAsync(token, Rules(key: "a-completely-different-signing-key-9876543210"));
 
@@ -223,7 +274,7 @@ public class JwtTokenGeneratorTests
     [Fact]
     public async Task GenerateToken_ProducesATokenThatIsRejectedForAnotherAudienceOrIssuer()
     {
-        var token = Generator().GenerateToken(Ada(), CustomerRole);
+        var token = Generator().GenerateToken(Ada(), CustomerRole).Token;
 
         Assert.False((await ValidateAsync(token, Rules(audience: "someone-else"))).IsValid);
         Assert.False((await ValidateAsync(token, Rules(issuer: "someone-else"))).IsValid);
@@ -232,7 +283,7 @@ public class JwtTokenGeneratorTests
     [Fact]
     public async Task GenerateToken_ProducesATokenThatIsRejectedWhenItsPayloadIsTamperedWith()
     {
-        var token = Generator().GenerateToken(Ada(), CustomerRole);
+        var token = Generator().GenerateToken(Ada(), CustomerRole).Token;
         var parts = token.Split('.');
         var forgedPayload = Base64UrlEncoder.Encode("""{"sub":"someone-else","iss":"issuer-x","aud":"audience-x","exp":9999999999}""");
 
@@ -247,8 +298,8 @@ public class JwtTokenGeneratorTests
         var generator = Generator();
         var user = Ada();
 
-        var first = new JsonWebToken(generator.GenerateToken(user, CustomerRole));
-        var second = new JsonWebToken(generator.GenerateToken(user, CustomerRole));
+        var first = new JsonWebToken(generator.GenerateToken(user, CustomerRole).Token);
+        var second = new JsonWebToken(generator.GenerateToken(user, CustomerRole).Token);
 
         Assert.NotEqual(first.Id, second.Id, StringComparer.Ordinal);
     }
@@ -258,7 +309,7 @@ public class JwtTokenGeneratorTests
     {
         Assert.Throws<ArgumentNullException>(() => new JwtTokenGenerator(null!, TimeProvider.System));
         Assert.Throws<ArgumentNullException>(() => new JwtTokenGenerator(Options.Create(Settings()), null!));
-        Assert.Throws<ArgumentNullException>(() => Generator().GenerateToken(null!, CustomerRole));
-        Assert.Throws<ArgumentNullException>(() => Generator().GenerateToken(Ada(), null!));
+        Assert.Throws<ArgumentNullException>(() => Generator().GenerateToken(null!, CustomerRole).Token);
+        Assert.Throws<ArgumentNullException>(() => Generator().GenerateToken(Ada(), null!).Token);
     }
 }

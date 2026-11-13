@@ -110,6 +110,7 @@ curl -s http://localhost:8080/me -H "Authorization: Bearer $TOKEN"
 | `GET /stores/{storeId}/inventory` | the same | a page of every product on sale with `{ productId, productName, quantityOnHand }`, zero when it has never had stock |
 | `POST /stores/{storeId}/orders` | the `orders.place` permission (a customer) | body `{ "deliveryAddress": "...", "lines": [{ "productId": "...", "quantity": 2 }] }`; `201` and the order; `409 Order.InsufficientStock`; limited to 20 a minute (see [Orders](#orders)) |
 | `GET /orders`, `GET /orders/{orderId}` | the `orders.read` permission (a customer) | a page of the caller's **own** orders, newest first, or one of them; someone else's is `404 Order.NotFound` |
+| `POST /orders/{orderId}/cancel` | the `orders.cancel` permission (a customer), **their own order** | withdraws an order while it is still `Pending` (`200` and the order, stock back); `409 Order.InvalidTransition` once the store has verified it; someone else's is `404 Order.NotFound` (see [Fulfilling orders](#fulfilling-orders)) |
 | `GET /stores/{storeId}/orders` | the `orders.manage` permission **and** running that store (a store user) | a page of the store's orders, **oldest first**, optionally `?status=Pending` (any case); `400` for a status that is not one (see [Fulfilling orders](#fulfilling-orders)) |
 | `POST /stores/{storeId}/orders/{orderId}/verify`, `.../ship`, `.../cancel` | the same | moves the order along (`200` and the order); `409 Order.InvalidTransition`, `409 Order.ChangedMeanwhile`; cancelling puts the stock back |
 
@@ -311,10 +312,11 @@ Pending ──verify──▶ Verified ──ship──▶ Shipped (final)
 - **When two people act at once, the database decides.** A move is one SQL statement that changes the row only if it still has the status that was read. Of two store users verifying the same order, one gets `200`; the other gets `409` (`Order.InvalidTransition` if they read it after the winner, `Order.ChangedMeanwhile` if they read it before and lost the write). Nothing is written twice.
 - **Cancelling puts the stock back, once.** The status changes first and the stock goes back in the same transaction, so only the winner of a race restores: ten cancellations of one order restore its quantity once, and an order that shipped first is refused and its stock stays gone. Lines are restored in order of product id, like they are reserved, so two cancellations cannot deadlock. If a quantity cannot be put back because the store has since filled the stock to its limit, the answer is `409 Order.CannotRestoreStock` and nothing changes.
 - **Shipping touches no stock**: it left when the order was placed.
+- **A customer can cancel their own order, but only while it is `Pending`** (`POST /orders/{orderId}/cancel`, the `orders.cancel` permission). The entity's `Withdraw()` is legal from `Pending` only, so once the store has verified an order, only the store can cancel it: the customer gets `409 Order.InvalidTransition`. It ends in the same `Cancelled`, with the stock back, in one transaction, using the same compare-and-set: a customer cancelling while a store user verifies has exactly one winner, and the stock goes back only if the cancellation won. Someone else's order is `404 Order.NotFound`, exactly as one that does not exist; a store user or an admin gets `403` here.
 
 | Status | `code` | When |
 |---|---|---|
-| `409` | `Order.InvalidTransition` | the move is not allowed from the status the order is in (shipping a pending order, cancelling a shipped one, anything on a final one) |
+| `409` | `Order.InvalidTransition` | the move is not allowed from the status the order is in (shipping a pending order, cancelling a shipped one, a customer cancelling a verified one, anything on a final one) |
 | `409` | `Order.ChangedMeanwhile` | someone moved the order between this request reading it and writing it |
 | `409` | `Order.CannotRestoreStock` | cancelling would take a product's stock past its limit |
 | `404` | `Store.NotFound` / `Order.NotFound` | not your store, or not an order of this store |

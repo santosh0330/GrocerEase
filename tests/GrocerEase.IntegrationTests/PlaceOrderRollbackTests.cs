@@ -38,8 +38,8 @@ public class PlaceOrderRollbackTests
         }
 
         var inventory = new InventoryItemRepository(db);
-        Assert.Equal(5, await inventory.TryAdjustAsync(store.Id, products[0].Id, 5, CancellationToken.None));
-        Assert.Equal(1, await inventory.TryAdjustAsync(store.Id, products[1].Id, 1, CancellationToken.None));
+        Assert.Equal(5, await inventory.TryAdjustAsync(store.Id, products[0].Id, await StockActors.ChangeAsync(5), CancellationToken.None));
+        Assert.Equal(1, await inventory.TryAdjustAsync(store.Id, products[1].Id, await StockActors.ChangeAsync(1), CancellationToken.None));
         return new World(store.Id, customer.Id, products[0].Id, products[1].Id);
     }
 
@@ -63,6 +63,9 @@ public class PlaceOrderRollbackTests
             await PostgresServer.ScalarAsync<long>(connection, $"select count(*) from order_lines l join orders o on o.id = l.order_id where o.customer_id = '{world.CustomerId}'"));
     }
 
+    private static async Task<long> MovementsAsync(World world) =>
+        await PostgresServer.ScalarAsync<long>(await PostgresServer.ApplicationConnectionStringAsync(), $"select count(*) from stock_movements where store_id = '{world.StoreId}'");
+
     [Fact]
     public async Task WhenTheSecondLineCannotBeFilled_TheStockTheFirstLineTookGoesBack_AndNoOrderExists()
     {
@@ -74,6 +77,7 @@ public class PlaceOrderRollbackTests
 
         Assert.Equal("Order.InsufficientStock", result.Error.Code);
         Assert.Equal((5, 1, 0L, 0L), await StateAsync(world)); // nothing changed at all
+        Assert.Equal(2L, await MovementsAsync(world)); // the first line's movement went back with its stock: only the setup's two remain
     }
 
     [Fact]
@@ -86,19 +90,58 @@ public class PlaceOrderRollbackTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal((3, 0, 1L, 2L), await StateAsync(world));
+        Assert.Equal(4L, await MovementsAsync(world)); // the setup's two, and one movement for each of the two lines
+    }
+
+    /// <summary>The real order repository, except that the order cannot be stored: whatever the reason, it is an exception after the stock was taken.</summary>
+    private sealed class OrdersThatCannotBeStored(IOrderRepository inner) : IOrderRepository
+    {
+        public Task AddAsync(Order order, CancellationToken cancellationToken) => throw new InvalidOperationException("The order cannot be stored.");
+
+        public Task<Order?> GetForCustomerAsync(Guid customerId, Guid orderId, CancellationToken cancellationToken) => inner.GetForCustomerAsync(customerId, orderId, cancellationToken);
+
+        public Task<Order?> GetForStoreAsync(Guid storeId, Guid orderId, CancellationToken cancellationToken) => inner.GetForStoreAsync(storeId, orderId, cancellationToken);
+
+        public Task<PagedResult<Order>> ListForCustomerAsync(Guid customerId, int page, int pageSize, CancellationToken cancellationToken) =>
+            inner.ListForCustomerAsync(customerId, page, pageSize, cancellationToken);
+
+        public Task<PagedResult<Order>> ListForStoreAsync(Guid storeId, OrderStatus? status, int page, int pageSize, CancellationToken cancellationToken) =>
+            inner.ListForStoreAsync(storeId, status, page, pageSize, cancellationToken);
+
+        public Task<bool> TryChangeStatusAsync(Guid storeId, Guid orderId, OrderStatus expected, OrderStatus target, CancellationToken cancellationToken) =>
+            inner.TryChangeStatusAsync(storeId, orderId, expected, target, cancellationToken);
     }
 
     [Fact]
-    public async Task AnOrderThatFailsAtTheLastMoment_ForExampleWhenTheOrderCannotBeStored_TakesNoStock()
+    public async Task AnOrderThatCannotBeStoredAfterItsStockWasTaken_TakesNoStock_AndLeavesNoMovements()
+    {
+        await using var provider = await RealApplication.BuildAsync(services =>
+            services.AddScoped<IOrderRepository>(sp => new OrdersThatCannotBeStored(new OrderRepository(sp.GetRequiredService<AppDbContext>()))));
+        var world = await AWorldAsync(provider);
+        var command = new PlaceOrderCommand(world.StoreId, world.CustomerId, "x", [new OrderLineInput(world.FirstId, 2), new OrderLineInput(world.SecondId, 1)]);
+        using var scope = provider.CreateScope();
+
+        // Both lines are reserved (the quantities change, and each change writes its movement), and then the order cannot be stored.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => scope.ServiceProvider.GetRequiredService<ICommandHandler<PlaceOrderCommand, Result<OrderResult>>>().Handle(command, CancellationToken.None));
+
+        Assert.Equal((5, 1, 0L, 0L), await StateAsync(world)); // the stock went back with the failed unit...
+        Assert.Equal(2L, await MovementsAsync(world)); // ...and so did the two movements: only the setup's two deliveries remain
+    }
+
+    [Fact]
+    public async Task ACustomerWhoDoesNotExist_IsRefusedByTheLedgersForeignKey_AtTheFirstReservation_AndTakesNoStock()
     {
         await using var provider = await RealApplication.BuildAsync();
         var world = await AWorldAsync(provider);
-        // A customer who does not exist: the stock is reserved first and the order is stored last, and the foreign key then refuses the order.
+        // The customer is the actor of the movement, and the ledger's foreign key says an actor is a real user. The statement that takes the
+        // stock and writes the movement is one, so it fails as one: the quantity does not move.
         var command = new PlaceOrderCommand(world.StoreId, Guid.CreateVersion7(), "x", [new OrderLineInput(world.FirstId, 2)]);
         using var scope = provider.CreateScope();
 
-        await Assert.ThrowsAsync<DbUpdateException>(() => scope.ServiceProvider.GetRequiredService<ICommandHandler<PlaceOrderCommand, Result<OrderResult>>>().Handle(command, CancellationToken.None));
+        var exception = await Assert.ThrowsAsync<Npgsql.PostgresException>(() => scope.ServiceProvider.GetRequiredService<ICommandHandler<PlaceOrderCommand, Result<OrderResult>>>().Handle(command, CancellationToken.None));
 
-        Assert.Equal((5, 1, 0L, 0L), await StateAsync(world)); // the 2 taken from the first product went back with the failed unit
+        Assert.Equal("fk_stock_movements_users_actor_id", exception.ConstraintName);
+        Assert.Equal((5, 1, 0L, 0L), await StateAsync(world));
+        Assert.Equal(2L, await MovementsAsync(world));
     }
 }

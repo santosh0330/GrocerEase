@@ -171,6 +171,7 @@ public class PlaceOrderEndpointTests(ApiFactory factory) : IClassFixture<ApiFact
         Assert.Equal(15, responses.Count(response => response.StatusCode == HttpStatusCode.Conflict));
         Assert.Equal(0, await StockAsync(shop.Milk.Id)); // never oversold
         Assert.Equal(5L, await OrdersInAsync(shop.StoreId)); // and one order for each unit that left
+        await Ledger.AgreesAsync(shop.StoreId); // however the stock moved, the ledger adds up to it
     }
 
     [Fact]
@@ -187,6 +188,7 @@ public class PlaceOrderEndpointTests(ApiFactory factory) : IClassFixture<ApiFact
         Assert.Equal(1, responses.Count(response => response.StatusCode == HttpStatusCode.Created));
         Assert.Equal(1, responses.Count(response => response.StatusCode == HttpStatusCode.Conflict));
         Assert.Equal(0, await StockAsync(shop.Milk.Id));
+        await Ledger.AgreesAsync(shop.StoreId); // however the stock moved, the ledger adds up to it
     }
 
     [Fact]
@@ -204,6 +206,7 @@ public class PlaceOrderEndpointTests(ApiFactory factory) : IClassFixture<ApiFact
 
         Assert.All(responses, response => Assert.Equal(HttpStatusCode.Created, response.StatusCode));
         Assert.Equal((970, 970), (await StockAsync(shop.Milk.Id), await StockAsync(shop.Bread.Id)));
+        await Ledger.AgreesAsync(shop.StoreId); // however the stock moved, the ledger adds up to it
     }
 
     [Fact]

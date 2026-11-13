@@ -32,7 +32,7 @@ public class LowStockRepositoryTests
         var inventory = new InventoryItemRepository(db);
         if (stock is { } quantity && quantity > 0)
         {
-            Assert.Equal(quantity, await inventory.TryAdjustAsync(storeId, product.Id, quantity, CancellationToken.None));
+            Assert.Equal(quantity, await inventory.TryAdjustAsync(storeId, product.Id, await StockActors.ChangeAsync(quantity), CancellationToken.None));
         }
 
         if (level is { } threshold || stock is not null)

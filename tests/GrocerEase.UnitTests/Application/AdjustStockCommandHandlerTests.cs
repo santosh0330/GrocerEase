@@ -125,4 +125,37 @@ public class AdjustStockCommandHandlerTests
 
         Assert.Empty(_stock.Quantities);
     }
+
+    [Fact]
+    public async Task EveryChangeThatIsMade_LeavesOneMovement_WithTheAmountTheUserAndNoOrder_AndTheMovementsAddUpToTheQuantity()
+    {
+        await Handler().Handle(Adjust(10), CancellationToken.None);
+        await Handler().Handle(Adjust(-3), CancellationToken.None);
+        var result = await Handler().Handle(Adjust(5), CancellationToken.None);
+
+        Assert.Equal([(10, StockMovementReason.Received), (-3, StockMovementReason.Correction), (5, StockMovementReason.Received)], _stock.Movements.Select(m => (m.Delta, m.Reason)));
+        Assert.All(_stock.Movements, movement => Assert.Equal((_userId, (Guid?)null, _milk.Id, _storeId), (movement.ActorId, movement.OrderId, movement.ProductId, movement.StoreId)));
+        Assert.Equal(result.Value.QuantityOnHand, _stock.Movements.Sum(movement => movement.Delta)); // the ledger adds up
+    }
+
+    [Fact]
+    public async Task ARefusedChange_LeavesNoMovement()
+    {
+        await Handler().Handle(Adjust(2), CancellationToken.None);
+
+        var refused = await Handler().Handle(Adjust(-3), CancellationToken.None); // would go below zero
+
+        Assert.Equal(InventoryErrors.NotEnoughStock, refused.Error);
+        Assert.Equal([2], _stock.Movements.Select(movement => movement.Delta));
+    }
+
+    [Fact]
+    public async Task AChangeForAProductThatIsNotFoundOrAStoreThatIsNotTheirs_LeavesNoMovement()
+    {
+        await Handler().Handle(new AdjustStockCommand(_storeId, Guid.CreateVersion7(), _userId, 5), CancellationToken.None);
+        await Handler().Handle(new AdjustStockCommand(Guid.CreateVersion7(), _milk.Id, _userId, 5), CancellationToken.None);
+        await Handler().Handle(new AdjustStockCommand(_storeId, _milk.Id, Guid.CreateVersion7(), 5), CancellationToken.None);
+
+        Assert.Empty(_stock.Movements);
+    }
 }

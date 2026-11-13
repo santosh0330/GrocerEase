@@ -1,3 +1,5 @@
+using GrocerEase.Application.Common;
+using GrocerEase.Application.Inventory.Common;
 using GrocerEase.Domain.Entities;
 
 namespace GrocerEase.Application.Abstractions;
@@ -9,17 +11,30 @@ namespace GrocerEase.Application.Abstractions;
 public interface IInventoryItemRepository
 {
     /// <summary>
-    /// Adds <paramref name="delta"/> (negative to remove) to the quantity on hand of a product of that store, and returns the quantity
-    /// now. Returns <c>null</c>, and changes nothing, when the result would be below zero or above
-    /// <see cref="GrocerEase.Domain.Entities.InventoryItem.MaxQuantity"/>. A product with no stock row has none: adding makes the row,
-    /// removing is refused.
+    /// Adds <see cref="StockChange.Delta"/> (negative to remove) to the quantity on hand of a product of that store, writes the
+    /// <see cref="StockMovement"/> that explains it, and returns the quantity now. Returns <c>null</c>, and changes nothing (no movement
+    /// either), when the result would be below zero or above <see cref="InventoryItem.MaxQuantity"/>. A product with no stock row has
+    /// none: adding makes the row, removing is refused.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// One SQL statement with the limits inside it, never a read followed by a write: two changes at the same moment both count, and the
     /// quantity can never be driven below zero by two requests that each saw enough. The caller checks that the product exists in the
     /// store; a product archived in the instant between is harmless, since the stock of an archived product is simply not shown.
+    /// </para>
+    /// <para>
+    /// <b>The movement is written by the same statement</b> (a data-modifying <c>WITH</c>), so the ledger and the quantity cannot
+    /// disagree: there is no moment between them, whatever happens to the transaction around. This is the only way the quantity changes
+    /// (an architecture test says so), so no writer can skip the ledger.
+    /// </para>
     /// </remarks>
-    Task<int?> TryAdjustAsync(Guid storeId, Guid productId, int delta, CancellationToken cancellationToken);
+    Task<int?> TryAdjustAsync(Guid storeId, Guid productId, StockChange change, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// One page of the history of a product of that store, <b>newest first</b>. <paramref name="page"/> counts from 1. A page past the end is
+    /// empty. Another store's movements are never returned, whatever product is asked for.
+    /// </summary>
+    Task<PagedResult<StockMovement>> ListMovementsAsync(Guid storeId, Guid productId, int page, int pageSize, CancellationToken cancellationToken);
 
     /// <summary>
     /// Sets the low-stock level of a product of that store (<c>null</c> clears it) and returns the quantity on hand. A product with no stock

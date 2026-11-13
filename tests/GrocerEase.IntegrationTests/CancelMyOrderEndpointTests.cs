@@ -142,6 +142,7 @@ public class CancelMyOrderEndpointTests(ApiFactory factory) : IClassFixture<ApiF
         }
 
         Assert.Equal(("Cancelled", 10), (await StatusInDatabaseAsync(order.Id), await StockAsync(shop.Milk.Id))); // 6 + 4, not 6 + 40
+        await Ledger.AgreesAsync(shop.StoreId); // however the stock moved, the ledger adds up to it
     }
 
     // The case that would double-restore, or restore for a verified order, if the guard were a read followed by a write.
@@ -173,5 +174,6 @@ public class CancelMyOrderEndpointTests(ApiFactory factory) : IClassFixture<ApiF
 
         // Each cancelled order put its 2 back; a verified one did not.
         Assert.Equal(68 + (2 * results.Count(result => result.Cancel == HttpStatusCode.OK)), await StockAsync(shop.Milk.Id));
+        await Ledger.AgreesAsync(shop.StoreId); // however the stock moved, the ledger adds up to it
     }
 }

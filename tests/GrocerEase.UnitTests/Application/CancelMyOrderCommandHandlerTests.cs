@@ -119,4 +119,28 @@ public class CancelMyOrderCommandHandlerTests
         Assert.Equal("Order.CannotRestoreStock", result.Error.Code);
         Assert.Contains("'Milk'", result.Error.Description, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task EachLinesStockThatGoesBack_LeavesAnOrderCancelledMovement_ForThatOrder_ByTheCustomerWhoWithdrewIt()
+    {
+        var milk = Guid.CreateVersion7();
+        var order = Place(OrderStatus.Pending, null, (milk, 2));
+
+        await CancelAsync(order.Id);
+
+        var movement = Assert.Single(_stock.Movements);
+        Assert.Equal((milk, 2, StockMovementReason.OrderCancelled, _me, (Guid?)order.Id), (movement.ProductId, movement.Delta, movement.Reason, movement.ActorId, movement.OrderId));
+    }
+
+    [Fact]
+    public async Task AWithdrawalThatIsRefused_OrNotTheCallers_LeavesNoMovement()
+    {
+        var verified = Place(OrderStatus.Verified);
+        var theirs = Place(OrderStatus.Pending, Guid.CreateVersion7());
+
+        await CancelAsync(verified.Id);
+        await CancelAsync(theirs.Id);
+
+        Assert.Empty(_stock.Movements);
+    }
 }

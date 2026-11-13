@@ -1,0 +1,21 @@
+namespace GrocerEase.Application.Abstractions;
+
+/// <summary>
+/// Where the stock of products is kept. Application owns the interface and Infrastructure implements it. <b>Every method names the
+/// store</b>, like <see cref="IProductRepository"/>: stock is always asked for in the store it belongs to (an architecture test says so).
+/// </summary>
+public interface IInventoryItemRepository
+{
+    /// <summary>
+    /// Adds <paramref name="delta"/> (negative to remove) to the quantity on hand of a product of that store, and returns the quantity
+    /// now. Returns <c>null</c>, and changes nothing, when the result would be below zero or above
+    /// <see cref="GrocerEase.Domain.Entities.InventoryItem.MaxQuantity"/>. A product with no stock row has none: adding makes the row,
+    /// removing is refused.
+    /// </summary>
+    /// <remarks>
+    /// One SQL statement with the limits inside it, never a read followed by a write: two changes at the same moment both count, and the
+    /// quantity can never be driven below zero by two requests that each saw enough. The caller checks that the product exists in the
+    /// store; a product archived in the instant between is harmless, since the stock of an archived product is simply not shown.
+    /// </remarks>
+    Task<int?> TryAdjustAsync(Guid storeId, Guid productId, int delta, CancellationToken cancellationToken);
+}

@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using GrocerEase.Contracts.Authentication;
+using GrocerEase.Contracts.Products;
 using GrocerEase.Contracts.Stores;
 
 namespace GrocerEase.IntegrationTests;
@@ -87,5 +88,13 @@ internal static class ApiScenario
         Assert.Equal(HttpStatusCode.OK, refreshed.StatusCode);
         var token = (await refreshed.Content.ReadFromJsonAsync<AuthenticationResponse>())!.Token;
         return (token, (await assigned.Content.ReadFromJsonAsync<StoreMemberResponse>())!.UserId, email);
+    }
+
+    public static async Task<ProductResponse> CreateProductAsync(HttpClient client, string storeUserToken, Guid storeId, string? name = null)
+    {
+        var response = await SendAsync(
+            client, HttpMethod.Post, $"/stores/{storeId}/products", storeUserToken, new CreateProductRequest(name ?? $"Milk {Guid.NewGuid():N}", "Fresh", 2.50m));
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<ProductResponse>())!;
     }
 }

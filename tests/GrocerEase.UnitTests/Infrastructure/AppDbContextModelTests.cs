@@ -62,10 +62,10 @@ public class AppDbContextModelTests
             Of(claims, RoleIds.Admin),
             StringComparer.Ordinal);
         Assert.Equal(
-            [Permissions.ProductsManage, Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead],
+            [Permissions.InventoryManage, Permissions.ProductsManage, Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead],
             Of(claims, RoleIds.StoreUser),
             StringComparer.Ordinal);
-        Assert.Equal(12, claims.Count);
+        Assert.Equal(13, claims.Count);
     }
 
     [Fact]

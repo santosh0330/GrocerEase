@@ -37,11 +37,17 @@ public class StoreScopeConventionTests
     private static bool Mentions(Type type, Type entity) =>
         type == entity || (type.IsGenericType && type.GetGenericArguments().Any(argument => Mentions(argument, entity)));
 
-    /// <summary>The methods of a repository interface that deal with a store-owned entity and neither take a storeId nor take an entity that carries one.</summary>
+    /// <summary>
+    /// The methods of a repository interface that deal with a store-owned entity and neither take a storeId nor take an entity that
+    /// carries one. A method deals with an entity when its signature mentions it, <b>or</b> when the interface is that entity's own
+    /// (<c>IInventoryItemRepository</c> for <c>InventoryItem</c>): then every method counts, even one that returns only a number.
+    /// </summary>
     private static List<string> UnscopedMethods(Type repository, IReadOnlyCollection<Type> storeOwned) =>
         [.. repository.GetMethods()
             .Where(method => storeOwned.Any(entity =>
-                Mentions(method.ReturnType, entity) || method.GetParameters().Any(parameter => Mentions(parameter.ParameterType, entity))))
+                string.Equals(repository.Name, $"I{entity.Name}Repository", StringComparison.Ordinal)
+                || Mentions(method.ReturnType, entity)
+                || method.GetParameters().Any(parameter => Mentions(parameter.ParameterType, entity))))
             .Where(method => !method.GetParameters().Any(parameter =>
                 (parameter.ParameterType == typeof(Guid) && string.Equals(parameter.Name, "storeId", StringComparison.Ordinal))
                 || storeOwned.Contains(parameter.ParameterType)))
@@ -84,17 +90,46 @@ public class StoreScopeConventionTests
             .Order(StringComparer.Ordinal)];
     }
 
+    // A repository may also change its table with raw SQL (the inventory does, so that a change is one statement), which never touches the
+    // DbSet. The SQL names the table, so look for the table's name in the string literals of every Infrastructure type, apart from the
+    // mapping (Configurations) and the migrations, which say it by design.
+    private static List<string> TopLevelTypesWhoseSqlNames(string table)
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(Infrastructure.Location);
+
+        static TypeDefinition TopLevel(TypeDefinition type) => type.DeclaringType is null ? type : TopLevel(type.DeclaringType);
+
+        return [.. assembly.MainModule.GetTypes()
+            // The namespace of a compiler-generated nested type (a lambda, an async state machine) is empty: ask the top-level type.
+            .Where(type => !(TopLevel(type).Namespace ?? string.Empty).EndsWith(".Migrations", StringComparison.Ordinal)
+                && !(TopLevel(type).Namespace ?? string.Empty).EndsWith(".Configurations", StringComparison.Ordinal))
+            .Where(type => type.Methods.Any(method => method.HasBody && method.Body.Instructions.Any(instruction =>
+                instruction.OpCode.Code is Code.Ldstr
+                && instruction.Operand is string literal
+                && System.Text.RegularExpressions.Regex.IsMatch(literal, $@"\b{table}\b", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(1)))))
+            .Select(type => TopLevel(type).Name)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)];
+    }
+
     [Theory]
-    [InlineData(typeof(Product), nameof(ProductRepository))]
-    [InlineData(typeof(StoreMember), nameof(StoreMemberRepository))]
-    public void AStoreOwnedTable_IsQueriedOnlyByItsRepository_AndTheContextThatExposesIt(Type entity, string repository) =>
-        Assert.Equal([nameof(AppDbContext), repository], TopLevelTypesThatQuery(entity), StringComparer.Ordinal);
+    [InlineData(typeof(Product), "products", nameof(ProductRepository))]
+    [InlineData(typeof(StoreMember), "store_members", nameof(StoreMemberRepository))]
+    [InlineData(typeof(InventoryItem), "inventory_items", nameof(InventoryItemRepository))]
+    public void AStoreOwnedTable_IsReadAndChangedOnlyByItsRepository_AndTheContextThatExposesIt(Type entity, string table, string repository)
+    {
+        var strangers = TopLevelTypesThatQuery(entity).Union(TopLevelTypesWhoseSqlNames(table), StringComparer.Ordinal)
+            .Except([nameof(AppDbContext), repository], StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(strangers.Count == 0, $"Only {repository} may read or change {table}, so every query is scoped by store in one place: {string.Join(", ", strangers)}");
+    }
 
     [Fact]
     public void EveryStoreOwnedEntity_HasATestedRepositoryRule()
     {
         // A new store-owned entity (an order, an inventory item) must be added to the theory above, or its table would be unguarded.
-        var covered = new[] { typeof(Product), typeof(StoreMember) };
+        var covered = new[] { typeof(InventoryItem), typeof(Product), typeof(StoreMember) };
 
         Assert.Equal(StoreOwnedEntities().Select(type => type.Name), covered.Select(type => type.Name).Order(StringComparer.Ordinal), StringComparer.Ordinal);
     }
@@ -102,6 +137,14 @@ public class StoreScopeConventionTests
     private interface IUnscopedRepository
     {
         Task<Product?> GetAsync(Guid productId, CancellationToken cancellationToken); // forgot the store
+    }
+
+    // The entity's own repository: even a method that returns only a number must name the store.
+    private interface IInventoryItemRepository
+    {
+        Task<int?> CountAsync(Guid productId, CancellationToken cancellationToken); // forgot the store, and mentions no entity
+
+        Task<int?> TryAdjustAsync(Guid storeId, Guid productId, int delta, CancellationToken cancellationToken);
     }
 
     private interface IScopedRepository
@@ -121,13 +164,16 @@ public class StoreScopeConventionTests
         Assert.DoesNotContain(typeof(Store), storeOwned); // a store is not owned by a store
         Assert.Equal(["IUnscopedRepository.GetAsync"], UnscopedMethods(typeof(IUnscopedRepository), storeOwned), StringComparer.Ordinal);
         Assert.Empty(UnscopedMethods(typeof(IScopedRepository), storeOwned));
+        Assert.Equal(["IInventoryItemRepository.CountAsync"], UnscopedMethods(typeof(IInventoryItemRepository), storeOwned), StringComparer.Ordinal);
         Assert.Contains(typeof(IProductRepository), RepositoryInterfaces()); // and the real one is among those checked
     }
 
     [Fact]
-    public void TheQueryRule_CanFail_BecauseTheRepositoriesDoQueryTheirTables()
+    public void TheQueryRule_CanFail_BecauseTheRepositoriesDoReachTheirTables()
     {
+        // Guards the rule above against passing by accident: a scanner that sees nothing passes anything.
         Assert.Contains(TopLevelTypesThatQuery(typeof(Product)), name => string.Equals(name, nameof(ProductRepository), StringComparison.Ordinal));
         Assert.Contains(TopLevelTypesThatQuery(typeof(StoreMember)), name => string.Equals(name, nameof(StoreMemberRepository), StringComparison.Ordinal));
+        Assert.Contains(TopLevelTypesWhoseSqlNames("inventory_items"), name => string.Equals(name, nameof(InventoryItemRepository), StringComparison.Ordinal));
     }
 }

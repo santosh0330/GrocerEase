@@ -50,6 +50,7 @@ public static class DependencyInjection
         services.AddScoped<IStoreMemberRepository, StoreMemberRepository>();
         services.AddScoped<IProductRepository, ProductRepository>();
         services.AddScoped<IInventoryItemRepository, InventoryItemRepository>();
+        services.AddScoped<ILowStockRepository, LowStockRepository>();
         services.AddScoped<IOrderRepository, OrderRepository>();
         services.AddScoped<IUnitOfWork, EfUnitOfWork>(); // scoped: it begins a transaction on the same context the repositories use
 

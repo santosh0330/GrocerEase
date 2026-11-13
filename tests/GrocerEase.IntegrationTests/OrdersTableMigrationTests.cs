@@ -55,7 +55,7 @@ public class OrdersTableMigrationTests
             "ix_order_lines_order_id_product_id: USING btree (order_id, product_id)\n"
             + "ix_order_lines_product_id: USING btree (product_id)\n"
             + "ix_orders_customer_id_placed_at: USING btree (customer_id, placed_at DESC, id DESC)\n"
-            + "ix_orders_store_id: USING btree (store_id)\n"
+            + "ix_orders_store_id_placed_at: USING btree (store_id, placed_at, id)\n"
             + "pk_order_lines: USING btree (id)\n"
             + "pk_orders: USING btree (id)",
             indexes);
@@ -165,5 +165,20 @@ public class OrdersTableMigrationTests
             await PostgresServer.ScalarAsync<long>(world.Database, "select count(*) from stores"),
             await PostgresServer.ScalarAsync<long>(world.Database, "select count(*) from products"),
             await PostgresServer.ScalarAsync<long>(world.Database, "select count(*) from users")));
+    }
+
+    [Fact]
+    public async Task RollingBackTheIndexMigration_PutsTheOldStoreIndexBack_AndKeepsTheOrders()
+    {
+        var world = await AWorldAsync();
+        await InsertOrderAsync(world);
+        var thisMigration = AllMigrations().Single(migration => migration.EndsWith("_IndexOrdersByStoreAndTime", StringComparison.Ordinal));
+
+        await MigrateAsync(world.Database, AllMigrations()[AllMigrations().ToList().IndexOf(thisMigration) - 1]);
+
+        Assert.Equal(
+            "ix_orders_store_id",
+            await PostgresServer.ScalarAsync<string>(world.Database, "select string_agg(indexname, ', ') from pg_indexes where tablename = 'orders' and indexname like 'ix_orders_store%'"));
+        Assert.Equal(1L, await PostgresServer.ScalarAsync<long>(world.Database, "select count(*) from orders"));
     }
 }

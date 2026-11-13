@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GrocerEase.Infrastructure.Persistence;
 
-/// <summary>Stores orders and their lines in PostgreSQL through EF Core. Scoped, like the context it wraps. Every read names the customer, so someone else's order is simply not found.</summary>
+/// <summary>Stores orders and their lines in PostgreSQL through EF Core. Scoped, like the context it wraps. Every read names the customer or the store, so someone else's order is simply not found.</summary>
 public sealed class OrderRepository(AppDbContext db) : IOrderRepository
 {
     public async Task AddAsync(Order order, CancellationToken cancellationToken)
@@ -21,6 +21,27 @@ public sealed class OrderRepository(AppDbContext db) : IOrderRepository
     public Task<Order?> GetForCustomerAsync(Guid customerId, Guid orderId, CancellationToken cancellationToken) =>
         db.Orders.AsNoTracking().Include(order => order.Lines)
             .SingleOrDefaultAsync(order => order.Id == orderId && order.CustomerId == customerId, cancellationToken);
+
+    public Task<Order?> GetForStoreAsync(Guid storeId, Guid orderId, CancellationToken cancellationToken) =>
+        db.Orders.AsNoTracking().Include(order => order.Lines)
+            .SingleOrDefaultAsync(order => order.Id == orderId && order.StoreId == storeId, cancellationToken);
+
+    public async Task<PagedResult<Order>> ListForStoreAsync(Guid storeId, OrderStatus? status, int page, int pageSize, CancellationToken cancellationToken)
+    {
+        var ofTheStore = db.Orders.AsNoTracking().Where(order => order.StoreId == storeId);
+        if (status is { } wanted)
+        {
+            ofTheStore = ofTheStore.Where(order => order.Status == wanted);
+        }
+
+        // Oldest first, with the id to break ties so the pages stay stable. Two queries, as for the customer's list.
+        var total = await ofTheStore.CountAsync(cancellationToken);
+        var items = await ofTheStore.Include(order => order.Lines)
+            .OrderBy(order => order.PlacedAt).ThenBy(order => order.Id)
+            .Skip((page - 1) * pageSize).Take(pageSize)
+            .ToListAsync(cancellationToken);
+        return new PagedResult<Order>(items, page, pageSize, total);
+    }
 
     public async Task<PagedResult<Order>> ListForCustomerAsync(Guid customerId, int page, int pageSize, CancellationToken cancellationToken)
     {

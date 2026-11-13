@@ -63,6 +63,7 @@ public static class DependencyInjection
 
         services.AddValidatedCommandHandler<GetMyOrderQuery, Result<OrderResult>, GetMyOrderQueryHandler>();
         services.AddValidatedCommandHandler<ListMyOrdersQuery, Result<PagedResult<OrderResult>>, ListMyOrdersQueryHandler>();
+        services.AddValidatedCommandHandler<ListStoreOrdersQuery, Result<PagedResult<OrderResult>>, ListStoreOrdersQueryHandler>();
 
         // Reserves the stock of every line and writes the order, which must be kept together or not at all.
         services.AddTransactionalCommandHandler<PlaceOrderCommand, Result<OrderResult>, PlaceOrderCommandHandler>();

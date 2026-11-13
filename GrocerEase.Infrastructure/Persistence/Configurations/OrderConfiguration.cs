@@ -44,8 +44,8 @@ public sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
             .IsDescending(false, true, true)
             .HasDatabaseName("ix_orders_customer_id_placed_at");
 
-        // EF makes an index for a foreign key's column; this one is named like the others (a store user's list of orders will use it).
-        builder.HasIndex(order => order.StoreId).HasDatabaseName("ix_orders_store_id");
+        // "The orders of my store, oldest first": the question a store user asks. It starts with store_id, so it also serves the foreign key.
+        builder.HasIndex(order => new { order.StoreId, order.PlacedAt, order.Id }).HasDatabaseName("ix_orders_store_id_placed_at");
 
         // RESTRICT: a store or a customer with orders cannot be deleted from under them.
         builder.HasOne<Store>()

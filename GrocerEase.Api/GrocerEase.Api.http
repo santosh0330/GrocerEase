@@ -142,6 +142,24 @@ Authorization: Bearer {{login.response.body.$.token}}
 
 ###
 
+# Stock. Same rule as products: the store user of that store. A change is an amount (positive adds, negative removes), never a new total.
+# 200 { "productId", "quantityOnHand" }; removing more than there is gives 409 "Inventory.NotEnoughStock"; a change of zero is 400.
+POST {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/products/{{createProduct.response.body.$.id}}/stock-adjustments
+Authorization: Bearer {{login.response.body.$.token}}
+Content-Type: application/json
+
+{
+  "delta": 12
+}
+
+###
+
+# Every product on sale in the store with how many are on hand (zero when it has never had stock), a page at a time.
+GET {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/inventory?page=1&pageSize=20
+Authorization: Bearer {{login.response.body.$.token}}
+
+###
+
 # Health, readiness: open to anyone, no token. Runs every check, including the database.
 # 200 { "status": "Healthy", "totalDurationMs": 4.1, "checks": [ { "name": "database", "status": "Healthy", "durationMs": 3.8 } ] }
 # 503 with "status": "Unhealthy" when the database cannot be reached or has not been migrated. It never says why: that goes to the log.

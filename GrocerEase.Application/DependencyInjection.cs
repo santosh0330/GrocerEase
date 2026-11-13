@@ -65,6 +65,9 @@ public static class DependencyInjection
         services.AddValidatedCommandHandler<ListMyOrdersQuery, Result<PagedResult<OrderResult>>, ListMyOrdersQueryHandler>();
         services.AddValidatedCommandHandler<ListStoreOrdersQuery, Result<PagedResult<OrderResult>>, ListStoreOrdersQueryHandler>();
 
+        // One statement that changes the status only if nobody changed it first: no unit of work needed.
+        services.AddValidatedCommandHandler<VerifyOrderCommand, Result<OrderResult>, VerifyOrderCommandHandler>();
+
         // Reserves the stock of every line and writes the order, which must be kept together or not at all.
         services.AddTransactionalCommandHandler<PlaceOrderCommand, Result<OrderResult>, PlaceOrderCommandHandler>();
 

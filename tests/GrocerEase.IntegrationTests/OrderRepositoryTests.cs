@@ -243,6 +243,51 @@ public class OrderRepositoryTests
         Assert.Empty((await ListForStoreAsync(world.StoreId, null, 9, 2)).Items);
     }
 
+    private static async Task<bool> ChangeAsync(Guid storeId, Guid orderId, OrderStatus expected, OrderStatus target)
+    {
+        await using var db = await NewContextAsync();
+        return await new OrderRepository(db).TryChangeStatusAsync(storeId, orderId, expected, target, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task TheStatus_ChangesWhenItIsWhatWasExpected_AndNothingElseChanges()
+    {
+        var world = await AWorldAsync();
+        var placed = await PlaceAsync(world);
+
+        Assert.True(await ChangeAsync(world.StoreId, placed.Id, OrderStatus.Pending, OrderStatus.Verified));
+
+        var found = (await GetForStoreAsync(world.StoreId, placed.Id))!;
+        Assert.Equal(OrderStatus.Verified, found.Status);
+        Assert.Equal((placed.DeliveryAddress, placed.CustomerId, 2), (found.DeliveryAddress, found.CustomerId, found.Lines.Count));
+    }
+
+    [Fact]
+    public async Task TheStatus_IsLeftAlone_WhenItIsNotWhatWasExpected_WhenTheStoreIsAnotherOne_OrTheOrderIsUnknown()
+    {
+        var world = await AWorldAsync();
+        var elsewhere = await AWorldAsync();
+        var placed = await PlaceAsync(world);
+
+        Assert.False(await ChangeAsync(world.StoreId, placed.Id, OrderStatus.Verified, OrderStatus.Shipped)); // it is Pending, not Verified
+        Assert.False(await ChangeAsync(elsewhere.StoreId, placed.Id, OrderStatus.Pending, OrderStatus.Verified)); // through the wrong store
+        Assert.False(await ChangeAsync(world.StoreId, Guid.CreateVersion7(), OrderStatus.Pending, OrderStatus.Verified));
+
+        Assert.Equal(OrderStatus.Pending, (await GetForStoreAsync(world.StoreId, placed.Id))!.Status);
+    }
+
+    [Fact]
+    public async Task OfManyCallersChangingTheSameOrderAtOnce_ExactlyOneWins()
+    {
+        var world = await AWorldAsync();
+        var placed = await PlaceAsync(world);
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 12).Select(_ => Task.Run(() => ChangeAsync(world.StoreId, placed.Id, OrderStatus.Pending, OrderStatus.Verified))));
+
+        Assert.Equal(1, results.Count(won => won));
+        Assert.Equal(OrderStatus.Verified, (await GetForStoreAsync(world.StoreId, placed.Id))!.Status);
+    }
+
     [Fact]
     public async Task AnOrderForAStoreThatDoesNotExist_IsAnException_NotAnOrdinaryRefusal()
     {

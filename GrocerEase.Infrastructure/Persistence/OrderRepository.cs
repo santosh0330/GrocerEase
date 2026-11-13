@@ -26,6 +26,12 @@ public sealed class OrderRepository(AppDbContext db) : IOrderRepository
         db.Orders.AsNoTracking().Include(order => order.Lines)
             .SingleOrDefaultAsync(order => order.Id == orderId && order.StoreId == storeId, cancellationToken);
 
+    public async Task<bool> TryChangeStatusAsync(Guid storeId, Guid orderId, OrderStatus expected, OrderStatus target, CancellationToken cancellationToken) =>
+        // The old status is part of the WHERE: this is a compare-and-set, so of two callers that read the same order, one changes the row.
+        await db.Orders
+            .Where(order => order.Id == orderId && order.StoreId == storeId && order.Status == expected)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(order => order.Status, target), cancellationToken) == 1;
+
     public async Task<PagedResult<Order>> ListForStoreAsync(Guid storeId, OrderStatus? status, int page, int pageSize, CancellationToken cancellationToken)
     {
         var ofTheStore = db.Orders.AsNoTracking().Where(order => order.StoreId == storeId);

@@ -1,4 +1,5 @@
 using GrocerEase.Application.Common;
+using GrocerEase.Domain.Entities;
 
 namespace GrocerEase.Application.Orders.Common;
 
@@ -11,6 +12,14 @@ public static class OrderErrors
     /// </summary>
     public static ResultError InsufficientStock(string productName) => new(
         "Order.InsufficientStock", $"There is not enough stock of '{productName}'.", ErrorType.Conflict);
+
+    /// <summary>The order is in a status the move cannot start from: a shipped order cannot be cancelled, a pending one cannot be shipped.</summary>
+    public static ResultError InvalidTransition(string pastTense, OrderStatus current) => new(
+        "Order.InvalidTransition", $"An order that is {current} cannot be {pastTense}.", ErrorType.Conflict);
+
+    /// <summary>Someone else moved the order between this request reading it and changing it. Nothing was changed.</summary>
+    public static readonly ResultError ChangedMeanwhile = new(
+        "Order.ChangedMeanwhile", "The order was changed by someone else just now. Look at it again.", ErrorType.Conflict);
 
     // One error for an order that never existed and one that belongs to someone else, so nobody can probe for other customers' orders.
     public static readonly ResultError NotFound = new(

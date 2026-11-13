@@ -101,7 +101,7 @@ public class InventoryControllerTests
 
         Assert.Equal(new ListInventoryQuery(StoreId, CallerId, 2, 5), list.Received);
         var body = Assert.IsType<PagedResponse<InventoryEntryResponse>>(Assert.IsType<OkObjectResult>(result).Value);
-        Assert.Equal([new InventoryEntryResponse(ProductId, "Milk", 7)], body.Items);
+        Assert.Equal([new InventoryEntryResponse(ProductId, "Milk", 7, null, false)], body.Items);
         Assert.Equal((2, 5, 11), (body.Page, body.PageSize, body.TotalCount));
     }
 

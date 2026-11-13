@@ -14,9 +14,15 @@ internal sealed class FakeInventoryItemRepository : IInventoryItemRepository
     /// <summary>Every change asked for, in the order it was asked: a test can say in which order products were reserved.</summary>
     public List<(Guid ProductId, int Delta)> Calls { get; } = [];
 
-    public Task<IReadOnlyDictionary<Guid, int>> GetQuantitiesAsync(Guid storeId, IReadOnlyCollection<Guid> productIds, CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyDictionary<Guid, int>>(
-            Quantities.Where(entry => entry.Key.StoreId == storeId && productIds.Contains(entry.Key.ProductId)).ToDictionary(entry => entry.Key.ProductId, entry => entry.Value));
+    /// <summary>The low-stock level of a product, where one has been set. A product has a level only if it has a row.</summary>
+    public Dictionary<(Guid StoreId, Guid ProductId), int> Thresholds { get; } = [];
+
+    public Task<IReadOnlyDictionary<Guid, InventoryItem>> GetItemsAsync(Guid storeId, IReadOnlyCollection<Guid> productIds, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyDictionary<Guid, InventoryItem>>(
+            Quantities.Where(entry => entry.Key.StoreId == storeId && productIds.Contains(entry.Key.ProductId))
+                .ToDictionary(
+                    entry => entry.Key.ProductId,
+                    entry => new InventoryItem(entry.Key.ProductId, storeId, entry.Value, Thresholds.TryGetValue(entry.Key, out var level) ? level : null)));
 
     public Task<int?> TryAdjustAsync(Guid storeId, Guid productId, int delta, CancellationToken cancellationToken)
     {

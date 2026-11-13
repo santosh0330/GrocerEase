@@ -24,10 +24,11 @@ public sealed class ListInventoryQueryHandler(StoreAccess storeAccess, IProductR
         }
 
         var products = await productRepository.ListLiveAsync(command.StoreId, command.Page, command.PageSize, cancellationToken);
-        var quantities = await inventoryRepository.GetQuantitiesAsync(command.StoreId, [.. products.Items.Select(product => product.Id)], cancellationToken);
+        var items = await inventoryRepository.GetItemsAsync(command.StoreId, [.. products.Items.Select(product => product.Id)], cancellationToken);
 
-        // A product with no stock row has none on hand.
-        return Result.Success(products.Map(product =>
-            new InventoryEntryResult(product.Id, product.Name, quantities.TryGetValue(product.Id, out var quantity) ? quantity : 0)));
+        // A product with no stock row has none on hand, and no level.
+        return Result.Success(products.Map(product => items.TryGetValue(product.Id, out var item)
+            ? new InventoryEntryResult(product.Id, product.Name, item.QuantityOnHand, item.LowStockThreshold)
+            : new InventoryEntryResult(product.Id, product.Name, 0)));
     }
 }

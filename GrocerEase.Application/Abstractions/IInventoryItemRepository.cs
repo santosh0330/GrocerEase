@@ -1,3 +1,5 @@
+using GrocerEase.Domain.Entities;
+
 namespace GrocerEase.Application.Abstractions;
 
 /// <summary>
@@ -20,8 +22,8 @@ public interface IInventoryItemRepository
     Task<int?> TryAdjustAsync(Guid storeId, Guid productId, int delta, CancellationToken cancellationToken);
 
     /// <summary>
-    /// The quantity on hand of each of these products in that store. A product with no stock row is not in the result: it has none. Other
-    /// stores' rows are never returned, whatever ids are asked for.
+    /// The stock row (quantity and low-stock level) of each of these products in that store. A product with no stock row is not in the
+    /// result: it has none, and no level. Other stores' rows are never returned, whatever ids are asked for.
     /// </summary>
-    Task<IReadOnlyDictionary<Guid, int>> GetQuantitiesAsync(Guid storeId, IReadOnlyCollection<Guid> productIds, CancellationToken cancellationToken);
+    Task<IReadOnlyDictionary<Guid, InventoryItem>> GetItemsAsync(Guid storeId, IReadOnlyCollection<Guid> productIds, CancellationToken cancellationToken);
 }

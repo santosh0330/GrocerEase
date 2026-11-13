@@ -18,16 +18,24 @@ public sealed class InventoryItem
     /// </summary>
     public const int MaxQuantity = 1_000_000_000;
 
-    public InventoryItem(Guid productId, Guid storeId, int quantityOnHand)
+    /// <summary>The highest low-stock level: the same bound as the quantity, since a level above the most a product may hold would always be reached.</summary>
+    public const int MaxLowStockThreshold = MaxQuantity;
+
+    public InventoryItem(Guid productId, Guid storeId, int quantityOnHand, int? lowStockThreshold = null)
     {
         ArgumentOutOfRangeException.ThrowIfEqual(productId, Guid.Empty);
         ArgumentOutOfRangeException.ThrowIfEqual(storeId, Guid.Empty);
         ArgumentOutOfRangeException.ThrowIfNegative(quantityOnHand); // never below zero: a store cannot have minus three bottles of milk
         ArgumentOutOfRangeException.ThrowIfGreaterThan(quantityOnHand, MaxQuantity);
+        if (lowStockThreshold is < 0 or > MaxLowStockThreshold)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lowStockThreshold), lowStockThreshold, $"The level must be from 0 to {MaxLowStockThreshold}, or null for none.");
+        }
 
         ProductId = productId;
         StoreId = storeId;
         QuantityOnHand = quantityOnHand;
+        LowStockThreshold = lowStockThreshold;
     }
 
     public Guid ProductId { get; }
@@ -35,4 +43,19 @@ public sealed class InventoryItem
     public Guid StoreId { get; }
 
     public int QuantityOnHand { get; }
+
+    /// <summary>
+    /// The level at or below which the store wants to be told the product is running out, or <c>null</c> when it has set none (a product with
+    /// no level is never "low"). Set by its own statement, like the quantity.
+    /// </summary>
+    public int? LowStockThreshold { get; }
+
+    /// <summary>Whether the product is running out. <b>At</b> the level counts: a level of 5 is low at 5, and not at 6.</summary>
+    public bool IsLow => IsLowAt(QuantityOnHand, LowStockThreshold);
+
+    /// <summary>
+    /// The one definition of "low", for a quantity and a level that are not in an entity (a product with no stock row has quantity zero).
+    /// The low-stock query repeats it in SQL (<c>quantity_on_hand &lt;= low_stock_threshold</c>), and a test holds the two to the same boundary.
+    /// </summary>
+    public static bool IsLowAt(int quantityOnHand, int? lowStockThreshold) => lowStockThreshold is { } level && quantityOnHand <= level;
 }

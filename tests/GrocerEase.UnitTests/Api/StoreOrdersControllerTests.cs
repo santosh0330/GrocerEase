@@ -3,6 +3,7 @@ using System.Security.Claims;
 using GrocerEase.Api.Controllers;
 using GrocerEase.Application.Abstractions;
 using GrocerEase.Application.Common;
+using GrocerEase.Application.Orders.Commands;
 using GrocerEase.Application.Orders.Common;
 using GrocerEase.Application.Orders.Queries;
 using GrocerEase.Contracts.Common;
@@ -30,9 +31,25 @@ public class StoreOrdersControllerTests
         }
     }
 
-    private static StoreOrdersController ControllerWith(ListSpy list, string? sub = null)
+    private sealed class MoveSpy(Result<OrderResult> result) : ICommandHandler<VerifyOrderCommand, Result<OrderResult>>
     {
-        var controller = new StoreOrdersController(list)
+        public VerifyOrderCommand? Received { get; private set; }
+
+        public Task<Result<OrderResult>> Handle(VerifyOrderCommand command, CancellationToken cancellationToken)
+        {
+            Received = command;
+            return Task.FromResult(result);
+        }
+    }
+
+    private static readonly Guid OrderId = Guid.CreateVersion7();
+
+    private static OrderResult AnOrder(string status = "Verified") =>
+        new(OrderId, StoreId, status, "1 High Street", new DateTimeOffset(2026, 11, 13, 9, 0, 0, TimeSpan.Zero), 5m, [new OrderLineResult(Guid.CreateVersion7(), "Milk", 2.5m, 2, 5m)]);
+
+    private static StoreOrdersController ControllerWith(ListSpy list, string? sub = null, MoveSpy? verify = null)
+    {
+        var controller = new StoreOrdersController(list, verify ?? new MoveSpy(Result.Success(AnOrder())))
         {
             ProblemDetailsFactory = new StubProblemDetailsFactory(),
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
@@ -90,9 +107,49 @@ public class StoreOrdersControllerTests
     }
 
     [Fact]
-    public void EachRoute_NeedsThePermissionToManageOrders_NotARoleName()
+    public async Task Verify_PutsTheRouteAndTheCallerInTheCommand_AndReturnsTheOrder()
     {
-        var authorize = typeof(StoreOrdersController).GetMethod(nameof(StoreOrdersController.List))!.GetCustomAttribute<AuthorizeAttribute>();
+        var verify = new MoveSpy(Result.Success(AnOrder()));
+
+        var result = await ControllerWith(new ListSpy(Result.Success(Empty)), CallerId.ToString(), verify).Verify(StoreId, OrderId, CancellationToken.None);
+
+        Assert.Equal(new VerifyOrderCommand(StoreId, OrderId, CallerId), verify.Received);
+        var body = Assert.IsType<OrderResponse>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal((OrderId, "Verified"), (body.Id, body.Status));
+    }
+
+    [Fact]
+    public async Task Verify_WithATokenThatDoesNotNameAUser_Is401_AndRunsNothing()
+    {
+        var verify = new MoveSpy(Result.Success(AnOrder()));
+
+        var result = await ControllerWith(new ListSpy(Result.Success(Empty)), verify: verify).Verify(StoreId, OrderId, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value).Status);
+        Assert.Null(verify.Received);
+    }
+
+    [Theory]
+    [InlineData("Store.NotFound", ErrorType.NotFound, StatusCodes.Status404NotFound)]
+    [InlineData("Order.NotFound", ErrorType.NotFound, StatusCodes.Status404NotFound)]
+    [InlineData("Order.InvalidTransition", ErrorType.Conflict, StatusCodes.Status409Conflict)]
+    [InlineData("Order.ChangedMeanwhile", ErrorType.Conflict, StatusCodes.Status409Conflict)]
+    public async Task Verify_WhenTheHandlerFails_ReturnsAProblemForThatError(string code, ErrorType type, int status)
+    {
+        var verify = new MoveSpy(Result.Failure<OrderResult>(new ResultError(code, "x", type)));
+
+        var result = await ControllerWith(new ListSpy(Result.Success(Empty)), CallerId.ToString(), verify).Verify(StoreId, OrderId, CancellationToken.None);
+
+        var problem = Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value);
+        Assert.Equal((status, code), (problem.Status, problem.Extensions["code"]));
+    }
+
+    [Theory]
+    [InlineData(nameof(StoreOrdersController.List))]
+    [InlineData(nameof(StoreOrdersController.Verify))]
+    public void EachRoute_NeedsThePermissionToManageOrders_NotARoleName(string action)
+    {
+        var authorize = typeof(StoreOrdersController).GetMethod(action)!.GetCustomAttribute<AuthorizeAttribute>();
 
         Assert.Equal(Permissions.OrdersManage, authorize?.Policy);
         Assert.Null(authorize?.Roles);

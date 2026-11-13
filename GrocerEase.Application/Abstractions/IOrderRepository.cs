@@ -25,6 +25,17 @@ public interface IOrderRepository
     /// </summary>
     Task<PagedResult<Order>> ListForStoreAsync(Guid storeId, OrderStatus? status, int page, int pageSize, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Moves an order of that store from <paramref name="expected"/> to <paramref name="target"/>, and says whether it did. Returns <c>false</c>, and
+    /// changes nothing, when the order is not in <paramref name="expected"/> any more (someone moved it first), is in another store, or does not
+    /// exist.
+    /// </summary>
+    /// <remarks>
+    /// One SQL statement with the old status in its <c>WHERE</c>, never a read followed by a write: when two store users verify the same
+    /// order at the same moment, the database lets exactly one of them change the row, and the other's statement matches nothing.
+    /// </remarks>
+    Task<bool> TryChangeStatusAsync(Guid storeId, Guid orderId, OrderStatus expected, OrderStatus target, CancellationToken cancellationToken);
+
     /// <summary>One page of the orders of that customer, newest first, with their lines. <paramref name="page"/> counts from 1. A page past the end is empty.</summary>
     Task<PagedResult<Order>> ListForCustomerAsync(Guid customerId, int page, int pageSize, CancellationToken cancellationToken);
 }

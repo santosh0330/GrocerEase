@@ -1,6 +1,7 @@
 using GrocerEase.Api.Mapping;
 using GrocerEase.Application.Abstractions;
 using GrocerEase.Application.Common;
+using GrocerEase.Application.Orders.Commands;
 using GrocerEase.Application.Orders.Common;
 using GrocerEase.Application.Orders.Queries;
 using GrocerEase.Contracts.Common;
@@ -19,7 +20,8 @@ namespace GrocerEase.Api.Controllers;
 [ApiController]
 [Route("stores/{storeId:guid}/orders")]
 public sealed class StoreOrdersController(
-    ICommandHandler<ListStoreOrdersQuery, Result<PagedResult<OrderResult>>> listHandler) : ControllerBase
+    ICommandHandler<ListStoreOrdersQuery, Result<PagedResult<OrderResult>>> listHandler,
+    ICommandHandler<VerifyOrderCommand, Result<OrderResult>> verifyHandler) : ControllerBase
 {
     private const string ProblemJson = "application/problem+json";
 
@@ -41,5 +43,24 @@ public sealed class StoreOrdersController(
 
         var result = await listHandler.Handle(new ListStoreOrdersQuery(storeId, callerId, status, page, pageSize), cancellationToken);
         return result.Match<IActionResult>(orders => Ok(orders.ToResponse()), error => this.ToProblem(error));
+    }
+
+    // The store accepts a pending order. No body: the route says which order, the token says who.
+    [HttpPost("{orderId:guid}/verify")]
+    [Authorize(Policy = Permissions.OrdersManage)]
+    [ProducesResponseType<OrderResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, ProblemJson)]
+    public async Task<IActionResult> Verify(Guid storeId, Guid orderId, CancellationToken cancellationToken)
+    {
+        if (User.GetUserId() is not { } callerId)
+        {
+            return this.InvalidTokenProblem();
+        }
+
+        var result = await verifyHandler.Handle(new VerifyOrderCommand(storeId, orderId, callerId), cancellationToken);
+        return result.Match<IActionResult>(order => Ok(order.ToResponse()), error => this.ToProblem(error));
     }
 }

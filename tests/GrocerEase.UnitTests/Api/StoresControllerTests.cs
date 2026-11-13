@@ -6,6 +6,7 @@ using GrocerEase.Application.Common;
 using GrocerEase.Application.Stores.Commands;
 using GrocerEase.Application.Stores.Common;
 using GrocerEase.Application.Stores.Queries;
+using GrocerEase.Contracts.Common;
 using GrocerEase.Contracts.Stores;
 using GrocerEase.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
@@ -30,11 +31,11 @@ public class StoresControllerTests
     private static readonly StoreResult FreshMart = new(Guid.CreateVersion7(), "Fresh Mart", "1 High Street");
 
     private static StoresController ControllerWith(
-        Result<StoreResult>? create = null, Result<StoreResult>? get = null, Result<IReadOnlyList<StoreResult>>? list = null) =>
+        Result<StoreResult>? create = null, Result<StoreResult>? get = null, Result<PagedResult<StoreResult>>? list = null) =>
         new(
             new SpyHandler<CreateStoreCommand, Result<StoreResult>>(create ?? Result.Success(FreshMart)),
             new SpyHandler<GetStoreQuery, Result<StoreResult>>(get ?? Result.Success(FreshMart)),
-            new SpyHandler<ListStoresQuery, Result<IReadOnlyList<StoreResult>>>(list ?? Result.Success<IReadOnlyList<StoreResult>>([FreshMart])))
+            new SpyHandler<ListStoresQuery, Result<PagedResult<StoreResult>>>(list ?? Result.Success(new PagedResult<StoreResult>([FreshMart], 1, 20, 1))))
         {
             ProblemDetailsFactory = new StubProblemDetailsFactory(),
         };
@@ -46,7 +47,7 @@ public class StoresControllerTests
         var controller = new StoresController(
             spy,
             new SpyHandler<GetStoreQuery, Result<StoreResult>>(Result.Success(FreshMart)),
-            new SpyHandler<ListStoresQuery, Result<IReadOnlyList<StoreResult>>>(Result.Success<IReadOnlyList<StoreResult>>([])))
+            new SpyHandler<ListStoresQuery, Result<PagedResult<StoreResult>>>(Result.Success(new PagedResult<StoreResult>([], 1, 20, 0))))
         {
             ProblemDetailsFactory = new StubProblemDetailsFactory(),
         };
@@ -86,12 +87,30 @@ public class StoresControllerTests
     }
 
     [Fact]
-    public async Task List_ReturnsEveryStoreMappedToAResponse()
+    public async Task List_ReturnsThePageMappedToAResponse_WithItsPaging()
     {
-        var result = await ControllerWith().List(CancellationToken.None);
+        var result = await ControllerWith(list: Result.Success(new PagedResult<StoreResult>([FreshMart], 3, 5, 11))).List(CancellationToken.None, page: 3, pageSize: 5);
 
-        var body = Assert.IsAssignableFrom<IEnumerable<StoreResponse>>(Assert.IsType<OkObjectResult>(result).Value);
-        Assert.Equal([new StoreResponse(FreshMart.Id, "Fresh Mart", "1 High Street")], body);
+        var body = Assert.IsType<PagedResponse<StoreResponse>>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal([new StoreResponse(FreshMart.Id, "Fresh Mart", "1 High Street")], body.Items);
+        Assert.Equal((3, 5, 11), (body.Page, body.PageSize, body.TotalCount));
+    }
+
+    [Fact]
+    public async Task List_WithNoPaging_AsksForTheFirstPageOfTheDefaultSize()
+    {
+        var spy = new SpyHandler<ListStoresQuery, Result<PagedResult<StoreResult>>>(Result.Success(new PagedResult<StoreResult>([], 1, 20, 0)));
+        var controller = new StoresController(
+            new SpyHandler<CreateStoreCommand, Result<StoreResult>>(Result.Success(FreshMart)),
+            new SpyHandler<GetStoreQuery, Result<StoreResult>>(Result.Success(FreshMart)),
+            spy)
+        {
+            ProblemDetailsFactory = new StubProblemDetailsFactory(),
+        };
+
+        await controller.List(CancellationToken.None);
+
+        Assert.Equal(new ListStoresQuery(1, Paging.DefaultPageSize), spy.Received);
     }
 
     [Theory]

@@ -1,4 +1,4 @@
 namespace GrocerEase.Application.Stores.Queries;
 
-/// <summary>Intent to read every store. It carries nothing: there is nothing to choose yet (paging comes with the product list).</summary>
-public sealed record ListStoresQuery;
+/// <summary>Intent to read the stores, one page at a time. <paramref name="Page"/> counts from 1.</summary>
+public sealed record ListStoresQuery(int Page, int PageSize);

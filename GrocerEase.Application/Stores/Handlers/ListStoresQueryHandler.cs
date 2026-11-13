@@ -5,16 +5,15 @@ using GrocerEase.Application.Stores.Queries;
 
 namespace GrocerEase.Application.Stores.Handlers;
 
-/// <summary>Lists every store. It reuses <see cref="ICommandHandler{TCommand, TResponse}"/> for a read, as <c>ListRolesQueryHandler</c> does.</summary>
+/// <summary>Lists the stores, a page at a time. It reuses <see cref="ICommandHandler{TCommand, TResponse}"/> for a read, as <c>ListRolesQueryHandler</c> does.</summary>
 public sealed class ListStoresQueryHandler(IStoreRepository storeRepository)
-    : ICommandHandler<ListStoresQuery, Result<IReadOnlyList<StoreResult>>>
+    : ICommandHandler<ListStoresQuery, Result<PagedResult<StoreResult>>>
 {
-    public async Task<Result<IReadOnlyList<StoreResult>>> Handle(ListStoresQuery command, CancellationToken cancellationToken)
+    public async Task<Result<PagedResult<StoreResult>>> Handle(ListStoresQuery command, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        var stores = await storeRepository.ListAsync(cancellationToken);
-        IReadOnlyList<StoreResult> results = [.. stores.Select(store => store.ToResult())];
-        return Result.Success(results);
+        var page = await storeRepository.ListAsync(command.Page, command.PageSize, cancellationToken);
+        return Result.Success(page.Map(store => store.ToResult()));
     }
 }

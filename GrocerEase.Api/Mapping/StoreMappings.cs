@@ -1,5 +1,7 @@
+using GrocerEase.Application.Common;
 using GrocerEase.Application.Stores.Commands;
 using GrocerEase.Application.Stores.Common;
+using GrocerEase.Contracts.Common;
 using GrocerEase.Contracts.Stores;
 
 namespace GrocerEase.Api.Mapping;
@@ -17,6 +19,12 @@ public static class StoreMappings
     {
         ArgumentNullException.ThrowIfNull(result);
         return new StoreResponse(result.Id, result.Name, result.Address);
+    }
+
+    public static PagedResponse<StoreResponse> ToResponse(this PagedResult<StoreResult> page)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        return new PagedResponse<StoreResponse>([.. page.Items.Select(store => store.ToResponse())], page.Page, page.PageSize, page.TotalCount);
     }
 
     public static AssignStoreMemberCommand ToCommand(this AssignStoreMemberRequest request, Guid storeId)

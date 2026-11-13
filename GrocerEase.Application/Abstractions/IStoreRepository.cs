@@ -1,3 +1,4 @@
+using GrocerEase.Application.Common;
 using GrocerEase.Domain.Entities;
 
 namespace GrocerEase.Application.Abstractions;
@@ -10,8 +11,8 @@ public interface IStoreRepository
     /// <summary>Finds a store by id. Returns <c>null</c> when there is none.</summary>
     Task<Store?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
 
-    /// <summary>Every store, ordered by name.</summary>
-    Task<IReadOnlyList<Store>> ListAsync(CancellationToken cancellationToken);
+    /// <summary>One page of the stores, ordered by name. <paramref name="page"/> counts from 1. A page past the end is empty.</summary>
+    Task<PagedResult<Store>> ListAsync(int page, int pageSize, CancellationToken cancellationToken);
 
     /// <summary>
     /// Stores a new store. Returns <c>false</c>, and stores nothing, when the name is already taken. The unique index has the last

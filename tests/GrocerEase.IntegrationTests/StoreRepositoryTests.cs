@@ -86,10 +86,38 @@ public class StoreRepositoryTests
         Assert.True(await AddAsync(NewStore(prefix + "b")));
         Assert.True(await AddAsync(NewStore(prefix + "a")));
 
+        // The database holds every store the other tests made, so walk all the pages, as a client would.
         await using var db = await NewContextAsync();
-        var listed = await new StoreRepository(db).ListAsync(CancellationToken.None);
+        var repository = new StoreRepository(db);
+        var listed = new List<Store>();
+        for (var page = 1; ; page++)
+        {
+            var next = await repository.ListAsync(page, 100, CancellationToken.None);
+            listed.AddRange(next.Items);
+            if (next.Items.Count == 0 || listed.Count >= next.TotalCount)
+            {
+                break;
+            }
+        }
 
         Assert.Equal([prefix + "a", prefix + "b"], listed.Where(store => store.Name.StartsWith(prefix, StringComparison.Ordinal)).Select(store => store.Name), StringComparer.Ordinal);
         Assert.Equal(listed.OrderBy(store => store.Name, StringComparer.Ordinal).Select(store => store.Id), listed.Select(store => store.Id));
+        Assert.Equal(listed.Count, listed.Select(store => store.Id).Distinct().Count()); // no store repeated across pages
+    }
+
+    [Fact]
+    public async Task APage_HasAtMostPageSizeItems_TheTotalSaysHowManyThereAre_AndAPagePastTheEndIsEmpty()
+    {
+        Assert.True(await AddAsync(NewStore()));
+        await using var db = await NewContextAsync();
+        var repository = new StoreRepository(db);
+
+        var first = await repository.ListAsync(1, 1, CancellationToken.None);
+        var past = await repository.ListAsync(1_000_000, 100, CancellationToken.None);
+
+        Assert.Single(first.Items);
+        Assert.True(first.TotalCount >= 1);
+        Assert.Empty(past.Items);
+        Assert.True(past.TotalCount >= first.TotalCount); // other tests add stores at the same time: the total can only have grown
     }
 }

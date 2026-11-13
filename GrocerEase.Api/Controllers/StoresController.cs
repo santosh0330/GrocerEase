@@ -4,6 +4,7 @@ using GrocerEase.Application.Common;
 using GrocerEase.Application.Stores.Commands;
 using GrocerEase.Application.Stores.Common;
 using GrocerEase.Application.Stores.Queries;
+using GrocerEase.Contracts.Common;
 using GrocerEase.Contracts.Stores;
 using GrocerEase.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
@@ -21,7 +22,7 @@ namespace GrocerEase.Api.Controllers;
 public sealed class StoresController(
     ICommandHandler<CreateStoreCommand, Result<StoreResult>> createHandler,
     ICommandHandler<GetStoreQuery, Result<StoreResult>> getHandler,
-    ICommandHandler<ListStoresQuery, Result<IReadOnlyList<StoreResult>>> listHandler) : ControllerBase
+    ICommandHandler<ListStoresQuery, Result<PagedResult<StoreResult>>> listHandler) : ControllerBase
 {
     private const string ProblemJson = "application/problem+json";
 
@@ -42,15 +43,15 @@ public sealed class StoresController(
 
     [HttpGet]
     [Authorize(Policy = Permissions.StoresRead)]
-    [ProducesResponseType<IReadOnlyList<StoreResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<PagedResponse<StoreResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, ProblemJson)]
-    public async Task<IActionResult> List(CancellationToken cancellationToken)
+    public async Task<IActionResult> List(
+        CancellationToken cancellationToken, [FromQuery] int page = 1, [FromQuery] int pageSize = Paging.DefaultPageSize)
     {
-        var result = await listHandler.Handle(new ListStoresQuery(), cancellationToken);
-        return result.Match<IActionResult>(
-            stores => Ok(stores.Select(store => store.ToResponse())),
-            error => this.ToProblem(error));
+        var result = await listHandler.Handle(new ListStoresQuery(page, pageSize), cancellationToken);
+        return result.Match<IActionResult>(stores => Ok(stores.ToResponse()), error => this.ToProblem(error));
     }
 
     [HttpGet("{storeId:guid}")]

@@ -171,7 +171,7 @@ expect "email is stored in lower case" "$(admin_sql 'select email from users')" 
 expect "the password is not stored" "$(admin_sql "select count(*) from users where password_hash like '%Sup3r%'")" "0"
 expect "timestamps are filled in" "$(admin_sql 'select created_at is not null and updated_at is not null from users')" "t"
 expect "a new user holds the Customer role" "$(admin_sql 'select r.name from users u join roles r on r.id = u.role_id')" "Customer"
-expect "all migrations are recorded, in their own schema" "$(admin_sql 'select count(*) from migrations."__EFMigrationsHistory"')" "17"
+expect "all migrations are recorded, in their own schema" "$(admin_sql 'select count(*) from migrations."__EFMigrationsHistory"')" "18"
 expect "the roles are seeded, under their fixed ids" "$(admin_sql "select string_agg(id || ':' || name, ',' order by name) from roles")" "019e0000-0000-7000-8000-000000000002:Admin,019e0000-0000-7000-8000-000000000001:Customer,019e0000-0000-7000-8000-000000000003:StoreUser"
 expect "the roles grant what they should" "$(admin_sql "select string_agg(r.name || ':' || c.claim_value, ',' order by r.name, c.claim_value) from role_claims c join roles r on r.id = c.role_id where c.claim_type = 'permission'")" "Admin:products.read,Admin:profile.read,Admin:roles.read,Admin:stores.manage,Admin:stores.read,Customer:orders.cancel,Customer:orders.place,Customer:orders.read,Customer:products.read,Customer:profile.read,Customer:stores.read,StoreUser:inventory.manage,StoreUser:orders.manage,StoreUser:products.manage,StoreUser:products.read,StoreUser:profile.read,StoreUser:stores.read"
 
@@ -188,13 +188,18 @@ expect "the migrator owns the table" "$(admin_sql "select tableowner from pg_tab
 expect "the migrator owns the refresh token table" "$(admin_sql "select tableowner from pg_tables where tablename = 'refresh_tokens'")" "grocerease_migrator"
 expect "the migrator owns the roles table" "$(admin_sql "select tableowner from pg_tables where tablename = 'roles'")" "grocerease_migrator"
 expect "the migrator owns the role claims table" "$(admin_sql "select tableowner from pg_tables where tablename = 'role_claims'")" "grocerease_migrator"
-expect "the migrator owns the stores, products, inventory and order tables" "$(admin_sql "select string_agg(tableowner, ',') from pg_tables where tablename in ('stores', 'store_members', 'products', 'inventory_items', 'orders', 'order_lines')")" "grocerease_migrator,grocerease_migrator,grocerease_migrator,grocerease_migrator,grocerease_migrator,grocerease_migrator"
+expect "the migrator owns the stores, products, inventory, order and stock ledger tables" "$(admin_sql "select string_agg(tableowner, ',') from pg_tables where tablename in ('stores', 'store_members', 'products', 'inventory_items', 'orders', 'order_lines', 'stock_movements')")" "grocerease_migrator,grocerease_migrator,grocerease_migrator,grocerease_migrator,grocerease_migrator,grocerease_migrator,grocerease_migrator"
 app_sql() { compose exec -T db sh -c 'PGPASSWORD="$APP_PASSWORD" psql -h localhost -U grocerease_app -d "$POSTGRES_DB" -Atc "$1" 2>&1' sh "$1"; }
 expect "the app role can read rows" "$(app_sql 'select count(*) from users')" "1"
 expect "the app role can use the refresh token table" "$(app_sql 'select count(*) from refresh_tokens')" "3"
 expect "the app role can read the roles" "$(app_sql 'select count(*) from roles')" "3"
 expect "the app role can read the role claims" "$(app_sql 'select count(*) from role_claims')" "17"
-expect "the app role can use the stores tables" "$(app_sql 'select count(*) from stores')$(app_sql 'select count(*) from store_members')$(app_sql 'select count(*) from products')$(app_sql 'select count(*) from inventory_items')$(app_sql 'select count(*) from orders')$(app_sql 'select count(*) from order_lines')" "000000"
+expect "the app role can use the stores tables" "$(app_sql 'select count(*) from stores')$(app_sql 'select count(*) from store_members')$(app_sql 'select count(*) from products')$(app_sql 'select count(*) from inventory_items')$(app_sql 'select count(*) from orders')$(app_sql 'select count(*) from order_lines')$(app_sql 'select count(*) from stock_movements')" "0000000"
+# The stock ledger is append-only: the app role may add and read movements, and nothing else, so no bug in the API can rewrite history.
+for statement in "update stock_movements set delta = 0" "delete from stock_movements" "truncate stock_movements"; do
+  if out="$(app_sql "$statement")"; then fail "the app role was allowed to run: $statement"; fi
+  echo "$out" | grep -q "permission denied" || fail "unexpected answer to '$statement' as the app role: $out"
+done
 if out="$(app_sql 'create table should_fail (id int)')"; then fail "the app role was allowed to create a table"; fi
 echo "$out" | grep -q "permission denied" || fail "unexpected answer to CREATE TABLE as the app role: $out"
 if out="$(app_sql 'select * from migrations."__EFMigrationsHistory"')"; then fail "the app role can read the migration history"; fi
@@ -460,6 +465,30 @@ expect "and the row exists at zero, low at once" "$(jq -c '[.quantityOnHand, .is
 expect "an archived product leaves the low-stock list" "$(send_as DELETE "/stores/$store_id/products/$barley_id" "$owner_token")" "204"
 expect "the list holds the rye only" "$(send_as GET "/stores/$store_id/inventory?lowStock=true" "$owner_token")" "200"
 expect "one product" "$(jq -c '[.totalCount, .items[0].productName]' "$work/body.json")" '[1,"Rye"]'
+
+step "stock ledger: every change leaves a movement, and the movements add up to the quantity"
+expect "the store user adds a product" "$(send_as POST "/stores/$store_id/products" "$owner_token" '{"name":"Lentils","price":3}')" "201"
+lentils_id="$(jq -r .id "$work/body.json")"
+expect "a delivery of ten" "$(send_as POST "/stores/$store_id/products/$lentils_id/stock-adjustments" "$owner_token" '{"delta":10,"reason":"Received"}')" "200"
+expect "two broke: a correction" "$(send_as POST "/stores/$store_id/products/$lentils_id/stock-adjustments" "$owner_token" '{"delta":-2,"reason":"Correction"}')" "200"
+expect "a person cannot claim the reason an order gives" "$(send_as POST "/stores/$store_id/products/$lentils_id/stock-adjustments" "$owner_token" '{"delta":1,"reason":"OrderPlaced"}')" "400"
+expect "nor the migration's" "$(send_as POST "/stores/$store_id/products/$lentils_id/stock-adjustments" "$owner_token" '{"delta":1,"reason":"OpeningBalance"}')" "400"
+expect "a delivery cannot remove" "$(send_as POST "/stores/$store_id/products/$lentils_id/stock-adjustments" "$owner_token" '{"delta":-1,"reason":"Received"}')" "400"
+expect "a refused removal writes nothing" "$(send_as POST "/stores/$store_id/products/$lentils_id/stock-adjustments" "$owner_token" '{"delta":-99}')" "409"
+expect "a customer orders three" "$(send_as POST "/stores/$store_id/orders" "$member_token" "{\"deliveryAddress\":\"1 High Street\",\"lines\":[{\"productId\":\"$lentils_id\",\"quantity\":3}]}")" "201"
+lentils_order_id="$(jq -r .id "$work/body.json")"
+expect "and changes their mind: the customer cancels" "$(send_as POST "/orders/$lentils_order_id/cancel" "$member_token")" "200"
+expect "the store user reads the history" "$(send_as GET "/stores/$store_id/products/$lentils_id/stock-movements" "$owner_token")" "200"
+expect "four movements, newest first: the cancellation, the order, the correction, the delivery" "$(jq -c '[.totalCount, [.items[] | .reason + ":" + (.delta | tostring)]]' "$work/body.json")" '[4,["OrderCancelled:3","OrderPlaced:-3","Correction:-2","Received:10"]]'
+expect "the order's movements name the order and the customer" "$(jq -c --arg o "$lentils_order_id" --arg c "$member_id" '[.items[:2][] | (.orderId == $o) and (.actorId == $c)]' "$work/body.json")" "[true,true]"
+expect "the delivery and the correction name the store user and no order" "$(jq -c --arg u "$owner_id" '[.items[2:][] | (.actorId == $u) and (.orderId == null)]' "$work/body.json")" "[true,true]"
+expect "the movements add up to the quantity: eight" "$(jq '[.items[].delta] | add' "$work/body.json")$(admin_sql "select quantity_on_hand from inventory_items where product_id = '$lentils_id'")" "88"
+expect "a customer cannot read the history" "$(send_as GET "/stores/$store_id/products/$lentils_id/stock-movements" "$member_token")" "403"
+expect "an unknown product is not found" "$(send_as GET "/stores/$store_id/products/$store_id/stock-movements" "$owner_token")" "404"
+# Everything this script did to the stock, in every step above (adjustments, orders, ten at once, cancellations, a customer against a store),
+# and the ledger still adds up for every product of the store.
+expect "for every product of the store, the movements add up to the quantity" "$(admin_sql "select count(*) from products p left join inventory_items i on i.product_id = p.id left join (select product_id, sum(delta) as total from stock_movements group by product_id) m on m.product_id = p.id where p.store_id = '$store_id' and coalesce(i.quantity_on_hand, 0) <> coalesce(m.total, 0)")" "0"
+expect "and the ledger is not empty: there are movements of every reason this script produces" "$(admin_sql "select string_agg(distinct reason, ',' order by reason) from stock_movements where store_id = '$store_id'")" "Correction,OrderCancelled,OrderPlaced,Received"
 
 step "a store user taken out of the store loses access at once, token or no token"
 expect "an admin takes the store user out" "$(send_as DELETE "/stores/$store_id/members/$owner_id" "$admin_token")" "204"

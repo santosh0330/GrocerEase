@@ -11,7 +11,8 @@ builder.AddStructuredLogging();
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options => options.InvalidModelStateResponseFactory = InvalidModelStateResponse.Create);
 builder.Services
     .AddApplication()
     .AddInfrastructure(builder.Configuration);

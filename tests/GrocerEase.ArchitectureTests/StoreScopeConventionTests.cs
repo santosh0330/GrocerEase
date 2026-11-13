@@ -41,6 +41,8 @@ public class StoreScopeConventionTests
     /// The methods of a repository interface that deal with a store-owned entity and neither take a storeId nor take an entity that
     /// carries one. A method deals with an entity when its signature mentions it, <b>or</b> when the interface is that entity's own
     /// (<c>IInventoryItemRepository</c> for <c>InventoryItem</c>): then every method counts, even one that returns only a number.
+    /// An entity that is also owned by a customer (it has a <c>CustomerId</c>, like an order) may be asked for by <c>customerId</c> instead:
+    /// a customer reading their own orders is scoped by themselves, and cannot see anyone else's.
     /// </summary>
     private static List<string> UnscopedMethods(Type repository, IReadOnlyCollection<Type> storeOwned) =>
         [.. repository.GetMethods()
@@ -50,6 +52,10 @@ public class StoreScopeConventionTests
                 || method.GetParameters().Any(parameter => Mentions(parameter.ParameterType, entity))))
             .Where(method => !method.GetParameters().Any(parameter =>
                 (parameter.ParameterType == typeof(Guid) && string.Equals(parameter.Name, "storeId", StringComparison.Ordinal))
+                || (parameter.ParameterType == typeof(Guid) && string.Equals(parameter.Name, "customerId", StringComparison.Ordinal)
+                    && storeOwned.Any(entity => entity.GetProperty("CustomerId", typeof(Guid)) is not null
+                        && (string.Equals(repository.Name, $"I{entity.Name}Repository", StringComparison.Ordinal)
+                            || Mentions(method.ReturnType, entity))))
                 || storeOwned.Contains(parameter.ParameterType)))
             .Select(method => $"{repository.Name}.{method.Name}")];
 
@@ -116,6 +122,7 @@ public class StoreScopeConventionTests
     [InlineData(typeof(Product), "products", nameof(ProductRepository))]
     [InlineData(typeof(StoreMember), "store_members", nameof(StoreMemberRepository))]
     [InlineData(typeof(InventoryItem), "inventory_items", nameof(InventoryItemRepository))]
+    [InlineData(typeof(Order), "orders", nameof(OrderRepository))]
     public void AStoreOwnedTable_IsReadAndChangedOnlyByItsRepository_AndTheContextThatExposesIt(Type entity, string table, string repository)
     {
         var strangers = TopLevelTypesThatQuery(entity).Union(TopLevelTypesWhoseSqlNames(table), StringComparer.Ordinal)
@@ -129,7 +136,7 @@ public class StoreScopeConventionTests
     public void EveryStoreOwnedEntity_HasATestedRepositoryRule()
     {
         // A new store-owned entity (an order, an inventory item) must be added to the theory above, or its table would be unguarded.
-        var covered = new[] { typeof(InventoryItem), typeof(Product), typeof(StoreMember) };
+        var covered = new[] { typeof(InventoryItem), typeof(Order), typeof(Product), typeof(StoreMember) };
 
         Assert.Equal(StoreOwnedEntities().Select(type => type.Name), covered.Select(type => type.Name).Order(StringComparer.Ordinal), StringComparer.Ordinal);
     }
@@ -145,6 +152,14 @@ public class StoreScopeConventionTests
         Task<int?> CountAsync(Guid productId, CancellationToken cancellationToken); // forgot the store, and mentions no entity
 
         Task<int?> TryAdjustAsync(Guid storeId, Guid productId, int delta, CancellationToken cancellationToken);
+    }
+
+    // An order is also a customer's: a read by customerId is scoped, a read by nothing is not.
+    private interface IOrderRepository
+    {
+        Task<Order?> GetForCustomerAsync(Guid customerId, Guid orderId, CancellationToken cancellationToken);
+
+        Task<Order?> GetAnyAsync(Guid orderId, CancellationToken cancellationToken); // forgot both the store and the customer
     }
 
     private interface IScopedRepository
@@ -165,6 +180,8 @@ public class StoreScopeConventionTests
         Assert.Equal(["IUnscopedRepository.GetAsync"], UnscopedMethods(typeof(IUnscopedRepository), storeOwned), StringComparer.Ordinal);
         Assert.Empty(UnscopedMethods(typeof(IScopedRepository), storeOwned));
         Assert.Equal(["IInventoryItemRepository.CountAsync"], UnscopedMethods(typeof(IInventoryItemRepository), storeOwned), StringComparer.Ordinal);
+        Assert.Equal(["IOrderRepository.GetAnyAsync"], UnscopedMethods(typeof(IOrderRepository), storeOwned), StringComparer.Ordinal);
+        Assert.Null(typeof(Product).GetProperty("CustomerId")); // customerId is a scope only for entities that have one: a product is not a customer's
         Assert.Contains(typeof(IProductRepository), RepositoryInterfaces()); // and the real one is among those checked
     }
 

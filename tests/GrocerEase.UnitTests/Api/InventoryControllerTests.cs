@@ -55,12 +55,24 @@ public class InventoryControllerTests
         }
     }
 
-    private static InventoryController ControllerWith(Spy adjust, string? sub = null, ListSpy? list = null, ThresholdSpy? threshold = null)
+    private sealed class MovementsSpy(Result<PagedResult<StockMovementResult>> result) : ICommandHandler<ListStockMovementsQuery, Result<PagedResult<StockMovementResult>>>
+    {
+        public ListStockMovementsQuery? Received { get; private set; }
+
+        public Task<Result<PagedResult<StockMovementResult>>> Handle(ListStockMovementsQuery command, CancellationToken cancellationToken)
+        {
+            Received = command;
+            return Task.FromResult(result);
+        }
+    }
+
+    private static InventoryController ControllerWith(Spy adjust, string? sub = null, ListSpy? list = null, ThresholdSpy? threshold = null, MovementsSpy? movements = null)
     {
         var controller = new InventoryController(
             adjust,
             list ?? new ListSpy(Result.Success(new PagedResult<InventoryEntryResult>([], 1, 20, 0))),
-            threshold ?? new ThresholdSpy(Result.Success(new InventoryEntryResult(ProductId, "Milk", 7, 5))))
+            threshold ?? new ThresholdSpy(Result.Success(new InventoryEntryResult(ProductId, "Milk", 7, 5))),
+            movements ?? new MovementsSpy(Result.Success(new PagedResult<StockMovementResult>([], 1, 20, 0))))
         {
             ProblemDetailsFactory = new StubProblemDetailsFactory(),
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
@@ -192,9 +204,52 @@ public class InventoryControllerTests
         Assert.Equal((StatusCodes.Status404NotFound, code), (problem.Status, problem.Extensions["code"]));
     }
 
+    [Fact]
+    public async Task ListMovements_PutsTheRouteTheCallerAndThePagingInTheQuery_AndReturnsThePageMapped()
+    {
+        var at = new DateTimeOffset(2026, 11, 13, 9, 0, 0, TimeSpan.Zero);
+        var order = Guid.CreateVersion7();
+        var movements = new MovementsSpy(Result.Success(new PagedResult<StockMovementResult>(
+            [new StockMovementResult(Guid.CreateVersion7(), ProductId, -3, "OrderPlaced", CallerId, order, at)], 2, 5, 11)));
+
+        var result = await ControllerWith(new Spy(Result.Success(new StockResult(ProductId, 1))), CallerId.ToString(), movements: movements)
+            .ListMovements(StoreId, ProductId, CancellationToken.None, 2, 5);
+
+        Assert.Equal(new ListStockMovementsQuery(StoreId, ProductId, CallerId, 2, 5), movements.Received);
+        var body = Assert.IsType<PagedResponse<StockMovementResponse>>(Assert.IsType<OkObjectResult>(result).Value);
+        var movement = Assert.Single(body.Items);
+        Assert.Equal((ProductId, -3, "OrderPlaced", (Guid?)CallerId, (Guid?)order, at), (movement.ProductId, movement.Delta, movement.Reason, movement.ActorId, movement.OrderId, movement.CreatedAt));
+        Assert.Equal((2, 5, 11), (body.Page, body.PageSize, body.TotalCount));
+    }
+
+    [Fact]
+    public async Task ListMovements_WithATokenThatDoesNotNameAUser_Is401_AndRunsNothing()
+    {
+        var movements = new MovementsSpy(Result.Success(new PagedResult<StockMovementResult>([], 1, 20, 0)));
+
+        var result = await ControllerWith(new Spy(Result.Success(new StockResult(ProductId, 1))), movements: movements).ListMovements(StoreId, ProductId, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value).Status);
+        Assert.Null(movements.Received);
+    }
+
+    [Theory]
+    [InlineData("Store.NotFound")]
+    [InlineData("Product.NotFound")]
+    public async Task ListMovements_WhenTheHandlerFails_Is404(string code)
+    {
+        var movements = new MovementsSpy(Result.Failure<PagedResult<StockMovementResult>>(new ResultError(code, "x", ErrorType.NotFound)));
+
+        var result = await ControllerWith(new Spy(Result.Success(new StockResult(ProductId, 1))), CallerId.ToString(), movements: movements).ListMovements(StoreId, ProductId, CancellationToken.None);
+
+        var problem = Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value);
+        Assert.Equal((StatusCodes.Status404NotFound, code), (problem.Status, problem.Extensions["code"]));
+    }
+
     [Theory]
     [InlineData(nameof(InventoryController.Adjust))]
     [InlineData(nameof(InventoryController.List))]
+    [InlineData(nameof(InventoryController.ListMovements))]
     [InlineData(nameof(InventoryController.SetLowStockThreshold))]
     public void EachRoute_NeedsThePermissionToManageInventory_NotARoleName(string action)
     {

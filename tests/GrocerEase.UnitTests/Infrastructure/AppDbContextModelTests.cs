@@ -58,14 +58,14 @@ public class AppDbContextModelTests
 
         Assert.Equal([Permissions.OrdersCancel, Permissions.OrdersPlace, Permissions.OrdersRead, Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead], Of(claims, RoleIds.Customer), StringComparer.Ordinal);
         Assert.Equal(
-            [Permissions.ProductsRead, Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresManage, Permissions.StoresRead],
+            [Permissions.OrdersReadAll, Permissions.ProductsRead, Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresManage, Permissions.StoresRead],
             Of(claims, RoleIds.Admin),
             StringComparer.Ordinal);
         Assert.Equal(
             [Permissions.InventoryManage, Permissions.OrdersManage, Permissions.ProductsManage, Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead],
             Of(claims, RoleIds.StoreUser),
             StringComparer.Ordinal);
-        Assert.Equal(17, claims.Count);
+        Assert.Equal(18, claims.Count);
     }
 
     [Fact]

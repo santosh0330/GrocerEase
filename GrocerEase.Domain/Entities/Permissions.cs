@@ -43,6 +43,9 @@ public static class Permissions
     /// <summary>Cancelling one's own order while it is still pending, <c>POST /orders/{orderId}/cancel</c>.</summary>
     public const string OrdersCancel = "orders.cancel";
 
+    /// <summary>Reading the orders of <b>every</b> store, read only: <c>GET /admin/orders</c>. Not the same as <see cref="OrdersManage"/>, which is for the orders of one's own store and moves them along.</summary>
+    public const string OrdersReadAll = "orders.read.all";
+
     public static IReadOnlyList<string> All { get; } =
-        [ProfileRead, RolesRead, StoresRead, StoresManage, ProductsRead, ProductsManage, InventoryManage, OrdersPlace, OrdersRead, OrdersManage, OrdersCancel];
+        [ProfileRead, RolesRead, StoresRead, StoresManage, ProductsRead, ProductsManage, InventoryManage, OrdersPlace, OrdersRead, OrdersManage, OrdersCancel, OrdersReadAll];
 }

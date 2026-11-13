@@ -32,6 +32,7 @@ public sealed class RoleClaimConfiguration : IEntityTypeConfiguration<RoleClaim>
     private static readonly Guid CustomerOrdersRead = new("019e0000-0000-7000-8000-000000000115");
     private static readonly Guid StoreUserOrdersManage = new("019e0000-0000-7000-8000-000000000116");
     private static readonly Guid CustomerOrdersCancel = new("019e0000-0000-7000-8000-000000000117");
+    private static readonly Guid AdminOrdersReadAll = new("019e0000-0000-7000-8000-000000000118");
 
     public void Configure(EntityTypeBuilder<RoleClaim> builder)
     {
@@ -64,7 +65,7 @@ public sealed class RoleClaimConfiguration : IEntityTypeConfiguration<RoleClaim>
             .OnDelete(DeleteBehavior.Cascade)
             .IsRequired();
 
-        // What each role may do. Customer: read the own profile. Admin: that, and read the roles. StoreUser: read the own profile. Everyone may read stores; only the admin manages them. Everyone may browse products; only a store user manages them, and the stock of their store. Only a customer orders, reads their own orders and cancels their own pending order; only a store user moves the orders of their store.
+        // What each role may do. Customer: read the own profile. Admin: that, and read the roles. StoreUser: read the own profile. Everyone may read stores; only the admin manages them. Everyone may browse products; only a store user manages them, and the stock of their store. Only a customer orders, reads their own orders and cancels their own pending order; only a store user moves the orders of their store; the admin reads the orders of every store, and moves none.
         builder.HasData(
             new RoleClaim(CustomerProfileRead, RoleIds.Customer, Permissions.ClaimType, Permissions.ProfileRead),
             new RoleClaim(AdminProfileRead, RoleIds.Admin, Permissions.ClaimType, Permissions.ProfileRead),
@@ -82,6 +83,7 @@ public sealed class RoleClaimConfiguration : IEntityTypeConfiguration<RoleClaim>
             new RoleClaim(CustomerOrdersPlace, RoleIds.Customer, Permissions.ClaimType, Permissions.OrdersPlace),
             new RoleClaim(CustomerOrdersRead, RoleIds.Customer, Permissions.ClaimType, Permissions.OrdersRead),
             new RoleClaim(StoreUserOrdersManage, RoleIds.StoreUser, Permissions.ClaimType, Permissions.OrdersManage),
-            new RoleClaim(CustomerOrdersCancel, RoleIds.Customer, Permissions.ClaimType, Permissions.OrdersCancel));
+            new RoleClaim(CustomerOrdersCancel, RoleIds.Customer, Permissions.ClaimType, Permissions.OrdersCancel),
+            new RoleClaim(AdminOrdersReadAll, RoleIds.Admin, Permissions.ClaimType, Permissions.OrdersReadAll));
     }
 }

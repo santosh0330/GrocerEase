@@ -73,7 +73,7 @@ public class MeEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var me = await (await client.SendAsync(request)).Content.ReadFromJsonAsync<CurrentUserResponse>();
 
         Assert.Equal("Admin", me!.Role);
-        Assert.Equal(["products.read", "profile.read", "roles.read", "stores.manage", "stores.read"], me.Permissions, StringComparer.Ordinal);
+        Assert.Equal(["orders.read.all", "products.read", "profile.read", "roles.read", "stores.manage", "stores.read"], me.Permissions, StringComparer.Ordinal);
     }
 
     [Fact]

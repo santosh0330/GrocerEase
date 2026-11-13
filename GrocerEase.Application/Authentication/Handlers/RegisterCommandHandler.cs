@@ -36,8 +36,8 @@ public sealed class RegisterCommandHandler(
             return Result.Failure<AuthenticationResult>(AuthenticationErrors.DuplicateEmail);
         }
 
-        var token = jwtTokenGenerator.GenerateToken(user, customer).Token;
+        var accessToken = jwtTokenGenerator.GenerateToken(user, customer);
         var refreshToken = await refreshTokenIssuer.StartSessionAsync(user.Id, cancellationToken);
-        return Result.Success(new AuthenticationResult(user.Id, user.FirstName, user.LastName, user.Email, token, refreshToken));
+        return Result.Success(new AuthenticationResult(user.Id, user.FirstName, user.LastName, user.Email, accessToken.Token, accessToken.ExpiresAt, refreshToken));
     }
 }

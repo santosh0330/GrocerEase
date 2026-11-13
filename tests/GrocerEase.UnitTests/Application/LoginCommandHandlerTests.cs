@@ -49,6 +49,7 @@ public class LoginCommandHandlerTests
         Assert.Equal(ada.Id, user.Id);
         Assert.Equal(("Ada", "Lovelace", "ada@example.com"), (user.FirstName, user.LastName, user.Email));
         Assert.Equal("token-for-ada@example.com", user.Token);
+        Assert.Equal(StubTokenGenerator.ExpiresAt, user.ExpiresAt); // the generator's answer, passed on as it is
     }
 
     [Theory]

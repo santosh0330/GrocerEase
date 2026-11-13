@@ -12,8 +12,9 @@ namespace GrocerEase.UnitTests.Api;
 public class AuthControllerTests
 {
     private static readonly Guid UserId = Guid.Parse("11111111-2222-3333-4444-555555555555");
+    private static readonly DateTimeOffset ExpiresAt = new(2030, 1, 1, 12, 10, 0, TimeSpan.Zero);
     private static readonly Result<AuthenticationResult> CannedResult =
-        Result.Success(new AuthenticationResult(UserId, "Grace", "Hopper", "grace@example.com", "jwt", "refresh"));
+        Result.Success(new AuthenticationResult(UserId, "Grace", "Hopper", "grace@example.com", "jwt", ExpiresAt, "refresh"));
 
     private readonly SpyHandler<RegisterCommand> _registerHandler = new(CannedResult);
     private readonly SpyHandler<LoginCommand> _loginHandler = new(CannedResult);
@@ -44,7 +45,7 @@ public class AuthControllerTests
             new RegisterRequest("Ada", "Lovelace", "ada@example.com", "s3cret!"), CancellationToken.None);
 
         var response = Assert.IsType<AuthenticationResponse>(Assert.IsType<OkObjectResult>(result).Value);
-        Assert.Equal(new AuthenticationResponse(UserId, "Grace", "Hopper", "grace@example.com", "jwt", "refresh"), response);
+        Assert.Equal(new AuthenticationResponse(UserId, "Grace", "Hopper", "grace@example.com", "jwt", ExpiresAt, "refresh"), response);
     }
 
     [Fact]
@@ -62,7 +63,7 @@ public class AuthControllerTests
             new LoginRequest("ada@example.com", "s3cret!"), CancellationToken.None);
 
         var response = Assert.IsType<AuthenticationResponse>(Assert.IsType<OkObjectResult>(result).Value);
-        Assert.Equal(new AuthenticationResponse(UserId, "Grace", "Hopper", "grace@example.com", "jwt", "refresh"), response);
+        Assert.Equal(new AuthenticationResponse(UserId, "Grace", "Hopper", "grace@example.com", "jwt", ExpiresAt, "refresh"), response);
     }
 
     [Fact]
@@ -107,7 +108,7 @@ public class AuthControllerTests
         var result = await CreateController().Refresh(new RefreshRequest("the-refresh-token"), CancellationToken.None);
 
         var response = Assert.IsType<AuthenticationResponse>(Assert.IsType<OkObjectResult>(result).Value);
-        Assert.Equal(new AuthenticationResponse(UserId, "Grace", "Hopper", "grace@example.com", "jwt", "refresh"), response);
+        Assert.Equal(new AuthenticationResponse(UserId, "Grace", "Hopper", "grace@example.com", "jwt", ExpiresAt, "refresh"), response);
     }
 
     [Fact]

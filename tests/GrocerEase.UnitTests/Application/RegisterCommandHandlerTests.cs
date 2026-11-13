@@ -83,6 +83,7 @@ public class RegisterCommandHandlerTests
         Assert.Equal(("Ada", "Lovelace", "ada@example.com"), (user.FirstName, user.LastName, user.Email));
         Assert.NotEqual(Guid.Empty, user.Id);
         Assert.Equal("token-for-ada@example.com", user.Token);
+        Assert.Equal(StubTokenGenerator.ExpiresAt, user.ExpiresAt); // the generator's answer, passed on as it is
 
         var stored = await repository.GetByEmailAsync("ada@example.com", CancellationToken.None);
         Assert.NotNull(stored);

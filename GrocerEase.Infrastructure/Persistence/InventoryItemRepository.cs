@@ -20,6 +20,22 @@ public sealed class InventoryItemRepository(AppDbContext db) : IInventoryItemRep
             .ToDictionaryAsync(item => item.ProductId, cancellationToken);
     }
 
+    public async Task<int?> SetLowStockThresholdAsync(Guid storeId, Guid productId, int? threshold, CancellationToken cancellationToken)
+    {
+        // CAST: a null level is sent without a type, and PostgreSQL must be told what it is. On a row that exists only the level is written,
+        // and only if the row is in this store (the composite foreign key already ties the two, so this is a second lock on the same door).
+        var rows = await db.Database.SqlQuery<int>($"""
+            INSERT INTO inventory_items (product_id, store_id, quantity_on_hand, low_stock_threshold)
+            VALUES ({productId}, {storeId}, 0, CAST({threshold} AS integer))
+            ON CONFLICT (product_id) DO UPDATE
+                SET low_stock_threshold = CAST({threshold} AS integer)
+                WHERE inventory_items.store_id = {storeId}
+            RETURNING quantity_on_hand AS "Value"
+            """).ToListAsync(cancellationToken);
+
+        return rows.Count == 1 ? rows[0] : null;
+    }
+
     public async Task<int?> TryAdjustAsync(Guid storeId, Guid productId, int delta, CancellationToken cancellationToken)
     {
         // EF reads the single column of a raw query as the type asked for, if the column is named "Value". RETURNING gives the new quantity,

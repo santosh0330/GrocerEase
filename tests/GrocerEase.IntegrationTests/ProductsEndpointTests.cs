@@ -648,4 +648,22 @@ public class ProductsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactor
         Assert.True((await ProblemAsync(response)).GetProperty("errors").TryGetProperty(field, out _));
         Assert.Equal(milk, await ReadAsync(client, token, storeId, milk.Id));
     }
+
+    [Fact]
+    public async Task AProduct_IsVersionOneWhenMade_AndEveryEditIsTheNextVersion_InEveryResponse()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        var (token, _, _) = await StoreUserOfAsync(client, admin, storeId);
+        var created = await CreateProductAsync(client, token, storeId);
+
+        var edited = (await (await PutAsync(client, token, storeId, created.Id, new UpdateProductRequest($"Renamed {Guid.NewGuid():N}", "Vegan", 3.20m))).Content.ReadFromJsonAsync<ProductResponse>())!;
+        var again = (await (await PutAsync(client, token, storeId, created.Id, new UpdateProductRequest(edited.Name, "Vegan", 3.40m))).Content.ReadFromJsonAsync<ProductResponse>())!;
+        var read = (await (await SendAsync(client, HttpMethod.Get, $"/stores/{storeId}/products/{created.Id}", token)).Content.ReadFromJsonAsync<ProductResponse>())!;
+        var list = (await (await SendAsync(client, HttpMethod.Get, $"/stores/{storeId}/products", token)).Content.ReadFromJsonAsync<PagedResponse<ProductResponse>>())!;
+
+        Assert.Equal((1, 2, 3, 3), (created.Version, edited.Version, again.Version, read.Version));
+        Assert.Equal([3], list.Items.Select(product => product.Version));
+    }
 }

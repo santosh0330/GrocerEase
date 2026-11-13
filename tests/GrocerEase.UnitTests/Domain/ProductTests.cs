@@ -105,4 +105,37 @@ public class ProductTests
     [Fact]
     public void WithDetails_RefusesWhatTheConstructorRefuses() =>
         Assert.Throws<ArgumentOutOfRangeException>(() => Milk().WithDetails("Milk", "", 0m));
+
+    [Fact]
+    public void ANewProduct_IsVersionOne()
+    {
+        Assert.Equal(1, Milk().Version);
+        Assert.Equal(Product.FirstVersion, Milk().Version);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(7)]
+    [InlineData(int.MaxValue)]
+    public void AVersionOfOneOrMore_IsKept(int version) =>
+        Assert.Equal(version, new Product(Guid.CreateVersion7(), StoreId, "Milk", "", 1m, null, version).Version);
+
+    [Theory]
+    [InlineData(0)] // "never read": a client that sent nothing
+    [InlineData(-1)]
+    [InlineData(int.MinValue)]
+    public void AVersionBelowOne_IsRefused(int version) =>
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Product(Guid.CreateVersion7(), StoreId, "Milk", "", 1m, null, version));
+
+    [Fact]
+    public void AnEditedCopy_IsTheNextVersion_AndKeepsTheRest()
+    {
+        var archivedAt = new DateTimeOffset(2026, 11, 13, 9, 0, 0, TimeSpan.Zero);
+        var product = new Product(Guid.CreateVersion7(), StoreId, "Milk", "", 1m, archivedAt, 4);
+
+        var edited = product.WithDetails("Oat milk", "Vegan", 3m);
+
+        Assert.Equal((5, product.Id, StoreId, archivedAt), (edited.Version, edited.Id, edited.StoreId, edited.ArchivedAt));
+        Assert.Equal(4, product.Version); // the original is not changed: the entity is immutable
+    }
 }

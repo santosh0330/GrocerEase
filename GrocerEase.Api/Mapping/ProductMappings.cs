@@ -32,6 +32,6 @@ public static class ProductMappings
     public static ProductResponse ToResponse(this ProductResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
-        return new ProductResponse(result.Id, result.StoreId, result.Name, result.Description, result.Price);
+        return new ProductResponse(result.Id, result.StoreId, result.Name, result.Description, result.Price, result.Version);
     }
 }

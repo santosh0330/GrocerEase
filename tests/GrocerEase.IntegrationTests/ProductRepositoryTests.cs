@@ -119,6 +119,64 @@ public class ProductRepositoryTests
         Assert.Equal((milk.Id, store, "Oat milk", "Vegan", 3.20m), (found?.Id, found?.StoreId, found?.Name, found?.Description, found?.Price));
     }
 
+    private static async Task<int?> VersionInDatabaseAsync(Guid productId) =>
+        await PostgresServer.ScalarAsync<int?>(await PostgresServer.ApplicationConnectionStringAsync(), $"select version from products where id = '{productId}'");
+
+    [Fact]
+    public async Task ANewProduct_IsStoredAsVersionOne_AndReadBackWithIt()
+    {
+        var store = await StoredStoreAsync();
+        var milk = NewProduct(store);
+        Assert.True(await AddAsync(milk));
+
+        Assert.Equal(1, await VersionInDatabaseAsync(milk.Id));
+        Assert.Equal(1, (await GetAsync(store, milk.Id))!.Version);
+    }
+
+    [Fact]
+    public async Task EveryEdit_IsTheNextVersion_AndTheListShowsIt()
+    {
+        var store = await StoredStoreAsync();
+        var milk = NewProduct(store);
+        Assert.True(await AddAsync(milk));
+
+        var second = milk.WithDetails("Oat milk", "Vegan", 3.20m);
+        Assert.Equal(ProductUpdateOutcome.Updated, await UpdateAsync(second));
+        Assert.Equal(ProductUpdateOutcome.Updated, await UpdateAsync(second.WithDetails("Oat milk", "Vegan", 3.40m)));
+
+        Assert.Equal(3, await VersionInDatabaseAsync(milk.Id));
+        Assert.Equal(3, (await GetAsync(store, milk.Id))!.Version);
+        Assert.Equal([3], (await ListAsync(store, 1, 20)).Items.Select(product => product.Version));
+    }
+
+    [Fact]
+    public async Task AFailedEdit_DoesNotChangeTheVersion()
+    {
+        var store = await StoredStoreAsync();
+        var milk = NewProduct(store, "Milk");
+        var bread = NewProduct(store, "Bread");
+        Assert.True(await AddAsync(milk));
+        Assert.True(await AddAsync(bread));
+
+        Assert.Equal(ProductUpdateOutcome.DuplicateName, await UpdateAsync(milk.WithDetails("Bread", "", 1m))); // the name is taken
+        Assert.Equal(ProductUpdateOutcome.NotFound, await UpdateAsync(NewProduct(store, "Nobody")));
+
+        Assert.Equal(1, await VersionInDatabaseAsync(milk.Id));
+    }
+
+    [Fact]
+    public async Task Archiving_IsAChangeToo_SoItIsTheNextVersion()
+    {
+        var store = await StoredStoreAsync();
+        var milk = NewProduct(store);
+        Assert.True(await AddAsync(milk));
+        await using var db = await NewContextAsync();
+
+        Assert.True(await new ProductRepository(db).TryArchiveAsync(store, milk.Id, DateTimeOffset.UtcNow, CancellationToken.None));
+
+        Assert.Equal(2, await VersionInDatabaseAsync(milk.Id));
+    }
+
     [Fact]
     public async Task AProduct_MayBeGivenItsOwnNameAgain()
     {

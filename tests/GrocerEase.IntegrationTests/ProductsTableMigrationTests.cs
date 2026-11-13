@@ -30,7 +30,7 @@ public class ProductsTableMigrationTests
             """);
 
         Assert.Equal(
-            "id:uuid:-:NO, store_id:uuid:-:NO, name:character varying:100:NO, description:character varying:1000:NO, price:numeric:12,2:NO, archived_at:timestamp with time zone:-:YES",
+            "id:uuid:-:NO, store_id:uuid:-:NO, name:character varying:100:NO, description:character varying:1000:NO, price:numeric:12,2:NO, archived_at:timestamp with time zone:-:YES, version:integer:32,0:NO",
             columns);
     }
 

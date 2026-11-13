@@ -22,6 +22,7 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
             // The database refuses what the entity refuses, whatever wrote the row.
             table.HasCheckConstraint("ck_products_id_is_uuid_v7", $"uuid_extract_version(id) = {Product.RequiredIdVersion}");
             table.HasCheckConstraint("ck_products_price_is_positive", "price > 0");
+            table.HasCheckConstraint("ck_products_version_is_positive", $"version >= {Product.FirstVersion}");
         });
 
         builder.HasKey(product => product.Id).HasName("pk_products");
@@ -38,6 +39,10 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         // numeric(12, 2): exact decimal arithmetic, never a floating point type for money.
         builder.Property(product => product.Price).HasColumnName("price").HasPrecision(12, Product.PriceScale).IsRequired();
         builder.Property(product => product.ArchivedAt).HasColumnName("archived_at");
+
+        // 1 for a new product, and one more for every change to the row (the statements that change it say so). The default is for the rows that
+        // existed before the column did.
+        builder.Property(product => product.Version).HasColumnName("version").HasDefaultValue(Product.FirstVersion).IsRequired();
 
         // store_id first, so it also serves "the products of this store". The filter is what makes archiving free the name.
         builder.HasIndex(product => new { product.StoreId, product.Name })

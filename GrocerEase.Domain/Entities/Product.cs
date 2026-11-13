@@ -6,8 +6,14 @@ namespace GrocerEase.Domain.Entities;
 /// a version 7 id, a store, text that fits its column, and a price that is a real amount of money.
 /// </summary>
 /// <remarks>
+/// <para>
 /// A product is never deleted: it is <b>archived</b>. A past order keeps pointing at what was bought, and an archived product frees
 /// its name for a new one. The entity is immutable, as <see cref="User"/> is; <see cref="WithDetails"/> returns an edited copy.
+/// </para>
+/// <para>
+/// It has a <see cref="Version"/>: 1 when it is made, and one more for every change to the row (an edit, the archiving). A client that read
+/// version 3 and writes "from version 3" can be told, if the product is already at 4, that someone changed it in between.
+/// </para>
 /// </remarks>
 public sealed class Product
 {
@@ -24,7 +30,10 @@ public sealed class Product
     /// <summary>The most a <c>numeric(12, 2)</c> can hold: ten digits before the point.</summary>
     public const decimal MaxPrice = 9_999_999_999.99m;
 
-    public Product(Guid id, Guid storeId, string name, string description, decimal price, DateTimeOffset? archivedAt = null)
+    /// <summary>The version of a product that has just been made.</summary>
+    public const int FirstVersion = 1;
+
+    public Product(Guid id, Guid storeId, string name, string description, decimal price, DateTimeOffset? archivedAt = null, int version = FirstVersion)
     {
         ArgumentOutOfRangeException.ThrowIfEqual(id, Guid.Empty);
         if (id.Version != RequiredIdVersion)
@@ -42,6 +51,7 @@ public sealed class Product
         ThrowIfLongerThan(trimmedName, MaxNameLength, nameof(name));
         ThrowIfLongerThan(trimmedDescription, MaxDescriptionLength, nameof(description));
         ThrowIfNotAPrice(price);
+        ArgumentOutOfRangeException.ThrowIfLessThan(version, FirstVersion); // versions count from 1: zero means "never read"
 
         Id = id;
         StoreId = storeId;
@@ -49,6 +59,7 @@ public sealed class Product
         Description = trimmedDescription;
         Price = price;
         ArchivedAt = archivedAt;
+        Version = version;
     }
 
     private static void ThrowIfLongerThan(string value, int maxLength, string parameterName)
@@ -85,7 +96,16 @@ public sealed class Product
 
     public bool IsArchived => ArchivedAt is not null;
 
-    /// <summary>The same product with a new name, description and price: the id, the store and the archived state stay.</summary>
+    /// <summary>
+    /// Which state of the product this is: 1 when it was made, and one more for every change to the row. A client sends back the version it
+    /// read, and a change made from an old one is refused instead of overwriting what someone else did.
+    /// </summary>
+    public int Version { get; }
+
+    /// <summary>
+    /// The same product with a new name, description and price: the id, the store and the archived state stay, and the version is the next
+    /// one, which is what the row will hold once the edit is stored.
+    /// </summary>
     public Product WithDetails(string name, string description, decimal price) =>
-        new(Id, StoreId, name, description, price, ArchivedAt);
+        new(Id, StoreId, name, description, price, ArchivedAt, Version + 1);
 }

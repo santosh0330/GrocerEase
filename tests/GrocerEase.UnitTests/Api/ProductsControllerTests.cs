@@ -32,7 +32,7 @@ public class ProductsControllerTests
 
     private static readonly Guid StoreId = Guid.CreateVersion7();
     private static readonly Guid CallerId = Guid.CreateVersion7();
-    private static readonly ProductResult Milk = new(Guid.CreateVersion7(), StoreId, "Milk", "Fresh milk", 2.50m);
+    private static readonly ProductResult Milk = new(Guid.CreateVersion7(), StoreId, "Milk", "Fresh milk", 2.50m, 3); // not 1, so a test sees the version carried through
 
     private static ProductsController ControllerWith(
         Spy<CreateProductCommand, Result<ProductResult>> create,
@@ -68,7 +68,7 @@ public class ProductsControllerTests
         var created = Assert.IsType<CreatedAtActionResult>(result);
         Assert.Equal(nameof(ProductsController.Get), created.ActionName);
         Assert.Equal((StoreId, Milk.Id), (created.RouteValues?["storeId"], created.RouteValues?["productId"]));
-        Assert.Equal(new ProductResponse(Milk.Id, StoreId, "Milk", "Fresh milk", 2.50m), created.Value);
+        Assert.Equal(new ProductResponse(Milk.Id, StoreId, "Milk", "Fresh milk", 2.50m, 3), created.Value);
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public class ProductsControllerTests
             .Update(StoreId, Milk.Id, new UpdateProductRequest("Oat milk", null, 3.2m), CancellationToken.None);
 
         Assert.Equal(new UpdateProductCommand(StoreId, Milk.Id, CallerId, "Oat milk", string.Empty, 3.2m), update.Received);
-        Assert.Equal(new ProductResponse(Milk.Id, StoreId, "Milk", "Fresh milk", 2.50m), Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal(new ProductResponse(Milk.Id, StoreId, "Milk", "Fresh milk", 2.50m, 3), Assert.IsType<OkObjectResult>(result).Value);
     }
 
     [Fact]
@@ -193,7 +193,7 @@ public class ProductsControllerTests
 
         Assert.Equal(new ListProductsQuery(StoreId, 2, 5), list.Received);
         var body = Assert.IsType<PagedResponse<ProductResponse>>(Assert.IsType<OkObjectResult>(result).Value);
-        Assert.Equal([new ProductResponse(Milk.Id, StoreId, "Milk", "Fresh milk", 2.50m)], body.Items);
+        Assert.Equal([new ProductResponse(Milk.Id, StoreId, "Milk", "Fresh milk", 2.50m, 3)], body.Items);
         Assert.Equal((2, 5, 11), (body.Page, body.PageSize, body.TotalCount));
     }
 
@@ -226,7 +226,7 @@ public class ProductsControllerTests
         var result = await ControllerWith(create, get).Get(StoreId, Milk.Id, CancellationToken.None);
 
         Assert.Equal(new GetProductQuery(StoreId, Milk.Id), get.Received);
-        Assert.Equal(new ProductResponse(Milk.Id, StoreId, "Milk", "Fresh milk", 2.50m), Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal(new ProductResponse(Milk.Id, StoreId, "Milk", "Fresh milk", 2.50m, 3), Assert.IsType<OkObjectResult>(result).Value);
     }
 
     [Fact]
@@ -268,7 +268,7 @@ public class ProductsControllerTests
     public void TheMappings_CopyEveryField()
     {
         Assert.Equal(new CreateProductCommand(StoreId, CallerId, "A", "B", 1.5m), new CreateProductRequest("A", "B", 1.5m).ToCommand(StoreId, CallerId));
-        Assert.Equal(new ProductResponse(Milk.Id, StoreId, "Milk", "Fresh milk", 2.50m), Milk.ToResponse());
+        Assert.Equal(new ProductResponse(Milk.Id, StoreId, "Milk", "Fresh milk", 2.50m, 3), Milk.ToResponse());
         Assert.Equal(new ArchiveProductCommand(StoreId, Milk.Id, CallerId), Milk.Id.ToArchiveCommand(StoreId, CallerId));
         Assert.Equal(new UpdateProductCommand(StoreId, Milk.Id, CallerId, "A", "B", 1.5m), new UpdateProductRequest("A", "B", 1.5m).ToCommand(StoreId, Milk.Id, CallerId));
     }

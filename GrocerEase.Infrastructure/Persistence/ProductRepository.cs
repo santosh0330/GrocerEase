@@ -56,7 +56,8 @@ public sealed class ProductRepository(AppDbContext db) : IProductRepository
                     setters => setters
                         .SetProperty(existing => existing.Name, product.Name)
                         .SetProperty(existing => existing.Description, product.Description)
-                        .SetProperty(existing => existing.Price, product.Price),
+                        .SetProperty(existing => existing.Price, product.Price)
+                        .SetProperty(existing => existing.Version, existing => existing.Version + 1), // every change to the row is a new version
                     cancellationToken);
             return changed == 1 ? ProductUpdateOutcome.Updated : ProductUpdateOutcome.NotFound;
         }
@@ -71,7 +72,11 @@ public sealed class ProductRepository(AppDbContext db) : IProductRepository
         // UPDATE products SET archived_at = @now WHERE id = @id AND store_id = @store AND archived_at IS NULL
         await db.Products
             .Where(product => product.Id == productId && product.StoreId == storeId && product.ArchivedAt == null)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(product => product.ArchivedAt, archivedAt), cancellationToken) == 1;
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(product => product.ArchivedAt, archivedAt)
+                    .SetProperty(product => product.Version, product => product.Version + 1), // archiving changes the row too
+                cancellationToken) == 1;
 
     public async Task<bool> TryAddAsync(Product product, CancellationToken cancellationToken)
     {

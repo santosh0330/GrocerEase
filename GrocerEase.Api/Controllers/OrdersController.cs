@@ -24,7 +24,8 @@ namespace GrocerEase.Api.Controllers;
 public sealed class OrdersController(
     ICommandHandler<PlaceOrderCommand, Result<OrderResult>> placeHandler,
     ICommandHandler<GetMyOrderQuery, Result<OrderResult>> getHandler,
-    ICommandHandler<ListMyOrdersQuery, Result<PagedResult<OrderResult>>> listHandler) : ControllerBase
+    ICommandHandler<ListMyOrdersQuery, Result<PagedResult<OrderResult>>> listHandler,
+    ICommandHandler<CancelMyOrderCommand, Result<OrderResult>> cancelHandler) : ControllerBase
 {
     private const string ProblemJson = "application/problem+json";
 
@@ -84,6 +85,26 @@ public sealed class OrdersController(
         }
 
         var result = await getHandler.Handle(new GetMyOrderQuery(customerId, orderId), cancellationToken);
+        return result.Match<IActionResult>(order => Ok(order.ToResponse()), error => this.ToProblem(error));
+    }
+
+    // A customer takes back their own order while the store has not looked at it (Pending), and the stock goes back. Once it is verified,
+    // only the store can cancel it (409). Someone else's order is a 404, the same as one that does not exist.
+    [HttpPost("/orders/{orderId:guid}/cancel")]
+    [Authorize(Policy = Permissions.OrdersCancel)]
+    [ProducesResponseType<OrderResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, ProblemJson)]
+    public async Task<IActionResult> Cancel(Guid orderId, CancellationToken cancellationToken)
+    {
+        if (User.GetUserId() is not { } customerId)
+        {
+            return this.InvalidTokenProblem();
+        }
+
+        var result = await cancelHandler.Handle(new CancelMyOrderCommand(customerId, orderId), cancellationToken);
         return result.Match<IActionResult>(order => Ok(order.ToResponse()), error => this.ToProblem(error));
     }
 }

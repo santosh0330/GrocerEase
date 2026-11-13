@@ -16,7 +16,7 @@ namespace GrocerEase.IntegrationTests;
 /// </summary>
 public class CancelOrderRollbackTests
 {
-    private sealed record World(Guid StoreId, Guid StoreUserId, Guid OrderId, Guid FirstId, Guid SecondId);
+    private sealed record World(Guid StoreId, Guid StoreUserId, Guid CustomerId, Guid OrderId, Guid FirstId, Guid SecondId);
 
     /// <summary>A store with two products (the first by id holds 5, the second 1 after the order took 2 of each), a store user, and a pending order for 2 of each.</summary>
     private static async Task<World> AWorldAsync(ServiceProvider provider)
@@ -46,7 +46,7 @@ public class CancelOrderRollbackTests
             orderId, store.Id, customer.Id, "1 High Street", DateTimeOffset.UtcNow,
             [new OrderLine(Guid.CreateVersion7(), orderId, products[0].Id, products[0].Name, 2.50m, 2), new OrderLine(Guid.CreateVersion7(), orderId, products[1].Id, products[1].Name, 1.10m, 2)]);
         await new OrderRepository(db).AddAsync(order, CancellationToken.None);
-        return new World(store.Id, staff.Id, orderId, products[0].Id, products[1].Id);
+        return new World(store.Id, staff.Id, customer.Id, orderId, products[0].Id, products[1].Id);
     }
 
     private static async Task<Result<OrderResult>> CancelAsync(ServiceProvider provider, World world)
@@ -92,5 +92,35 @@ public class CancelOrderRollbackTests
         // work that is what would remain: (7, max, "Cancelled"). With it, everything is as it was.
         Assert.Equal("Order.CannotRestoreStock", result.Error.Code);
         Assert.Equal((5, InventoryItem.MaxQuantity, "Pending"), await StateAsync(world));
+    }
+
+    [Fact]
+    public async Task TheCustomersCancellation_IsOneUnitToo_WhenTheSecondLinesStockCannotBePutBack_NothingChanges()
+    {
+        await using var provider = await RealApplication.BuildAsync();
+        var world = await AWorldAsync(provider);
+        await PostgresServer.ExecuteAsync(
+            await PostgresServer.ApplicationConnectionStringAsync(), $"update inventory_items set quantity_on_hand = {InventoryItem.MaxQuantity} where product_id = '{world.SecondId}'");
+
+        using var scope = provider.CreateScope();
+        var result = await scope.ServiceProvider.GetRequiredService<ICommandHandler<CancelMyOrderCommand, Result<OrderResult>>>()
+            .Handle(new CancelMyOrderCommand(world.CustomerId, world.OrderId), CancellationToken.None);
+
+        Assert.Equal("Order.CannotRestoreStock", result.Error.Code);
+        Assert.Equal((5, InventoryItem.MaxQuantity, "Pending"), await StateAsync(world)); // the status and the first line's restore went back with it
+    }
+
+    [Fact]
+    public async Task TheCustomersCancellation_PutsAllTheStockBack_WhenEveryLineCan()
+    {
+        await using var provider = await RealApplication.BuildAsync();
+        var world = await AWorldAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var result = await scope.ServiceProvider.GetRequiredService<ICommandHandler<CancelMyOrderCommand, Result<OrderResult>>>()
+            .Handle(new CancelMyOrderCommand(world.CustomerId, world.OrderId), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal((7, 3, "Cancelled"), await StateAsync(world));
     }
 }

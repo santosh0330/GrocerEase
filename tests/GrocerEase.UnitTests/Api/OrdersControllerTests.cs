@@ -48,12 +48,14 @@ public class OrdersControllerTests
         }
     }
 
-    private static OrdersController ControllerWith(Spy<PlaceOrderCommand> place, Spy<GetMyOrderQuery>? get = null, string? sub = null, ListSpy? list = null)
+    private static OrdersController ControllerWith(
+        Spy<PlaceOrderCommand> place, Spy<GetMyOrderQuery>? get = null, string? sub = null, ListSpy? list = null, Spy<CancelMyOrderCommand>? cancel = null)
     {
         var controller = new OrdersController(
             place,
             get ?? new Spy<GetMyOrderQuery>(Result.Success(Placed)),
-            list ?? new ListSpy(Result.Success(new PagedResult<OrderResult>([], 1, 20, 0))))
+            list ?? new ListSpy(Result.Success(new PagedResult<OrderResult>([], 1, 20, 0))),
+            cancel ?? new Spy<CancelMyOrderCommand>(Result.Success(Placed with { Status = "Cancelled" })))
         {
             ProblemDetailsFactory = new StubProblemDetailsFactory(),
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
@@ -154,8 +156,46 @@ public class OrdersControllerTests
         Assert.Null(list.Received);
     }
 
+    [Fact]
+    public async Task Cancel_PutsTheOrderAndTheCallerFromTheTokenInTheCommand_AndReturnsTheOrder()
+    {
+        var cancel = new Spy<CancelMyOrderCommand>(Result.Success(Placed with { Status = "Cancelled" }));
+
+        var result = await ControllerWith(new Spy<PlaceOrderCommand>(Result.Success(Placed)), sub: CustomerId.ToString(), cancel: cancel).Cancel(Placed.Id, CancellationToken.None);
+
+        Assert.Equal(new CancelMyOrderCommand(CustomerId, Placed.Id), cancel.Received);
+        Assert.Equal("Cancelled", Assert.IsType<OrderResponse>(Assert.IsType<OkObjectResult>(result).Value).Status);
+    }
+
+    [Fact]
+    public async Task Cancel_WithATokenThatDoesNotNameAUser_Is401_AndRunsNothing()
+    {
+        var cancel = new Spy<CancelMyOrderCommand>(Result.Success(Placed));
+
+        var result = await ControllerWith(new Spy<PlaceOrderCommand>(Result.Success(Placed)), cancel: cancel).Cancel(Placed.Id, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value).Status);
+        Assert.Null(cancel.Received);
+    }
+
+    [Theory]
+    [InlineData("Order.NotFound", ErrorType.NotFound, StatusCodes.Status404NotFound)]
+    [InlineData("Order.InvalidTransition", ErrorType.Conflict, StatusCodes.Status409Conflict)]
+    [InlineData("Order.ChangedMeanwhile", ErrorType.Conflict, StatusCodes.Status409Conflict)]
+    [InlineData("Order.CannotRestoreStock", ErrorType.Conflict, StatusCodes.Status409Conflict)]
+    public async Task Cancel_WhenTheHandlerFails_ReturnsAProblemForThatError(string code, ErrorType type, int status)
+    {
+        var cancel = new Spy<CancelMyOrderCommand>(Result.Failure<OrderResult>(new ResultError(code, "x", type)));
+
+        var result = await ControllerWith(new Spy<PlaceOrderCommand>(Result.Success(Placed)), sub: CustomerId.ToString(), cancel: cancel).Cancel(Placed.Id, CancellationToken.None);
+
+        var problem = Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value);
+        Assert.Equal((status, code), (problem.Status, problem.Extensions["code"]));
+    }
+
     [Theory]
     [InlineData(nameof(OrdersController.Place), Permissions.OrdersPlace)]
+    [InlineData(nameof(OrdersController.Cancel), Permissions.OrdersCancel)]
     [InlineData(nameof(OrdersController.List), Permissions.OrdersRead)]
     [InlineData(nameof(OrdersController.Get), Permissions.OrdersRead)]
     public void EachRoute_NeedsItsPermission_NotARoleName(string action, string permission)

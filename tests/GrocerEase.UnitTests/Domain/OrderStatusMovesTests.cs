@@ -7,7 +7,7 @@ public class OrderStatusMovesTests
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 13, 9, 0, 0, TimeSpan.Zero);
 
-    private static readonly string[] Actions = ["Verify", "Ship", "Cancel"];
+    private static readonly string[] Actions = ["Verify", "Ship", "Cancel", "Withdraw"];
 
     private static Order InState(OrderStatus status)
     {
@@ -33,24 +33,29 @@ public class OrderStatusMovesTests
         "Verify" => order.Verify(),
         "Ship" => order.Ship(),
         "Cancel" => order.Cancel(),
+        "Withdraw" => order.Withdraw(),
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, null),
     };
 
-    // Every one of the 4 states by the 3 actions: the legal moves are listed, the other eight are refused.
+    // Every one of the 4 states by the 4 actions: the legal moves are listed, the other eleven are refused. Withdraw is the customer's own cancellation: legal only while Pending.
     private static readonly (OrderStatus From, string Action, bool Allowed, OrderStatus Expected)[] Moves =
     [
         (OrderStatus.Pending, "Verify", true, OrderStatus.Verified),
         (OrderStatus.Pending, "Ship", false, OrderStatus.Pending),
         (OrderStatus.Pending, "Cancel", true, OrderStatus.Cancelled),
+        (OrderStatus.Pending, "Withdraw", true, OrderStatus.Cancelled),
         (OrderStatus.Verified, "Verify", false, OrderStatus.Verified),
         (OrderStatus.Verified, "Ship", true, OrderStatus.Shipped),
         (OrderStatus.Verified, "Cancel", true, OrderStatus.Cancelled),
+        (OrderStatus.Verified, "Withdraw", false, OrderStatus.Verified),
         (OrderStatus.Shipped, "Verify", false, OrderStatus.Shipped),
         (OrderStatus.Shipped, "Ship", false, OrderStatus.Shipped),
         (OrderStatus.Shipped, "Cancel", false, OrderStatus.Shipped),
+        (OrderStatus.Shipped, "Withdraw", false, OrderStatus.Shipped),
         (OrderStatus.Cancelled, "Verify", false, OrderStatus.Cancelled),
         (OrderStatus.Cancelled, "Ship", false, OrderStatus.Cancelled),
         (OrderStatus.Cancelled, "Cancel", false, OrderStatus.Cancelled),
+        (OrderStatus.Cancelled, "Withdraw", false, OrderStatus.Cancelled),
     ];
 
     public static TheoryData<OrderStatus, string, bool, OrderStatus> MoveRows()
@@ -105,7 +110,7 @@ public class OrderStatusMovesTests
         {
             var order = InState(final);
 
-            Assert.False(order.Verify() || order.Ship() || order.Cancel());
+            Assert.False(order.Verify() || order.Ship() || order.Cancel() || order.Withdraw());
             Assert.Equal(final, order.Status);
         }
     }

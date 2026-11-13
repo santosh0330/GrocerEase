@@ -110,6 +110,8 @@ curl -s http://localhost:8080/me -H "Authorization: Bearer $TOKEN"
 | `GET /stores/{storeId}/inventory` | the same | a page of every product on sale with `{ productId, productName, quantityOnHand }`, zero when it has never had stock |
 | `POST /stores/{storeId}/orders` | the `orders.place` permission (a customer) | body `{ "deliveryAddress": "...", "lines": [{ "productId": "...", "quantity": 2 }] }`; `201` and the order; `409 Order.InsufficientStock`; limited to 20 a minute (see [Orders](#orders)) |
 | `GET /orders`, `GET /orders/{orderId}` | the `orders.read` permission (a customer) | a page of the caller's **own** orders, newest first, or one of them; someone else's is `404 Order.NotFound` |
+| `GET /stores/{storeId}/orders` | the `orders.manage` permission **and** running that store (a store user) | a page of the store's orders, **oldest first**, optionally `?status=Pending` (any case); `400` for a status that is not one (see [Fulfilling orders](#fulfilling-orders)) |
+| `POST /stores/{storeId}/orders/{orderId}/verify`, `.../ship`, `.../cancel` | the same | moves the order along (`200` and the order); `409 Order.InvalidTransition`, `409 Order.ChangedMeanwhile`; cancelling puts the stock back |
 
 An access token lives 10 minutes (`Jwt:ExpiryMinutes`); the refresh token keeps the session going. A request without a valid token never reaches the route. It gets `application/problem+json` with a `code` to switch on, plus a `WWW-Authenticate` header:
 
@@ -276,7 +278,7 @@ curl -s http://localhost:8080/orders/$ORDER_ID -H "Authorization: Bearer $CUSTOM
 - **A line is a product as it was bought.** Its name and unit price are copied, so a later price change, rename or archive does not rewrite the order. The total is computed from the lines.
 - **A product may appear once** in an order (ask for a bigger quantity), an order has at most 100 lines, and a line asks for 1 to a billion. An unknown store, an unknown or archived product, and another store's product are `404`, and nothing is reserved.
 - **Lines are reserved in order of product id**, whatever order they were asked for, so two orders for the same products cannot deadlock on each other's rows.
-- A new order is `Pending`. The store user moves it to `Verified`, `Shipped` or `Cancelled` in a later slice; there is no payment.
+- A new order is `Pending`. The store user moves it to `Verified`, `Shipped` or `Cancelled` (see [Fulfilling orders](#fulfilling-orders)); there is no payment.
 - **Placing an order is limited to 20 a minute per client address** (see [Rate limits](#rate-limits)).
 
 | Status | `code` | When |
@@ -285,6 +287,37 @@ curl -s http://localhost:8080/orders/$ORDER_ID -H "Authorization: Bearer $CUSTOM
 | `404` | `Store.NotFound` / `Product.NotFound` | the store does not exist, or a product is unknown, archived, or another store's |
 | `404` | `Order.NotFound` | no such order, or it is someone else's |
 | `400` | | no lines, a product twice, a quantity of zero, a blank address, more than 100 lines |
+
+### Fulfilling orders
+
+The people who run a store see its orders and move them along. A customer follows their own order at `GET /orders/{orderId}`.
+
+```bash
+curl -s "http://localhost:8080/stores/$STORE_ID/orders?status=Pending" -H "Authorization: Bearer $STORE_USER_TOKEN"   # the queue, oldest first
+curl -s -X POST http://localhost:8080/stores/$STORE_ID/orders/$ORDER_ID/verify -H "Authorization: Bearer $STORE_USER_TOKEN"   # Pending -> Verified
+curl -s -X POST http://localhost:8080/stores/$STORE_ID/orders/$ORDER_ID/ship   -H "Authorization: Bearer $STORE_USER_TOKEN"   # Verified -> Shipped
+curl -s -X POST http://localhost:8080/stores/$STORE_ID/orders/$ORDER_ID/cancel -H "Authorization: Bearer $STORE_USER_TOKEN"   # Pending or Verified -> Cancelled, stock back
+```
+
+```text
+Pending ──verify──▶ Verified ──ship──▶ Shipped (final)
+   │                    │
+   └────────cancel──────┴──────────▶ Cancelled (final, stock back)
+```
+
+- **Only a store user, and only in their own store.** `orders.manage` says what kind of user; the membership (checked against the database on every request) says which store. A store the caller does not run is `404 Store.NotFound`, like one that does not exist; an order of another store, or an unknown order, is `404 Order.NotFound`, so nobody can probe for orders. A customer or an admin gets `403`.
+- **The rules are in the entity.** `Order.Verify()`, `Ship()` and `Cancel()` are the only way to change a status, and each refuses a status it may not leave: `409 Order.InvalidTransition`, naming the status the order is in. Every combination of the four statuses and the three actions is a test.
+- **When two people act at once, the database decides.** A move is one SQL statement that changes the row only if it still has the status that was read. Of two store users verifying the same order, one gets `200`; the other gets `409` (`Order.InvalidTransition` if they read it after the winner, `Order.ChangedMeanwhile` if they read it before and lost the write). Nothing is written twice.
+- **Cancelling puts the stock back, once.** The status changes first and the stock goes back in the same transaction, so only the winner of a race restores: ten cancellations of one order restore its quantity once, and an order that shipped first is refused and its stock stays gone. Lines are restored in order of product id, like they are reserved, so two cancellations cannot deadlock. If a quantity cannot be put back because the store has since filled the stock to its limit, the answer is `409 Order.CannotRestoreStock` and nothing changes.
+- **Shipping touches no stock**: it left when the order was placed.
+
+| Status | `code` | When |
+|---|---|---|
+| `409` | `Order.InvalidTransition` | the move is not allowed from the status the order is in (shipping a pending order, cancelling a shipped one, anything on a final one) |
+| `409` | `Order.ChangedMeanwhile` | someone moved the order between this request reading it and writing it |
+| `409` | `Order.CannotRestoreStock` | cancelling would take a product's stock past its limit |
+| `404` | `Store.NotFound` / `Order.NotFound` | not your store, or not an order of this store |
+| `400` | | `?status=` is not `Pending`, `Verified`, `Shipped` or `Cancelled`; a bad `page` or `pageSize` |
 
 ### Paging
 

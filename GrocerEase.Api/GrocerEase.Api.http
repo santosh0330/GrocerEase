@@ -188,6 +188,31 @@ Authorization: Bearer {{login.response.body.$.token}}
 
 ###
 
+# Fulfilling orders. Log in as the STORE USER of the store (not the customer). The orders of the store, OLDEST first so the one that has
+# waited longest is on top; ?status= is Pending, Verified, Shipped or Cancelled (any case). A store you do not run is 404, like one that does not exist.
+GET {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/orders?status=Pending&page=1&pageSize=20
+Authorization: Bearer {{login.response.body.$.token}}
+
+###
+
+# Pending -> Verified. 200 and the order; 409 "Order.InvalidTransition" if it is not pending, 409 "Order.ChangedMeanwhile" if someone else moved it first.
+POST {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/orders/{{placeOrder.response.body.$.id}}/verify
+Authorization: Bearer {{login.response.body.$.token}}
+
+###
+
+# Verified -> Shipped (final). It must be verified first. Shipping moves no stock: it left when the order was placed.
+POST {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/orders/{{placeOrder.response.body.$.id}}/ship
+Authorization: Bearer {{login.response.body.$.token}}
+
+###
+
+# Pending or Verified -> Cancelled (final), and every line's stock goes back, once, in the same transaction. A shipped order cannot be cancelled.
+POST {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/orders/{{placeOrder.response.body.$.id}}/cancel
+Authorization: Bearer {{login.response.body.$.token}}
+
+###
+
 # Health, readiness: open to anyone, no token. Runs every check, including the database.
 # 200 { "status": "Healthy", "totalDurationMs": 4.1, "checks": [ { "name": "database", "status": "Healthy", "durationMs": 3.8 } ] }
 # 503 with "status": "Unhealthy" when the database cannot be reached or has not been migrated. It never says why: that goes to the log.

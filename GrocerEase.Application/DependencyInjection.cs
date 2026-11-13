@@ -5,6 +5,10 @@ using GrocerEase.Application.Authentication.Common;
 using GrocerEase.Application.Authentication.Handlers;
 using GrocerEase.Application.Common;
 using GrocerEase.Application.Decorators;
+using GrocerEase.Application.Products.Commands;
+using GrocerEase.Application.Products.Common;
+using GrocerEase.Application.Products.Handlers;
+using GrocerEase.Application.Products.Queries;
 using GrocerEase.Application.Roles.Common;
 using GrocerEase.Application.Roles.Handlers;
 using GrocerEase.Application.Roles.Queries;
@@ -30,6 +34,7 @@ public static class DependencyInjection
         services.AddValidatorsFromAssembly(typeof(AssemblyReference).Assembly);
 
         services.AddScoped<RefreshTokenIssuer>(); // scoped, like the repository it writes through
+        services.AddScoped<StoreAccess>(); // the ownership rule, scoped like the repository it reads through
 
         services.AddValidatedCommandHandler<RegisterCommand, Result<AuthenticationResult>, RegisterCommandHandler>();
         services.AddValidatedCommandHandler<LoginCommand, Result<AuthenticationResult>, LoginCommandHandler>();
@@ -38,6 +43,9 @@ public static class DependencyInjection
         services.AddValidatedCommandHandler<CreateStoreCommand, Result<StoreResult>, CreateStoreCommandHandler>();
         services.AddValidatedCommandHandler<GetStoreQuery, Result<StoreResult>, GetStoreQueryHandler>();
         services.AddValidatedCommandHandler<ListStoresQuery, Result<IReadOnlyList<StoreResult>>, ListStoresQueryHandler>();
+
+        services.AddValidatedCommandHandler<CreateProductCommand, Result<ProductResult>, CreateProductCommandHandler>();
+        services.AddValidatedCommandHandler<GetProductQuery, Result<ProductResult>, GetProductQueryHandler>();
 
         // Writes a membership and a role, which must be kept together or not at all.
         services.AddTransactionalCommandHandler<AssignStoreMemberCommand, Result<StoreMemberResult>, AssignStoreMemberCommandHandler>();

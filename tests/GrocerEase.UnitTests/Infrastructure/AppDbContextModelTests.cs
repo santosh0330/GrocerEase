@@ -51,21 +51,21 @@ public class AppDbContextModelTests
             .Select(row => (RoleId: (Guid)row[nameof(RoleClaim.RoleId)]!, Type: (string)row[nameof(RoleClaim.Type)]!, Value: (string)row[nameof(RoleClaim.Value)]!))
             .ToList();
 
+        // What each role may do, in the order the claims sort: by value.
+        static List<string> Of(IEnumerable<(Guid RoleId, string Type, string Value)> claims, Guid roleId) =>
+            [.. claims.Where(claim => claim.RoleId == roleId && string.Equals(claim.Type, Permissions.ClaimType, StringComparison.Ordinal))
+                .Select(claim => claim.Value).Order(StringComparer.Ordinal)];
+
+        Assert.Equal([Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead], Of(claims, RoleIds.Customer), StringComparer.Ordinal);
         Assert.Equal(
-            [(RoleIds.Customer, Permissions.ClaimType, Permissions.ProfileRead), (RoleIds.Customer, Permissions.ClaimType, Permissions.StoresRead)],
-            claims.Where(claim => claim.RoleId == RoleIds.Customer).OrderBy(claim => claim.Value, StringComparer.Ordinal));
+            [Permissions.ProductsRead, Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresManage, Permissions.StoresRead],
+            Of(claims, RoleIds.Admin),
+            StringComparer.Ordinal);
         Assert.Equal(
-            [
-                (RoleIds.Admin, Permissions.ClaimType, Permissions.ProfileRead),
-                (RoleIds.Admin, Permissions.ClaimType, Permissions.RolesRead),
-                (RoleIds.Admin, Permissions.ClaimType, Permissions.StoresManage),
-                (RoleIds.Admin, Permissions.ClaimType, Permissions.StoresRead),
-            ],
-            claims.Where(claim => claim.RoleId == RoleIds.Admin).OrderBy(claim => claim.Value, StringComparer.Ordinal));
-        Assert.Equal(
-            [(RoleIds.StoreUser, Permissions.ClaimType, Permissions.ProfileRead), (RoleIds.StoreUser, Permissions.ClaimType, Permissions.StoresRead)],
-            claims.Where(claim => claim.RoleId == RoleIds.StoreUser).OrderBy(claim => claim.Value, StringComparer.Ordinal));
-        Assert.Equal(8, claims.Count);
+            [Permissions.ProductsManage, Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead],
+            Of(claims, RoleIds.StoreUser),
+            StringComparer.Ordinal);
+        Assert.Equal(12, claims.Count);
     }
 
     [Fact]

@@ -22,6 +22,54 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("GrocerEase.Domain.Entities.Product", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuidv7()");
+
+                    b.Property<DateTimeOffset?>("ArchivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("archived_at");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.Property<decimal>("Price")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("price");
+
+                    b.Property<Guid>("StoreId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("store_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_products");
+
+                    b.HasIndex("StoreId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_products_store_id_name")
+                        .HasFilter("archived_at IS NULL");
+
+                    b.ToTable("products", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_products_id_is_uuid_v7", "uuid_extract_version(id) = 7");
+
+                            t.HasCheckConstraint("ck_products_price_is_positive", "price > 0");
+                        });
+                });
+
             modelBuilder.Entity("GrocerEase.Domain.Entities.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -223,6 +271,34 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                             RoleId = new Guid("019e0000-0000-7000-8000-000000000003"),
                             Type = "permission",
                             Value = "stores.read"
+                        },
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000109"),
+                            RoleId = new Guid("019e0000-0000-7000-8000-000000000002"),
+                            Type = "permission",
+                            Value = "products.read"
+                        },
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000110"),
+                            RoleId = new Guid("019e0000-0000-7000-8000-000000000001"),
+                            Type = "permission",
+                            Value = "products.read"
+                        },
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000111"),
+                            RoleId = new Guid("019e0000-0000-7000-8000-000000000003"),
+                            Type = "permission",
+                            Value = "products.read"
+                        },
+                        new
+                        {
+                            Id = new Guid("019e0000-0000-7000-8000-000000000112"),
+                            RoleId = new Guid("019e0000-0000-7000-8000-000000000003"),
+                            Type = "permission",
+                            Value = "products.manage"
                         });
                 });
 
@@ -350,6 +426,16 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("ck_users_id_is_uuid_v7", "uuid_extract_version(id) = 7");
                         });
+                });
+
+            modelBuilder.Entity("GrocerEase.Domain.Entities.Product", b =>
+                {
+                    b.HasOne("GrocerEase.Domain.Entities.Store", null)
+                        .WithMany()
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_products_stores_store_id");
                 });
 
             modelBuilder.Entity("GrocerEase.Domain.Entities.RefreshToken", b =>

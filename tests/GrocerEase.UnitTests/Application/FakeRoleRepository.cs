@@ -17,6 +17,7 @@ internal sealed class FakeRoleRepository(bool seeded = true) : IRoleRepository
         var role = new Role(RoleIds.Customer, RoleNames.Customer);
         role.Grant(Permissions.ProfileRead);
         role.Grant(Permissions.StoresRead);
+        role.Grant(Permissions.ProductsRead);
         return role;
     }
 
@@ -27,6 +28,7 @@ internal sealed class FakeRoleRepository(bool seeded = true) : IRoleRepository
         role.Grant(Permissions.RolesRead);
         role.Grant(Permissions.StoresManage);
         role.Grant(Permissions.StoresRead);
+        role.Grant(Permissions.ProductsRead);
         return role;
     }
 
@@ -35,6 +37,8 @@ internal sealed class FakeRoleRepository(bool seeded = true) : IRoleRepository
         var role = new Role(RoleIds.StoreUser, RoleNames.StoreUser);
         role.Grant(Permissions.ProfileRead);
         role.Grant(Permissions.StoresRead);
+        role.Grant(Permissions.ProductsRead);
+        role.Grant(Permissions.ProductsManage);
         return role;
     }
 

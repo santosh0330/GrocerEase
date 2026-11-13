@@ -27,9 +27,9 @@ public class ListRolesQueryHandlerTests
         var result = await handler.Handle(new ListRolesQuery(), CancellationToken.None);
 
         var byName = result.Value.ToDictionary(role => role.Name, role => role.Permissions, StringComparer.Ordinal);
-        Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresManage, Permissions.StoresRead], byName[RoleNames.Admin], StringComparer.Ordinal);
-        Assert.Equal([Permissions.ProfileRead, Permissions.StoresRead], byName[RoleNames.Customer], StringComparer.Ordinal);
-        Assert.Equal([Permissions.ProfileRead, Permissions.StoresRead], byName[RoleNames.StoreUser], StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProductsRead, Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresManage, Permissions.StoresRead], byName[RoleNames.Admin], StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead], byName[RoleNames.Customer], StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProductsManage, Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead], byName[RoleNames.StoreUser], StringComparer.Ordinal);
     }
 
     [Fact]

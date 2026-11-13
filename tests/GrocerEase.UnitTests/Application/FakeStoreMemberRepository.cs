@@ -21,6 +21,9 @@ internal sealed class FakeStoreMemberRepository : IStoreMemberRepository
         return Task.FromResult(true);
     }
 
+    public Task<bool> IsMemberAsync(Guid storeId, Guid userId, CancellationToken cancellationToken) =>
+        Task.FromResult(Members.Exists(member => member.StoreId == storeId && member.UserId == userId));
+
     public Task<bool> TryRemoveAsync(Guid storeId, Guid userId, CancellationToken cancellationToken) =>
         Task.FromResult(Members.RemoveAll(member => member.StoreId == storeId && member.UserId == userId) == 1);
 }

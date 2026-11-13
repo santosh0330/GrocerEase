@@ -129,6 +129,35 @@ public class StoreMemberRepositoryTests
         Assert.True(await AddAsync(await StoredStoreAsync(), userId));
     }
 
+    private static async Task<bool> IsMemberAsync(Guid storeId, Guid userId)
+    {
+        await using var db = await NewContextAsync();
+        return await new StoreMemberRepository(db).IsMemberAsync(storeId, userId, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task AMember_IsAMemberOfTheirStore_AndOfNoOther()
+    {
+        var store = await StoredStoreAsync();
+        var userId = await StoredUserAsync();
+        await AddAsync(store, userId);
+
+        Assert.True(await IsMemberAsync(store, userId));
+        Assert.False(await IsMemberAsync(await StoredStoreAsync(), userId));
+        Assert.False(await IsMemberAsync(store, await StoredUserAsync()));
+    }
+
+    [Fact]
+    public async Task AUserTakenOut_IsNoLongerAMember_AtOnce()
+    {
+        var store = await StoredStoreAsync();
+        var userId = await StoredUserAsync();
+        await AddAsync(store, userId);
+        await RemoveAsync(store, userId);
+
+        Assert.False(await IsMemberAsync(store, userId));
+    }
+
     [Fact]
     public async Task AStoreCanHaveManyMembers()
     {

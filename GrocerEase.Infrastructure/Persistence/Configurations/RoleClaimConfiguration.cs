@@ -23,6 +23,10 @@ public sealed class RoleClaimConfiguration : IEntityTypeConfiguration<RoleClaim>
     private static readonly Guid AdminStoresRead = new("019e0000-0000-7000-8000-000000000106");
     private static readonly Guid CustomerStoresRead = new("019e0000-0000-7000-8000-000000000107");
     private static readonly Guid StoreUserStoresRead = new("019e0000-0000-7000-8000-000000000108");
+    private static readonly Guid AdminProductsRead = new("019e0000-0000-7000-8000-000000000109");
+    private static readonly Guid CustomerProductsRead = new("019e0000-0000-7000-8000-000000000110");
+    private static readonly Guid StoreUserProductsRead = new("019e0000-0000-7000-8000-000000000111");
+    private static readonly Guid StoreUserProductsManage = new("019e0000-0000-7000-8000-000000000112");
 
     public void Configure(EntityTypeBuilder<RoleClaim> builder)
     {
@@ -55,7 +59,7 @@ public sealed class RoleClaimConfiguration : IEntityTypeConfiguration<RoleClaim>
             .OnDelete(DeleteBehavior.Cascade)
             .IsRequired();
 
-        // What each role may do. Customer: read the own profile. Admin: that, and read the roles. StoreUser: read the own profile. Everyone may read stores; only the admin manages them.
+        // What each role may do. Customer: read the own profile. Admin: that, and read the roles. StoreUser: read the own profile. Everyone may read stores; only the admin manages them. Everyone may browse products; only a store user manages them.
         builder.HasData(
             new RoleClaim(CustomerProfileRead, RoleIds.Customer, Permissions.ClaimType, Permissions.ProfileRead),
             new RoleClaim(AdminProfileRead, RoleIds.Admin, Permissions.ClaimType, Permissions.ProfileRead),
@@ -64,6 +68,10 @@ public sealed class RoleClaimConfiguration : IEntityTypeConfiguration<RoleClaim>
             new RoleClaim(AdminStoresManage, RoleIds.Admin, Permissions.ClaimType, Permissions.StoresManage),
             new RoleClaim(AdminStoresRead, RoleIds.Admin, Permissions.ClaimType, Permissions.StoresRead),
             new RoleClaim(CustomerStoresRead, RoleIds.Customer, Permissions.ClaimType, Permissions.StoresRead),
-            new RoleClaim(StoreUserStoresRead, RoleIds.StoreUser, Permissions.ClaimType, Permissions.StoresRead));
+            new RoleClaim(StoreUserStoresRead, RoleIds.StoreUser, Permissions.ClaimType, Permissions.StoresRead),
+            new RoleClaim(AdminProductsRead, RoleIds.Admin, Permissions.ClaimType, Permissions.ProductsRead),
+            new RoleClaim(CustomerProductsRead, RoleIds.Customer, Permissions.ClaimType, Permissions.ProductsRead),
+            new RoleClaim(StoreUserProductsRead, RoleIds.StoreUser, Permissions.ClaimType, Permissions.ProductsRead),
+            new RoleClaim(StoreUserProductsManage, RoleIds.StoreUser, Permissions.ClaimType, Permissions.ProductsManage));
     }
 }

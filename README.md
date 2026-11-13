@@ -1,6 +1,6 @@
 # GrocerEase
 
-GrocerEase is an API for web-based grocery shopping platform. It is meant to let customers browse, search, and order basic grocery items remotely, and to give store administrators a way to manage stock.
+GrocerEase is a grocery shopping REST API built with Clean Architecture on .NET 10, ASP.NET Core and PostgreSQL. It is meant to let customers browse, search, and order basic grocery items remotely, and to give store administrators a way to manage stock. It covers authentication, orders, stock and fulfilment, and runs with Docker Compose.
 
 The planned scope, from the Software Design Description:
 
@@ -149,7 +149,7 @@ Every user holds **exactly one role**, stored in `users.role_id`. A role **grant
 
 | Role | Id | Who | May do |
 |---|---|---|---|
-| `Customer` | `019e0000-0000-7000-8000-000000000001` | everyone who registers | `profile.read`, `stores.read`, `products.read`, `orders.place`, `orders.read` |
+| `Customer` | `019e0000-0000-7000-8000-000000000001` | everyone who registers | `profile.read`, `stores.read`, `products.read`, `orders.place`, `orders.read`, `orders.cancel` |
 | `Admin` | `019e0000-0000-7000-8000-000000000002` | made by hand, see below | `profile.read`, `roles.read`, `stores.read`, `stores.manage`, `products.read` |
 | `StoreUser` | `019e0000-0000-7000-8000-000000000003` | a customer an admin assigned to a store | `profile.read`, `stores.read`, `products.read`, `products.manage`, `inventory.manage`, `orders.manage` |
 
@@ -164,6 +164,7 @@ Every user holds **exactly one role**, stored in `users.role_id`. A role **grant
 | `inventory.manage` | reading and changing the stock, **in a store the caller runs** (see [Inventory](#inventory)) |
 | `orders.place` | `POST /stores/{storeId}/orders` (see [Orders](#orders)) |
 | `orders.read` | reading one's **own** orders |
+| `orders.cancel` | `POST /orders/{orderId}/cancel`: a customer cancels their **own** order while it is pending |
 | `orders.manage` | the orders of a store: list them, verify, ship, cancel, **in a store the caller runs** |
 
 The token carries the role's name as `role` and the permissions as a `permission` array (`["products.read","profile.read","stores.read"]`). A route names the permission it needs, `[Authorize(Policy = "roles.read")]`, not a role: the policy checks the `permission` claims of the token, so giving the permission to another role changes no endpoint. `GET /me` shows the role and the permissions the token carries.

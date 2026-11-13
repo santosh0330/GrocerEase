@@ -20,6 +20,7 @@ internal sealed class FakeRoleRepository(bool seeded = true) : IRoleRepository
         role.Grant(Permissions.ProductsRead);
         role.Grant(Permissions.OrdersPlace);
         role.Grant(Permissions.OrdersRead);
+        role.Grant(Permissions.OrdersCancel);
         return role;
     }
 

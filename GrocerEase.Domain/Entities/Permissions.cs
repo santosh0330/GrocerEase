@@ -40,6 +40,9 @@ public static class Permissions
     /// <summary>Seeing the orders of one's own store and moving them along: verify, ship, cancel.</summary>
     public const string OrdersManage = "orders.manage";
 
+    /// <summary>Cancelling one's own order while it is still pending, <c>POST /orders/{orderId}/cancel</c>.</summary>
+    public const string OrdersCancel = "orders.cancel";
+
     public static IReadOnlyList<string> All { get; } =
-        [ProfileRead, RolesRead, StoresRead, StoresManage, ProductsRead, ProductsManage, InventoryManage, OrdersPlace, OrdersRead, OrdersManage];
+        [ProfileRead, RolesRead, StoresRead, StoresManage, ProductsRead, ProductsManage, InventoryManage, OrdersPlace, OrdersRead, OrdersManage, OrdersCancel];
 }

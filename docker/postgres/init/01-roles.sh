@@ -10,7 +10,8 @@
 #   grocerease_app         what the API connects as. Can read and write rows in the tables the migrator creates, and nothing
 #                          else: no creating, altering or dropping, no other schemas, no other databases.
 #
-# The role names are used by docker-compose.yml and by the integration tests too: change them in all three places.
+# The role names are used by docker-compose.yml, by the integration tests, and by the migration that makes the stock ledger append-only
+# (it takes UPDATE and DELETE back from grocerease_app): change them in all four places.
 set -euo pipefail
 
 : "${MIGRATOR_PASSWORD:?set MIGRATOR_PASSWORD}"

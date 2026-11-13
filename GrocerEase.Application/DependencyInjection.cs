@@ -60,6 +60,7 @@ public static class DependencyInjection
 
         services.AddValidatedCommandHandler<AdjustStockCommand, Result<StockResult>, AdjustStockCommandHandler>();
         services.AddValidatedCommandHandler<ListInventoryQuery, Result<PagedResult<InventoryEntryResult>>, ListInventoryQueryHandler>();
+        services.AddValidatedCommandHandler<SetLowStockThresholdCommand, Result<InventoryEntryResult>, SetLowStockThresholdCommandHandler>(); // one statement: no unit of work
 
         services.AddValidatedCommandHandler<GetMyOrderQuery, Result<OrderResult>, GetMyOrderQueryHandler>();
         services.AddValidatedCommandHandler<ListMyOrdersQuery, Result<PagedResult<OrderResult>>, ListMyOrdersQueryHandler>();

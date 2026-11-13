@@ -228,4 +228,89 @@ public class InventoryItemRepositoryTests
         Assert.All(results, quantity => Assert.NotNull(quantity));
         Assert.Equal(100 + (15 * 3) - (15 * 2), await QuantityAsync(product));
     }
+
+    private static async Task<int?> SetLevelAsync(Guid storeId, Guid productId, int? level)
+    {
+        await using var db = await NewContextAsync();
+        return await new InventoryItemRepository(db).SetLowStockThresholdAsync(storeId, productId, level, CancellationToken.None);
+    }
+
+    private static async Task<int?> LevelAsync(Guid productId) =>
+        await PostgresServer.ScalarAsync<int?>(await PostgresServer.ApplicationConnectionStringAsync(), $"select low_stock_threshold from inventory_items where product_id = '{productId}'");
+
+    [Fact]
+    public async Task SettingALevel_OnAProductWithNoRow_MakesTheRowAtZero_WithThatLevel()
+    {
+        var (store, milk) = await AProductAsync();
+
+        Assert.Equal(0, await SetLevelAsync(store, milk, 5));
+
+        Assert.Equal((0, 5), (await QuantityAsync(milk), await LevelAsync(milk)));
+    }
+
+    [Fact]
+    public async Task SettingALevel_WritesOnlyTheLevel_TheQuantityStays_AndNullClearsIt()
+    {
+        var (store, milk) = await AProductAsync();
+        await AdjustAsync(store, milk, 9);
+
+        Assert.Equal(9, await SetLevelAsync(store, milk, 3));
+        Assert.Equal((9, 3), (await QuantityAsync(milk), await LevelAsync(milk)));
+        Assert.Equal(9, await SetLevelAsync(store, milk, null));
+        Assert.Equal((9, (int?)null), (await QuantityAsync(milk), await LevelAsync(milk)));
+    }
+
+    [Fact]
+    public async Task AnAdjustment_LeavesTheLevelAlone()
+    {
+        var (store, milk) = await AProductAsync();
+        await SetLevelAsync(store, milk, 4);
+
+        await AdjustAsync(store, milk, 6);
+        await AdjustAsync(store, milk, -2);
+
+        Assert.Equal((4, 4), (await QuantityAsync(milk), await LevelAsync(milk)));
+    }
+
+    [Fact]
+    public async Task ALevelSetThroughAnotherStore_ChangesNothing_WhenTheRowExists()
+    {
+        var (store, milk) = await AProductAsync();
+        var (other, _) = await AProductAsync();
+        await AdjustAsync(store, milk, 7);
+        await SetLevelAsync(store, milk, 2);
+
+        Assert.Null(await SetLevelAsync(other, milk, 99));
+
+        Assert.Equal((7, 2), (await QuantityAsync(milk), await LevelAsync(milk)));
+    }
+
+    [Fact]
+    public async Task ALevelForAProductThatIsNotInTheStoreNamed_IsAnException_WhenThereIsNoRowYet()
+    {
+        var (_, milk) = await AProductAsync();
+        var (other, _) = await AProductAsync();
+
+        // The composite foreign key refuses the row: a bug in the caller (the handler checks the product is in the store first), so an exception.
+        var exception = await Assert.ThrowsAsync<Npgsql.PostgresException>(() => SetLevelAsync(other, milk, 5));
+
+        Assert.Equal("fk_inventory_items_products_product_id_store_id", exception.ConstraintName);
+        Assert.Null(await QuantityAsync(milk));
+    }
+
+    [Fact]
+    public async Task AdjustmentsAndLevelsAtTheSameTime_BothCount_NeitherOverwritesTheOther()
+    {
+        var (store, milk) = await AProductAsync();
+        await AdjustAsync(store, milk, 1);
+
+        // Twenty adds of one, and levels 10 to 14 set meanwhile: if a level write carried a stale quantity, or an adjustment a stale level,
+        // one of the two would be lost.
+        var work = Enumerable.Range(0, 20).Select(_ => Task.Run(() => AdjustAsync(store, milk, 1)))
+            .Concat(Enumerable.Range(10, 5).Select(level => Task.Run(() => SetLevelAsync(store, milk, level))));
+        await Task.WhenAll(work);
+
+        Assert.Equal(21, await QuantityAsync(milk));
+        Assert.InRange(await LevelAsync(milk) ?? -1, 10, 14);
+    }
 }

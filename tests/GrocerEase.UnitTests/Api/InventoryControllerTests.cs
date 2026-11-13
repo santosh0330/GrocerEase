@@ -44,9 +44,23 @@ public class InventoryControllerTests
         }
     }
 
-    private static InventoryController ControllerWith(Spy adjust, string? sub = null, ListSpy? list = null)
+    private sealed class ThresholdSpy(Result<InventoryEntryResult> result) : ICommandHandler<SetLowStockThresholdCommand, Result<InventoryEntryResult>>
     {
-        var controller = new InventoryController(adjust, list ?? new ListSpy(Result.Success(new PagedResult<InventoryEntryResult>([], 1, 20, 0))))
+        public SetLowStockThresholdCommand? Received { get; private set; }
+
+        public Task<Result<InventoryEntryResult>> Handle(SetLowStockThresholdCommand command, CancellationToken cancellationToken)
+        {
+            Received = command;
+            return Task.FromResult(result);
+        }
+    }
+
+    private static InventoryController ControllerWith(Spy adjust, string? sub = null, ListSpy? list = null, ThresholdSpy? threshold = null)
+    {
+        var controller = new InventoryController(
+            adjust,
+            list ?? new ListSpy(Result.Success(new PagedResult<InventoryEntryResult>([], 1, 20, 0))),
+            threshold ?? new ThresholdSpy(Result.Success(new InventoryEntryResult(ProductId, "Milk", 7, 5))))
         {
             ProblemDetailsFactory = new StubProblemDetailsFactory(),
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
@@ -127,8 +141,49 @@ public class InventoryControllerTests
     }
 
     [Theory]
+    [InlineData(5)]
+    [InlineData(null)]
+    public async Task SetLowStockThreshold_PutsTheRouteTheCallerAndTheLevelInTheCommand_AndReturnsTheEntry(int? level)
+    {
+        var threshold = new ThresholdSpy(Result.Success(new InventoryEntryResult(ProductId, "Milk", 3, level)));
+
+        var result = await ControllerWith(new Spy(Result.Success(new StockResult(ProductId, 1))), CallerId.ToString(), threshold: threshold)
+            .SetLowStockThreshold(StoreId, ProductId, new SetLowStockThresholdRequest(level), CancellationToken.None);
+
+        Assert.Equal(new SetLowStockThresholdCommand(StoreId, ProductId, CallerId, level), threshold.Received);
+        Assert.Equal(new InventoryEntryResponse(ProductId, "Milk", 3, level, level is { } l && 3 <= l), Assert.IsType<OkObjectResult>(result).Value);
+    }
+
+    [Fact]
+    public async Task SetLowStockThreshold_WithATokenThatDoesNotNameAUser_Is401_AndRunsNothing()
+    {
+        var threshold = new ThresholdSpy(Result.Success(new InventoryEntryResult(ProductId, "Milk", 3, 5)));
+
+        var result = await ControllerWith(new Spy(Result.Success(new StockResult(ProductId, 1))), threshold: threshold)
+            .SetLowStockThreshold(StoreId, ProductId, new SetLowStockThresholdRequest(5), CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value).Status);
+        Assert.Null(threshold.Received);
+    }
+
+    [Theory]
+    [InlineData("Store.NotFound")]
+    [InlineData("Product.NotFound")]
+    public async Task SetLowStockThreshold_WhenTheHandlerFails_Is404(string code)
+    {
+        var threshold = new ThresholdSpy(Result.Failure<InventoryEntryResult>(new ResultError(code, "x", ErrorType.NotFound)));
+
+        var result = await ControllerWith(new Spy(Result.Success(new StockResult(ProductId, 1))), CallerId.ToString(), threshold: threshold)
+            .SetLowStockThreshold(StoreId, ProductId, new SetLowStockThresholdRequest(5), CancellationToken.None);
+
+        var problem = Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value);
+        Assert.Equal((StatusCodes.Status404NotFound, code), (problem.Status, problem.Extensions["code"]));
+    }
+
+    [Theory]
     [InlineData(nameof(InventoryController.Adjust))]
     [InlineData(nameof(InventoryController.List))]
+    [InlineData(nameof(InventoryController.SetLowStockThreshold))]
     public void EachRoute_NeedsThePermissionToManageInventory_NotARoleName(string action)
     {
         var authorize = typeof(InventoryController).GetMethod(action)!.GetCustomAttribute<AuthorizeAttribute>();

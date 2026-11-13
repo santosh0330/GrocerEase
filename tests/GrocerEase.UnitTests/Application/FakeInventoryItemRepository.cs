@@ -24,6 +24,22 @@ internal sealed class FakeInventoryItemRepository : IInventoryItemRepository
                     entry => entry.Key.ProductId,
                     entry => new InventoryItem(entry.Key.ProductId, storeId, entry.Value, Thresholds.TryGetValue(entry.Key, out var level) ? level : null)));
 
+    public Task<int?> SetLowStockThresholdAsync(Guid storeId, Guid productId, int? threshold, CancellationToken cancellationToken)
+    {
+        // Like the real statement: a product with no row gets one at zero, and only the level is written, never the quantity.
+        Quantities.TryAdd((storeId, productId), 0);
+        if (threshold is { } level)
+        {
+            Thresholds[(storeId, productId)] = level;
+        }
+        else
+        {
+            Thresholds.Remove((storeId, productId));
+        }
+
+        return Task.FromResult<int?>(Quantities[(storeId, productId)]);
+    }
+
     public Task<int?> TryAdjustAsync(Guid storeId, Guid productId, int delta, CancellationToken cancellationToken)
     {
         Calls.Add((productId, delta));

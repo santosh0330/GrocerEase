@@ -21,7 +21,8 @@ namespace GrocerEase.Api.Controllers;
 [Route("stores/{storeId:guid}")]
 public sealed class InventoryController(
     ICommandHandler<AdjustStockCommand, Result<StockResult>> adjustHandler,
-    ICommandHandler<ListInventoryQuery, Result<PagedResult<InventoryEntryResult>>> listHandler) : ControllerBase
+    ICommandHandler<ListInventoryQuery, Result<PagedResult<InventoryEntryResult>>> listHandler,
+    ICommandHandler<SetLowStockThresholdCommand, Result<InventoryEntryResult>> thresholdHandler) : ControllerBase
 {
     private const string ProblemJson = "application/problem+json";
 
@@ -63,5 +64,25 @@ public sealed class InventoryController(
 
         var result = await adjustHandler.Handle(request.ToCommand(storeId, productId, callerId), cancellationToken);
         return result.Match<IActionResult>(stock => Ok(stock.ToResponse()), error => this.ToProblem(error));
+    }
+
+    // The level at or below which the product counts as low: { "threshold": 5 }, or null to clear it. It is a setting, not an amount, so
+    // this is a PUT: sending the same body twice leaves the same level. A product that has never had stock gets its row, at zero.
+    [HttpPut("products/{productId:guid}/low-stock-threshold")]
+    [Authorize(Policy = Permissions.InventoryManage)]
+    [ProducesResponseType<InventoryEntryResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, ProblemJson)]
+    public async Task<IActionResult> SetLowStockThreshold(Guid storeId, Guid productId, SetLowStockThresholdRequest request, CancellationToken cancellationToken)
+    {
+        if (User.GetUserId() is not { } callerId)
+        {
+            return this.InvalidTokenProblem();
+        }
+
+        var result = await thresholdHandler.Handle(request.ToCommand(storeId, productId, callerId), cancellationToken);
+        return result.Match<IActionResult>(entry => Ok(entry.ToResponse()), error => this.ToProblem(error));
     }
 }

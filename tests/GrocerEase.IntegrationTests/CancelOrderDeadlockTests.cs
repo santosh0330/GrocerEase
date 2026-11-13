@@ -35,6 +35,9 @@ public class CancelOrderDeadlockTests
         public Task<IReadOnlyDictionary<Guid, InventoryItem>> GetItemsAsync(Guid storeId, IReadOnlyCollection<Guid> productIds, CancellationToken cancellationToken) =>
             inner.GetItemsAsync(storeId, productIds, cancellationToken);
 
+        public Task<int?> SetLowStockThresholdAsync(Guid storeId, Guid productId, int? threshold, CancellationToken cancellationToken) =>
+            inner.SetLowStockThresholdAsync(storeId, productId, threshold, cancellationToken);
+
         public async Task<int?> TryAdjustAsync(Guid storeId, Guid productId, int delta, CancellationToken cancellationToken)
         {
             var result = await inner.TryAdjustAsync(storeId, productId, delta, cancellationToken);

@@ -202,6 +202,52 @@ public class ProductHandlersTests
         Assert.True(_products.Products.Single(product => product.Id == archived.Id).IsArchived);
     }
 
+    private static readonly DateTimeOffset Now = new(2026, 11, 13, 9, 0, 0, TimeSpan.Zero);
+
+    private ArchiveProductCommandHandler Archive() => new(new StoreAccess(_members), _products, new AdjustableTimeProvider(Now));
+
+    [Fact]
+    public async Task Archive_TakesTheProductOffSale_RecordsWhen_AndFreesItsName()
+    {
+        var milk = await AddedAsync();
+
+        var result = await Archive().Handle(new ArchiveProductCommand(_storeId, milk.Id, _userId), CancellationToken.None);
+
+        Assert.Equal(milk, result.Value);
+        Assert.Equal(Now, Assert.Single(_products.Products).ArchivedAt);
+        Assert.Same(ProductErrors.NotFound, (await new GetProductQueryHandler(_products).Handle(new GetProductQuery(_storeId, milk.Id), CancellationToken.None)).Error);
+        Assert.True((await Create().Handle(Milk(), CancellationToken.None)).IsSuccess); // the name is free again
+    }
+
+    [Fact]
+    public async Task Archive_ByANonMember_IsToldTheStoreIsNotFound_AndTheProductStaysOnSale()
+    {
+        var milk = await AddedAsync();
+
+        var result = await Archive().Handle(new ArchiveProductCommand(_storeId, milk.Id, Guid.CreateVersion7()), CancellationToken.None);
+
+        Assert.Same(StoreErrors.NotFound, result.Error);
+        Assert.False(Assert.Single(_products.Products).IsArchived);
+    }
+
+    [Fact]
+    public async Task Archive_AnUnknownProduct_AnArchivedOne_AndAnotherStoresOne_AreNotFound()
+    {
+        var gone = await AddedAsync("Gone");
+        await Archive().Handle(new ArchiveProductCommand(_storeId, gone.Id, _userId), CancellationToken.None);
+        var foreign = new Product(Guid.CreateVersion7(), Guid.CreateVersion7(), "Foreign", "", 1m);
+        _products.Products.Add(foreign);
+
+        foreach (var productId in new[] { Guid.CreateVersion7(), gone.Id, foreign.Id })
+        {
+            var result = await Archive().Handle(new ArchiveProductCommand(_storeId, productId, _userId), CancellationToken.None);
+
+            Assert.Same(ProductErrors.NotFound, result.Error);
+        }
+
+        Assert.False(_products.Products.Single(product => product.Id == foreign.Id).IsArchived);
+    }
+
     [Fact]
     public async Task Get_ReturnsAProductThatIsOnSale_InItsStore()
     {

@@ -39,12 +39,14 @@ public class ProductsControllerTests
         Spy<GetProductQuery, Result<ProductResult>>? get = null,
         string? sub = null,
         Spy<UpdateProductCommand, Result<ProductResult>>? update = null,
+        Spy<ArchiveProductCommand, Result<ProductResult>>? archive = null,
         Spy<ListProductsQuery, Result<PagedResult<ProductResult>>>? list = null)
     {
         var controller = new ProductsController(
             create,
             get ?? new Spy<GetProductQuery, Result<ProductResult>>(Result.Success(Milk)),
             update ?? new Spy<UpdateProductCommand, Result<ProductResult>>(Result.Success(Milk)),
+            archive ?? new Spy<ArchiveProductCommand, Result<ProductResult>>(Result.Success(Milk)),
             list ?? new Spy<ListProductsQuery, Result<PagedResult<ProductResult>>>(Result.Success(new PagedResult<ProductResult>([Milk], 1, 20, 1))))
         {
             ProblemDetailsFactory = new StubProblemDetailsFactory(),
@@ -147,6 +149,41 @@ public class ProductsControllerTests
     }
 
     [Fact]
+    public async Task Archive_PutsTheRouteAndTheCallerInTheCommand_AndReturnsNoContent()
+    {
+        var archive = new Spy<ArchiveProductCommand, Result<ProductResult>>(Result.Success(Milk));
+
+        var result = await ControllerWith(new Spy<CreateProductCommand, Result<ProductResult>>(Result.Success(Milk)), sub: CallerId.ToString(), archive: archive)
+            .Archive(StoreId, Milk.Id, CancellationToken.None);
+
+        Assert.Equal(new ArchiveProductCommand(StoreId, Milk.Id, CallerId), archive.Received);
+        Assert.IsType<NoContentResult>(result);
+    }
+
+    [Fact]
+    public async Task Archive_WithATokenThatDoesNotNameAUser_Is401_AndRunsNothing()
+    {
+        var archive = new Spy<ArchiveProductCommand, Result<ProductResult>>(Result.Success(Milk));
+
+        var result = await ControllerWith(new Spy<CreateProductCommand, Result<ProductResult>>(Result.Success(Milk)), archive: archive)
+            .Archive(StoreId, Milk.Id, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value).Status);
+        Assert.Null(archive.Received);
+    }
+
+    [Fact]
+    public async Task Archive_WhenTheHandlerFails_ReturnsAProblemForThatError()
+    {
+        var archive = new Spy<ArchiveProductCommand, Result<ProductResult>>(Result.Failure<ProductResult>(ProductErrors.NotFound));
+
+        var result = await ControllerWith(new Spy<CreateProductCommand, Result<ProductResult>>(Result.Success(Milk)), sub: CallerId.ToString(), archive: archive)
+            .Archive(StoreId, Milk.Id, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status404NotFound, Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value).Status);
+    }
+
+    [Fact]
     public async Task List_RunsTheQueryWithTheStoreAndThePaging_AndReturnsThePageMapped()
     {
         var list = new Spy<ListProductsQuery, Result<PagedResult<ProductResult>>>(Result.Success(new PagedResult<ProductResult>([Milk], 2, 5, 11)));
@@ -205,6 +242,7 @@ public class ProductsControllerTests
     [Theory]
     [InlineData(nameof(ProductsController.Create), Permissions.ProductsManage)]
     [InlineData(nameof(ProductsController.Update), Permissions.ProductsManage)]
+    [InlineData(nameof(ProductsController.Archive), Permissions.ProductsManage)]
     [InlineData(nameof(ProductsController.Get), Permissions.ProductsRead)]
     [InlineData(nameof(ProductsController.List), Permissions.ProductsRead)]
     public void EachRoute_NeedsItsPermission_NotARoleName(string action, string permission)
@@ -231,6 +269,7 @@ public class ProductsControllerTests
     {
         Assert.Equal(new CreateProductCommand(StoreId, CallerId, "A", "B", 1.5m), new CreateProductRequest("A", "B", 1.5m).ToCommand(StoreId, CallerId));
         Assert.Equal(new ProductResponse(Milk.Id, StoreId, "Milk", "Fresh milk", 2.50m), Milk.ToResponse());
+        Assert.Equal(new ArchiveProductCommand(StoreId, Milk.Id, CallerId), Milk.Id.ToArchiveCommand(StoreId, CallerId));
         Assert.Equal(new UpdateProductCommand(StoreId, Milk.Id, CallerId, "A", "B", 1.5m), new UpdateProductRequest("A", "B", 1.5m).ToCommand(StoreId, Milk.Id, CallerId));
     }
 }

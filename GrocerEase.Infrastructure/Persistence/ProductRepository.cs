@@ -57,6 +57,12 @@ public sealed class ProductRepository(AppDbContext db) : IProductRepository
         }
     }
 
+    public async Task<bool> TryArchiveAsync(Guid storeId, Guid productId, DateTimeOffset archivedAt, CancellationToken cancellationToken) =>
+        // UPDATE products SET archived_at = @now WHERE id = @id AND store_id = @store AND archived_at IS NULL
+        await db.Products
+            .Where(product => product.Id == productId && product.StoreId == storeId && product.ArchivedAt == null)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(product => product.ArchivedAt, archivedAt), cancellationToken) == 1;
+
     public async Task<bool> TryAddAsync(Product product, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(product);

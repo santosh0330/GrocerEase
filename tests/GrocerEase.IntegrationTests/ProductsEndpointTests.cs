@@ -439,6 +439,95 @@ public class ProductsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactor
     }
 
     [Fact]
+    public async Task AStoreUser_ArchivesTheirProduct_Which204s_LeavesTheCatalogue_AndFreesItsName()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        var (token, _, _) = await StoreUserOfAsync(client, admin, storeId);
+        var milk = await AddProductAsync(client, token, storeId);
+        var customer = (await RegisterAsync(client)).Token;
+
+        var response = await SendAsync(client, HttpMethod.Delete, $"/stores/{storeId}/products/{milk.Id}", token);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Null(await ReadAsync(client, customer, storeId, milk.Id)); // not found any more
+        Assert.Empty((await PageAsync(client, customer, storeId)).Items);
+        Assert.Equal(HttpStatusCode.Created, (await SendAsync(client, HttpMethod.Post, $"/stores/{storeId}/products", token, Milk(milk.Name))).StatusCode); // the name is free
+    }
+
+    [Fact]
+    public async Task Archiving_WithNoToken_Is401_AndACustomerOrAnAdminIs403_AndTheProductStays()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        var (token, _, _) = await StoreUserOfAsync(client, admin, storeId);
+        var milk = await AddProductAsync(client, token, storeId);
+        var path = $"/stores/{storeId}/products/{milk.Id}";
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await SendAsync(client, HttpMethod.Delete, path, null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await SendAsync(client, HttpMethod.Delete, path, (await RegisterAsync(client)).Token)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await SendAsync(client, HttpMethod.Delete, path, admin)).StatusCode);
+        Assert.Equal(milk, await ReadAsync(client, token, storeId, milk.Id));
+    }
+
+    [Fact]
+    public async Task AStoreUserOfAnotherStore_CannotArchiveTheProduct_Is404_AndItStaysOnSale()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var theirs = await CreateStoreAsync(client, admin);
+        var other = await CreateStoreAsync(client, admin);
+        var (ownerToken, _, _) = await StoreUserOfAsync(client, admin, other);
+        var (intruder, _, _) = await StoreUserOfAsync(client, admin, theirs);
+        var milk = await AddProductAsync(client, ownerToken, other);
+
+        var viaTheirStore = await SendAsync(client, HttpMethod.Delete, $"/stores/{theirs}/products/{milk.Id}", intruder);
+        var viaTheStore = await SendAsync(client, HttpMethod.Delete, $"/stores/{other}/products/{milk.Id}", intruder);
+
+        Assert.Equal(HttpStatusCode.NotFound, viaTheirStore.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, viaTheStore.StatusCode);
+        Assert.Equal(milk, await ReadAsync(client, ownerToken, other, milk.Id));
+    }
+
+    [Fact]
+    public async Task ArchivingTwice_IsA404_NotASecondSuccess_AndEightAtOnce_OneGets204()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        var (token, _, _) = await StoreUserOfAsync(client, admin, storeId);
+        var first = await AddProductAsync(client, token, storeId);
+        var second = await AddProductAsync(client, token, storeId);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await SendAsync(client, HttpMethod.Delete, $"/stores/{storeId}/products/{first.Id}", token)).StatusCode);
+        var again = await SendAsync(client, HttpMethod.Delete, $"/stores/{storeId}/products/{first.Id}", token);
+        var many = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => SendAsync(client, HttpMethod.Delete, $"/stores/{storeId}/products/{second.Id}", token)));
+
+        Assert.Equal(HttpStatusCode.NotFound, again.StatusCode);
+        Assert.Equal("Product.NotFound", (await ProblemAsync(again)).GetProperty("code").GetString());
+        Assert.Equal(1, many.Count(response => response.StatusCode == HttpStatusCode.NoContent));
+        Assert.Equal(7, many.Count(response => response.StatusCode == HttpStatusCode.NotFound));
+    }
+
+    [Fact]
+    public async Task AnArchivedProduct_CannotBeEdited_OrBroughtBack()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        var (token, _, _) = await StoreUserOfAsync(client, admin, storeId);
+        var milk = await AddProductAsync(client, token, storeId);
+        await SendAsync(client, HttpMethod.Delete, $"/stores/{storeId}/products/{milk.Id}", token);
+
+        var response = await PutAsync(client, token, storeId, milk.Id, new UpdateProductRequest("Back", "", 1m));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Null(await ReadAsync(client, token, storeId, milk.Id));
+    }
+
+    [Fact]
     public async Task AStoreUser_EditsTheirProduct_AndTheChangeIsWhatIsReadBack()
     {
         using var client = factory.CreateClient();

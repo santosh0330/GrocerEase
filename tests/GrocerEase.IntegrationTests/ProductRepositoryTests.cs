@@ -192,6 +192,57 @@ public class ProductRepositoryTests
         Assert.Equal(7, outcomes.Count(outcome => outcome == ProductUpdateOutcome.DuplicateName));
     }
 
+    private static async Task<bool> ArchiveAsync(Guid storeId, Guid productId)
+    {
+        await using var db = await NewContextAsync();
+        return await new ProductRepository(db).TryArchiveAsync(storeId, productId, DateTimeOffset.UtcNow, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task AnArchivedProduct_LeavesTheCatalogue_FreesItsName_AndTheRowStays()
+    {
+        var store = await StoredStoreAsync();
+        var milk = NewProduct(store);
+        Assert.True(await AddAsync(milk));
+
+        Assert.True(await ArchiveAsync(store, milk.Id));
+
+        Assert.Null(await GetAsync(store, milk.Id));
+        Assert.Empty((await ListAsync(store, 1, 20)).Items);
+        Assert.True(await AddAsync(NewProduct(store, milk.Name))); // the name is free again
+        Assert.Equal(
+            2L,
+            await PostgresServer.ScalarAsync<long>(await PostgresServer.ApplicationConnectionStringAsync(), $"select count(*) from products where store_id = '{store}' and name = '{milk.Name}'"));
+        Assert.True(await PostgresServer.ScalarAsync<bool>(
+            await PostgresServer.ApplicationConnectionStringAsync(), $"select archived_at is not null from products where id = '{milk.Id}'"));
+    }
+
+    [Fact]
+    public async Task ArchivingTwice_ThroughAnotherStore_OrAnUnknownProduct_ChangesNothing_AndSaysSo()
+    {
+        var store = await StoredStoreAsync();
+        var milk = NewProduct(store);
+        Assert.True(await AddAsync(milk));
+
+        Assert.False(await ArchiveAsync(await StoredStoreAsync(), milk.Id)); // another store's: untouched
+        Assert.False(await ArchiveAsync(store, Guid.CreateVersion7()));
+        Assert.NotNull(await GetAsync(store, milk.Id));
+        Assert.True(await ArchiveAsync(store, milk.Id));
+        Assert.False(await ArchiveAsync(store, milk.Id)); // already archived
+    }
+
+    [Fact]
+    public async Task ManyRequestsArchivingTheSameProductAtTheSameTime_OneWins()
+    {
+        var store = await StoredStoreAsync();
+        var milk = NewProduct(store);
+        Assert.True(await AddAsync(milk));
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => ArchiveAsync(store, milk.Id)));
+
+        Assert.Equal(1, results.Count(archived => archived));
+    }
+
     [Fact]
     public async Task AProduct_IsNotFoundThroughAnotherStore()
     {

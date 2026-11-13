@@ -285,6 +285,8 @@ public class PlaceOrderEndpointTests(ApiFactory factory) : IClassFixture<ApiFact
         var customer = (await RegisterAsync(client)).Token;
         var milk = shop.Milk.Id;
 
+        static string[] Keys(System.Text.Json.JsonElement errors) => [.. errors.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal)];
+
         async Task<System.Text.Json.JsonElement> ErrorsOfAsync(object body)
         {
             var response = await PlaceAsync(client, customer, shop.StoreId, body);
@@ -293,13 +295,13 @@ public class PlaceOrderEndpointTests(ApiFactory factory) : IClassFixture<ApiFact
         }
 
         Assert.True((await ErrorsOfAsync(Order(lines: []))).TryGetProperty("lines", out _));
-        var noLines = await ErrorsOfAsync(new { deliveryAddress = "x" }); // no lines at all
-        // A missing property is caught by MVC's own "required" check before the validator runs, and it keys the error "Lines", not "lines".
-        Assert.Contains(noLines.EnumerateObject(), property => string.Equals(property.Name, "lines", StringComparison.OrdinalIgnoreCase));
-        var nullLine = await ErrorsOfAsync(new { deliveryAddress = "x", lines = new object?[] { null } });
-        Assert.True(nullLine.EnumerateObject().Any(), nullLine.ToString()); // a null line
+        // Missing, null or malformed: MVC's own check catches these before the validator runs, yet the key is the one the client sent.
+        Assert.Equal(["lines"], Keys(await ErrorsOfAsync(new { deliveryAddress = "x" })));
+        Assert.Equal(["lines"], Keys(await ErrorsOfAsync(new { deliveryAddress = "x", lines = (object?)null })));
+        Assert.Equal(["deliveryAddress"], Keys(await ErrorsOfAsync(new { lines = new[] { new { productId = milk, quantity = 1 } } })));
+        Assert.All(Keys(await ErrorsOfAsync(new { deliveryAddress = "x", lines = new object?[] { null } })), key => Assert.StartsWith("lines", key, StringComparison.Ordinal));
         Assert.True((await ErrorsOfAsync(Order("", (milk, 1)))).TryGetProperty("deliveryAddress", out _));
-        Assert.Contains((await ErrorsOfAsync(Order(lines: (milk, 0)))).EnumerateObject(), property => property.Name.Contains("quantity", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(["lines[0].quantity"], Keys(await ErrorsOfAsync(Order(lines: (milk, 0)))));
         Assert.True((await ErrorsOfAsync(Order(lines: [(milk, 1), (milk, 2)]))).TryGetProperty("lines", out _)); // a product twice
         Assert.True((await ErrorsOfAsync(Order(lines: [.. Enumerable.Range(0, 101).Select(_ => (Guid.CreateVersion7(), 1))]))).TryGetProperty("lines", out _));
         Assert.Equal((5, 0L), (await StockAsync(milk), await OrdersInAsync(shop.StoreId)));

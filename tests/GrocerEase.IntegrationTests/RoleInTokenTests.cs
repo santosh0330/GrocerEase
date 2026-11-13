@@ -55,7 +55,7 @@ public class RoleInTokenTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var registered = await RegisterAsync(client, email);
 
         Assert.Equal(RoleNames.Customer, RoleOf(registered));
-        Assert.Equal([Permissions.ProfileRead, Permissions.StoresRead], PermissionsOf(registered), StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead], PermissionsOf(registered), StringComparer.Ordinal);
         Assert.Equal(
             RoleIds.Customer,
             await PostgresServer.ScalarAsync<Guid>(await PostgresServer.AppConnectionStringAsync(), $"select role_id from users where email = '{email}'"));
@@ -72,7 +72,7 @@ public class RoleInTokenTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var loggedIn = await LoginAsync(client, email);
 
         Assert.Equal(RoleNames.Admin, RoleOf(loggedIn));
-        Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresManage, Permissions.StoresRead], PermissionsOf(loggedIn), StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProductsRead, Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresManage, Permissions.StoresRead], PermissionsOf(loggedIn), StringComparer.Ordinal);
     }
 
     [Fact]
@@ -86,8 +86,8 @@ public class RoleInTokenTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var refreshed = await RefreshAsync(client, registered.RefreshToken);
 
         Assert.Equal(RoleNames.Customer, RoleOf(registered)); // a token cannot change after it was signed: this is the staleness to expect
-        Assert.Equal([Permissions.ProfileRead, Permissions.StoresRead], PermissionsOf(registered), StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead], PermissionsOf(registered), StringComparer.Ordinal);
         Assert.Equal(RoleNames.Admin, RoleOf(refreshed));
-        Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresManage, Permissions.StoresRead], PermissionsOf(refreshed), StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProductsRead, Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresManage, Permissions.StoresRead], PermissionsOf(refreshed), StringComparer.Ordinal);
     }
 }

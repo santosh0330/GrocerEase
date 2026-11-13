@@ -6,7 +6,8 @@ public class PermissionsTests
 {
     [Fact]
     public void All_ListsEveryPermissionOnce() =>
-        Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresRead, Permissions.StoresManage], Permissions.All, StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProfileRead, Permissions.RolesRead, Permissions.StoresRead, Permissions.StoresManage, Permissions.ProductsRead, Permissions.ProductsManage],
+            Permissions.All, StringComparer.Ordinal);
 
     [Fact]
     public void EveryPermission_FitsTheColumnThatStoresIt()

@@ -12,6 +12,9 @@ public interface IStoreMemberRepository
     /// </summary>
     Task<bool> TryAddAsync(StoreMember member, CancellationToken cancellationToken);
 
+    /// <summary>Whether that user is one of the people who run that store. The question every store-owned route asks first.</summary>
+    Task<bool> IsMemberAsync(Guid storeId, Guid userId, CancellationToken cancellationToken);
+
     /// <summary>
     /// Removes the membership of a user in a store. Returns <c>false</c>, and removes nothing, when that user is not a member of that
     /// store: the membership of another store is never touched. One statement, so two requests removing the same member cannot both

@@ -5,6 +5,9 @@ using GrocerEase.Application.Authentication.Commands;
 using GrocerEase.Application.Authentication.Common;
 using GrocerEase.Application.Common;
 using GrocerEase.Application.Decorators;
+using GrocerEase.Application.Products.Commands;
+using GrocerEase.Application.Products.Common;
+using GrocerEase.Application.Products.Queries;
 using GrocerEase.Application.Roles.Common;
 using GrocerEase.Application.Roles.Queries;
 using GrocerEase.Application.Stores.Commands;
@@ -68,6 +71,10 @@ public class ApplicationDependencyInjectionTests
             scope.ServiceProvider.GetRequiredService<ICommandHandler<GetStoreQuery, Result<StoreResult>>>());
         Assert.IsType<ValidationDecorator<ListStoresQuery, Result<IReadOnlyList<StoreResult>>>>(
             scope.ServiceProvider.GetRequiredService<ICommandHandler<ListStoresQuery, Result<IReadOnlyList<StoreResult>>>>());
+        Assert.IsType<ValidationDecorator<CreateProductCommand, Result<ProductResult>>>(
+            scope.ServiceProvider.GetRequiredService<ICommandHandler<CreateProductCommand, Result<ProductResult>>>());
+        Assert.IsType<ValidationDecorator<GetProductQuery, Result<ProductResult>>>(
+            scope.ServiceProvider.GetRequiredService<ICommandHandler<GetProductQuery, Result<ProductResult>>>());
         Assert.IsType<ValidationDecorator<RemoveStoreMemberCommand, Result<StoreMemberResult>>>(
             scope.ServiceProvider.GetRequiredService<ICommandHandler<RemoveStoreMemberCommand, Result<StoreMemberResult>>>());
         Assert.IsType<ValidationDecorator<AssignStoreMemberCommand, Result<StoreMemberResult>>>(

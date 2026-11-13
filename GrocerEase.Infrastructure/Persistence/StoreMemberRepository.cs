@@ -32,6 +32,10 @@ public sealed class StoreMemberRepository(AppDbContext db) : IStoreMemberReposit
         // and a second request for the same member finds nothing to delete.
         await db.StoreMembers.Where(member => member.StoreId == storeId && member.UserId == userId).ExecuteDeleteAsync(cancellationToken) == 1;
 
+    public Task<bool> IsMemberAsync(Guid storeId, Guid userId, CancellationToken cancellationToken) =>
+        // AsNoTracking is implicit for Any. One indexed lookup (ix_store_members_user_id), asked on every store-owned request.
+        db.StoreMembers.AnyAsync(member => member.StoreId == storeId && member.UserId == userId, cancellationToken);
+
     // Only the user index counts. A missing store or user (the foreign keys), or any other failure, is a bug or an outage and stays an exception.
     private static bool IsUserAlreadyInAStore(DbUpdateException exception) =>
         exception.InnerException is PostgresException

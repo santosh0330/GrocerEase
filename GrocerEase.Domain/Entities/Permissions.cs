@@ -22,5 +22,11 @@ public static class Permissions
     /// <summary>Creating a store and choosing who runs it: <c>POST /stores</c> and the store's members.</summary>
     public const string StoresManage = "stores.manage";
 
-    public static IReadOnlyList<string> All { get; } = [ProfileRead, RolesRead, StoresRead, StoresManage];
+    /// <summary>Browsing the products of a store, <c>GET /stores/{storeId}/products</c>.</summary>
+    public const string ProductsRead = "products.read";
+
+    /// <summary>Adding, editing and archiving the products of one's own store.</summary>
+    public const string ProductsManage = "products.manage";
+
+    public static IReadOnlyList<string> All { get; } = [ProfileRead, RolesRead, StoresRead, StoresManage, ProductsRead, ProductsManage];
 }

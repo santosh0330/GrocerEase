@@ -132,7 +132,7 @@ public class RegisterCommandHandlerTests
 
         Assert.Equal((RoleIds.Customer, RoleNames.Customer), (tokens.LastRole?.Id, tokens.LastRole?.Name));
         Assert.Equal(tokens.LastUser?.RoleId, tokens.LastRole?.Id); // the role in the token is the one the user was stored with
-        Assert.Equal([Permissions.ProfileRead, Permissions.StoresRead], tokens.LastRole?.GrantedPermissions, StringComparer.Ordinal); // and it brings what it grants
+        Assert.Equal([Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead], tokens.LastRole?.GrantedPermissions, StringComparer.Ordinal); // and it brings what it grants
     }
 
     [Fact]

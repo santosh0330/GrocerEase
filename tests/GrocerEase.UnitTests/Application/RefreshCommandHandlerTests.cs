@@ -85,7 +85,7 @@ public class RefreshCommandHandlerTests
         await Handler().Handle(new RefreshCommand(token), CancellationToken.None);
 
         Assert.Equal((RoleIds.Customer, RoleNames.Customer), (_tokens.LastRole?.Id, _tokens.LastRole?.Name));
-        Assert.Equal([Permissions.ProfileRead, Permissions.StoresRead], _tokens.LastRole?.GrantedPermissions, StringComparer.Ordinal);
+        Assert.Equal([Permissions.ProductsRead, Permissions.ProfileRead, Permissions.StoresRead], _tokens.LastRole?.GrantedPermissions, StringComparer.Ordinal);
     }
 
     [Fact]

@@ -34,6 +34,14 @@ public static class InventoryMappings
             [.. page.Items.Select(entry => entry.ToResponse())], page.Page, page.PageSize, page.TotalCount);
     }
 
+    public static PagedResponse<StockMovementResponse> ToResponse(this PagedResult<StockMovementResult> page)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        return new PagedResponse<StockMovementResponse>(
+            [.. page.Items.Select(movement => new StockMovementResponse(movement.Id, movement.ProductId, movement.Delta, movement.Reason, movement.ActorId, movement.OrderId, movement.CreatedAt))],
+            page.Page, page.PageSize, page.TotalCount);
+    }
+
     public static StockResponse ToResponse(this StockResult result)
     {
         ArgumentNullException.ThrowIfNull(result);

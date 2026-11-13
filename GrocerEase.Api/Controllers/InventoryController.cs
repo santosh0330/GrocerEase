@@ -22,7 +22,8 @@ namespace GrocerEase.Api.Controllers;
 public sealed class InventoryController(
     ICommandHandler<AdjustStockCommand, Result<StockResult>> adjustHandler,
     ICommandHandler<ListInventoryQuery, Result<PagedResult<InventoryEntryResult>>> listHandler,
-    ICommandHandler<SetLowStockThresholdCommand, Result<InventoryEntryResult>> thresholdHandler) : ControllerBase
+    ICommandHandler<SetLowStockThresholdCommand, Result<InventoryEntryResult>> thresholdHandler,
+    ICommandHandler<ListStockMovementsQuery, Result<PagedResult<StockMovementResult>>> movementsHandler) : ControllerBase
 {
     private const string ProblemJson = "application/problem+json";
 
@@ -85,5 +86,26 @@ public sealed class InventoryController(
 
         var result = await thresholdHandler.Handle(request.ToCommand(storeId, productId, callerId), cancellationToken);
         return result.Match<IActionResult>(entry => Ok(entry.ToResponse()), error => this.ToProblem(error));
+    }
+
+    // The history of one product's stock: every change to its quantity, newest first, with by how much, why, who did it and which order it
+    // was for. The movements add up to the quantity, whatever happened to it.
+    [HttpGet("products/{productId:guid}/stock-movements")]
+    [Authorize(Policy = Permissions.InventoryManage)]
+    [ProducesResponseType<PagedResponse<StockMovementResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, ProblemJson)]
+    public async Task<IActionResult> ListMovements(
+        Guid storeId, Guid productId, CancellationToken cancellationToken, [FromQuery] int page = 1, [FromQuery] int pageSize = Paging.DefaultPageSize)
+    {
+        if (User.GetUserId() is not { } callerId)
+        {
+            return this.InvalidTokenProblem();
+        }
+
+        var result = await movementsHandler.Handle(new ListStockMovementsQuery(storeId, productId, callerId, page, pageSize), cancellationToken);
+        return result.Match<IActionResult>(movements => Ok(movements.ToResponse()), error => this.ToProblem(error));
     }
 }

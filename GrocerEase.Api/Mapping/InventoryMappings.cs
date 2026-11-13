@@ -1,5 +1,7 @@
+using GrocerEase.Application.Common;
 using GrocerEase.Application.Inventory.Commands;
 using GrocerEase.Application.Inventory.Common;
+using GrocerEase.Contracts.Common;
 using GrocerEase.Contracts.Inventory;
 
 namespace GrocerEase.Api.Mapping;
@@ -11,6 +13,13 @@ public static class InventoryMappings
     {
         ArgumentNullException.ThrowIfNull(request);
         return new AdjustStockCommand(storeId, productId, actorId, request.Delta);
+    }
+
+    public static PagedResponse<InventoryEntryResponse> ToResponse(this PagedResult<InventoryEntryResult> page)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        return new PagedResponse<InventoryEntryResponse>(
+            [.. page.Items.Select(entry => new InventoryEntryResponse(entry.ProductId, entry.ProductName, entry.QuantityOnHand))], page.Page, page.PageSize, page.TotalCount);
     }
 
     public static StockResponse ToResponse(this StockResult result)

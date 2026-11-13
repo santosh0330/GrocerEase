@@ -8,6 +8,7 @@ using GrocerEase.Application.Decorators;
 using GrocerEase.Application.Inventory.Commands;
 using GrocerEase.Application.Inventory.Common;
 using GrocerEase.Application.Inventory.Handlers;
+using GrocerEase.Application.Inventory.Queries;
 using GrocerEase.Application.Products.Commands;
 using GrocerEase.Application.Products.Common;
 using GrocerEase.Application.Products.Handlers;
@@ -54,6 +55,7 @@ public static class DependencyInjection
         services.AddValidatedCommandHandler<ListProductsQuery, Result<PagedResult<ProductResult>>, ListProductsQueryHandler>();
 
         services.AddValidatedCommandHandler<AdjustStockCommand, Result<StockResult>, AdjustStockCommandHandler>();
+        services.AddValidatedCommandHandler<ListInventoryQuery, Result<PagedResult<InventoryEntryResult>>, ListInventoryQueryHandler>();
 
         // Writes a membership and a role, which must be kept together or not at all.
         services.AddTransactionalCommandHandler<AssignStoreMemberCommand, Result<StoreMemberResult>, AssignStoreMemberCommandHandler>();

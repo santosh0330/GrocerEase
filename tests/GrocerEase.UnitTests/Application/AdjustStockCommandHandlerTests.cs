@@ -158,4 +158,28 @@ public class AdjustStockCommandHandlerTests
 
         Assert.Empty(_stock.Movements);
     }
+
+    [Theory]
+    [InlineData("Received", 5, StockMovementReason.Received)]
+    [InlineData("received", 5, StockMovementReason.Received)]
+    [InlineData("Correction", 5, StockMovementReason.Correction)] // a correction may add: the count was too low
+    [InlineData("Correction", -5, StockMovementReason.Correction)]
+    public async Task AReasonThePersonGave_IsTheOneRecorded_WhateverTheSign(string said, int delta, StockMovementReason expected)
+    {
+        await Handler().Handle(Adjust(10), CancellationToken.None);
+        _stock.Movements.Clear();
+
+        await Handler().Handle(Adjust(delta) with { Reason = said }, CancellationToken.None);
+
+        Assert.Equal(expected, Assert.Single(_stock.Movements).Reason);
+    }
+
+    [Fact]
+    public async Task WithNoReason_AnAdditionIsADelivery_AndARemovalIsACorrection()
+    {
+        await Handler().Handle(Adjust(10), CancellationToken.None);
+        await Handler().Handle(Adjust(-4), CancellationToken.None);
+
+        Assert.Equal([StockMovementReason.Received, StockMovementReason.Correction], _stock.Movements.Select(movement => movement.Reason));
+    }
 }

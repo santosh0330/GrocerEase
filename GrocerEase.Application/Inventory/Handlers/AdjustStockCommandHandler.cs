@@ -33,8 +33,11 @@ public sealed class AdjustStockCommandHandler(
 
         // The statement decides, with the limits inside it. A refusal can only mean the quantity would leave its range, and the sign of the
         // change says which end.
-        // Said by hand: a delivery adds, anything that takes stock off the shelf by hand is a correction. (A later change lets the person say which.)
-        var reason = command.Delta > 0 ? StockMovementReason.Received : StockMovementReason.Correction;
+        // What the person said (the validator has checked it is one of the two they may give), or, when they said nothing: a delivery adds,
+        // and anything that takes stock off the shelf by hand is a correction.
+        var reason = command.Reason is { } said
+            ? Enum.Parse<StockMovementReason>(said, ignoreCase: true)
+            : command.Delta > 0 ? StockMovementReason.Received : StockMovementReason.Correction;
         var change = new StockChange(command.Delta, reason, command.ActorId);
 
         return await inventoryRepository.TryAdjustAsync(command.StoreId, command.ProductId, change, cancellationToken) is { } quantity

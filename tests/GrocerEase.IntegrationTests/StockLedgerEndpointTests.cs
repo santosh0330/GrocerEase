@@ -122,4 +122,59 @@ public class StockLedgerEndpointTests(ApiFactory factory) : IClassFixture<ApiFac
         Assert.Equal(5, placed.Select(row => row.OrderId).Distinct().Count()); // each for a different order
         await Ledger.AgreesAsync(shop.StoreId);
     }
+
+    private static async Task<List<string>> ReasonsOfAsync(Guid productId)
+    {
+        await using var connection = new Npgsql.NpgsqlConnection(await PostgresServer.ApplicationConnectionStringAsync());
+        await connection.OpenAsync();
+        await using var command = new Npgsql.NpgsqlCommand("select reason || ':' || delta from stock_movements where product_id = @p order by id", connection);
+        command.Parameters.AddWithValue("p", productId);
+        var reasons = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            reasons.Add(reader.GetString(0));
+        }
+
+        return reasons;
+    }
+
+    [Fact]
+    public async Task TheStoreUser_SaysWhy_AndTheLedgerRecordsIt_AndWithNoReasonTheSignDecides()
+    {
+        using var client = factory.CreateClient();
+        var shop = await AShopAsync(client, milkStock: 0, breadStock: 0);
+        var milk = shop.Milk.Id;
+
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(client, HttpMethod.Post, $"/stores/{shop.StoreId}/products/{milk}/stock-adjustments", shop.StoreUser, new { delta = 20, reason = "Received" })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(client, HttpMethod.Post, $"/stores/{shop.StoreId}/products/{milk}/stock-adjustments", shop.StoreUser, new { delta = -3, reason = "correction" })).StatusCode); // broken
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(client, HttpMethod.Post, $"/stores/{shop.StoreId}/products/{milk}/stock-adjustments", shop.StoreUser, new { delta = 2, reason = "Correction" })).StatusCode); // the count was low
+        Assert.Equal(HttpStatusCode.OK, (await AdjustAsync(client, shop, milk, 5)).StatusCode); // no reason: an addition is a delivery
+        Assert.Equal(HttpStatusCode.OK, (await AdjustAsync(client, shop, milk, -1)).StatusCode); // and a removal is a correction
+
+        Assert.Equal(["Received:20", "Correction:-3", "Correction:2", "Received:5", "Correction:-1"], await ReasonsOfAsync(milk));
+        await Ledger.AgreesAsync(shop.StoreId);
+    }
+
+    [Theory]
+    [InlineData(5, "OrderPlaced")]
+    [InlineData(5, "OrderCancelled")]
+    [InlineData(5, "OpeningBalance")]
+    [InlineData(5, "Lost")]
+    [InlineData(5, "1")]
+    [InlineData(5, "")]
+    [InlineData(-5, "Received")] // a delivery adds
+    public async Task AReasonThatIsNotOneAPersonMayGive_OrDoesNotFit_Is400_NamingTheField_AndNothingChanges(int delta, string reason)
+    {
+        using var client = factory.CreateClient();
+        var shop = await AShopAsync(client, milkStock: 10, breadStock: 0);
+        var before = await Ledger.CountAsync(shop.StoreId);
+
+        var response = await SendAsync(client, HttpMethod.Post, $"/stores/{shop.StoreId}/products/{shop.Milk.Id}/stock-adjustments", shop.StoreUser, new { delta, reason });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var errors = (await ProblemAsync(response)).GetProperty("errors");
+        Assert.True(errors.TryGetProperty(delta < 0 ? "delta" : "reason", out _));
+        Assert.Equal((10, before), (await StockAsync(shop.Milk.Id), await Ledger.CountAsync(shop.StoreId)));
+    }
 }

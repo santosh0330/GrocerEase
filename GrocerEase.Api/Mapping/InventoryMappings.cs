@@ -12,7 +12,7 @@ public static class InventoryMappings
     public static AdjustStockCommand ToCommand(this AdjustStockRequest request, Guid storeId, Guid productId, Guid actorId)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return new AdjustStockCommand(storeId, productId, actorId, request.Delta);
+        return new AdjustStockCommand(storeId, productId, actorId, request.Delta, request.Reason);
     }
 
     public static SetLowStockThresholdCommand ToCommand(this SetLowStockThresholdRequest request, Guid storeId, Guid productId, Guid actorId)

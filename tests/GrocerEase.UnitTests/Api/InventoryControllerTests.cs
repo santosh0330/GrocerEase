@@ -208,6 +208,7 @@ public class InventoryControllerTests
     public void TheMappings_CopyEveryField()
     {
         Assert.Equal(new AdjustStockCommand(StoreId, ProductId, CallerId, 4), new AdjustStockRequest(4).ToCommand(StoreId, ProductId, CallerId));
+        Assert.Equal(new AdjustStockCommand(StoreId, ProductId, CallerId, -4, "Correction"), new AdjustStockRequest(-4, "Correction").ToCommand(StoreId, ProductId, CallerId));
         Assert.Equal(new StockResponse(ProductId, 9), new StockResult(ProductId, 9).ToResponse());
     }
 }

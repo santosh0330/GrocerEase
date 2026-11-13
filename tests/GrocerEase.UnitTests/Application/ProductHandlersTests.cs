@@ -136,6 +136,72 @@ public class ProductHandlersTests
         Assert.Same(StoreErrors.NotFound, result.Error);
     }
 
+    private UpdateProductCommandHandler Update() => new(new StoreAccess(_members), _products);
+
+    private async Task<ProductResult> AddedAsync(string name = "Milk") => (await Create().Handle(Milk(name), CancellationToken.None)).Value;
+
+    [Fact]
+    public async Task Update_ChangesTheNameTheDescriptionAndThePrice_AndKeepsTheIdAndTheStore()
+    {
+        var milk = await AddedAsync();
+
+        var result = await Update().Handle(new UpdateProductCommand(_storeId, milk.Id, _userId, "Oat milk", "Vegan", 3.20m), CancellationToken.None);
+
+        Assert.Equal(new ProductResult(milk.Id, _storeId, "Oat milk", "Vegan", 3.20m), result.Value);
+        Assert.Equal("Oat milk", Assert.Single(_products.Products).Name);
+    }
+
+    [Fact]
+    public async Task Update_ToTheNameItAlreadyHas_IsFine()
+    {
+        var milk = await AddedAsync();
+
+        var result = await Update().Handle(new UpdateProductCommand(_storeId, milk.Id, _userId, "Milk", "New text", 9m), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task Update_ToTheNameOfAnotherLiveProduct_IsADuplicate_AndChangesNothing()
+    {
+        var milk = await AddedAsync("Milk");
+        await AddedAsync("Bread");
+
+        var result = await Update().Handle(new UpdateProductCommand(_storeId, milk.Id, _userId, "Bread", "x", 1m), CancellationToken.None);
+
+        Assert.Same(ProductErrors.DuplicateName, result.Error);
+        Assert.Equal("Milk", _products.Products.Single(product => product.Id == milk.Id).Name);
+    }
+
+    [Fact]
+    public async Task Update_ByANonMember_IsToldTheStoreIsNotFound_AndChangesNothing()
+    {
+        var milk = await AddedAsync();
+
+        var result = await Update().Handle(new UpdateProductCommand(_storeId, milk.Id, Guid.CreateVersion7(), "Hacked", "", 1m), CancellationToken.None);
+
+        Assert.Same(StoreErrors.NotFound, result.Error);
+        Assert.Equal("Milk", Assert.Single(_products.Products).Name);
+    }
+
+    [Fact]
+    public async Task Update_AnUnknownProduct_AnArchivedOne_AndAnotherStoresOne_AreNotFound()
+    {
+        var archived = new Product(Guid.CreateVersion7(), _storeId, "Old", "", 1m, DateTimeOffset.UtcNow);
+        var foreign = new Product(Guid.CreateVersion7(), Guid.CreateVersion7(), "Foreign", "", 1m);
+        _products.Products.AddRange([archived, foreign]);
+
+        foreach (var productId in new[] { Guid.CreateVersion7(), archived.Id, foreign.Id })
+        {
+            var result = await Update().Handle(new UpdateProductCommand(_storeId, productId, _userId, "X", "", 1m), CancellationToken.None);
+
+            Assert.Same(ProductErrors.NotFound, result.Error);
+        }
+
+        Assert.Equal("Foreign", _products.Products.Single(product => product.Id == foreign.Id).Name);
+        Assert.True(_products.Products.Single(product => product.Id == archived.Id).IsArchived);
+    }
+
     [Fact]
     public async Task Get_ReturnsAProductThatIsOnSale_InItsStore()
     {

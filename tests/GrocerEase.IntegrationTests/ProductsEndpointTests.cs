@@ -421,4 +421,142 @@ public class ProductsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactor
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await SendAsync(client, HttpMethod.Get, $"/stores/{Guid.CreateVersion7()}/products", token: null)).StatusCode);
     }
+
+    private static async Task<ProductResponse> AddProductAsync(HttpClient client, string token, Guid storeId, string? name = null)
+    {
+        var response = await SendAsync(client, HttpMethod.Post, $"/stores/{storeId}/products", token, Milk(name));
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<ProductResponse>())!;
+    }
+
+    private static Task<HttpResponseMessage> PutAsync(HttpClient client, string? token, Guid storeId, Guid productId, object body) =>
+        SendAsync(client, HttpMethod.Put, $"/stores/{storeId}/products/{productId}", token, body);
+
+    private static async Task<ProductResponse?> ReadAsync(HttpClient client, string token, Guid storeId, Guid productId)
+    {
+        var response = await SendAsync(client, HttpMethod.Get, $"/stores/{storeId}/products/{productId}", token);
+        return response.StatusCode == HttpStatusCode.OK ? await response.Content.ReadFromJsonAsync<ProductResponse>() : null;
+    }
+
+    [Fact]
+    public async Task AStoreUser_EditsTheirProduct_AndTheChangeIsWhatIsReadBack()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        var (token, _, _) = await StoreUserOfAsync(client, admin, storeId);
+        var milk = await AddProductAsync(client, token, storeId);
+        var name = $"Oat {Guid.NewGuid():N}";
+
+        var response = await PutAsync(client, token, storeId, milk.Id, new UpdateProductRequest($" {name} ", "Vegan", 3.20m));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var edited = (await response.Content.ReadFromJsonAsync<ProductResponse>())!;
+        Assert.Equal((milk.Id, storeId, name, "Vegan", 3.20m), (edited.Id, edited.StoreId, edited.Name, edited.Description, edited.Price));
+        Assert.Equal(edited, await ReadAsync(client, token, storeId, milk.Id));
+    }
+
+    [Fact]
+    public async Task Editing_WithNoToken_Is401_AndACustomerOrAnAdminIs403_AndChangesNothing()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        var (token, _, _) = await StoreUserOfAsync(client, admin, storeId);
+        var milk = await AddProductAsync(client, token, storeId);
+        var body = new UpdateProductRequest("Hacked", "", 1m);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await PutAsync(client, null, storeId, milk.Id, body)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await PutAsync(client, (await RegisterAsync(client)).Token, storeId, milk.Id, body)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await PutAsync(client, admin, storeId, milk.Id, body)).StatusCode);
+        Assert.Equal(milk, await ReadAsync(client, token, storeId, milk.Id));
+    }
+
+    [Fact]
+    public async Task AStoreUserOfAnotherStore_CannotEditTheProduct_Is404_AndItIsUnchanged()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var theirs = await CreateStoreAsync(client, admin);
+        var other = await CreateStoreAsync(client, admin);
+        var (ownerToken, _, _) = await StoreUserOfAsync(client, admin, other);
+        var (intruder, _, _) = await StoreUserOfAsync(client, admin, theirs);
+        var milk = await AddProductAsync(client, ownerToken, other);
+
+        var viaTheirStore = await PutAsync(client, intruder, theirs, milk.Id, new UpdateProductRequest("Hacked", "", 1m)); // a store they run, a product they do not own
+        var viaTheStore = await PutAsync(client, intruder, other, milk.Id, new UpdateProductRequest("Hacked", "", 1m)); // the right store, which they do not run
+
+        Assert.Equal(HttpStatusCode.NotFound, viaTheirStore.StatusCode);
+        Assert.Equal("Product.NotFound", (await ProblemAsync(viaTheirStore)).GetProperty("code").GetString());
+        Assert.Equal(HttpStatusCode.NotFound, viaTheStore.StatusCode);
+        Assert.Equal("Store.NotFound", (await ProblemAsync(viaTheStore)).GetProperty("code").GetString());
+        Assert.Equal(milk, await ReadAsync(client, ownerToken, other, milk.Id));
+    }
+
+    [Fact]
+    public async Task AnUnknownProduct_Is404()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        var (token, _, _) = await StoreUserOfAsync(client, admin, storeId);
+
+        var response = await PutAsync(client, token, storeId, Guid.CreateVersion7(), new UpdateProductRequest("x", "", 1m));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal("Product.NotFound", (await ProblemAsync(response)).GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task ARenameToAnotherProductsName_Is409_ButToItsOwnNameIsFine()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        var (token, _, _) = await StoreUserOfAsync(client, admin, storeId);
+        var milk = await AddProductAsync(client, token, storeId);
+        var bread = await AddProductAsync(client, token, storeId);
+
+        var clash = await PutAsync(client, token, storeId, milk.Id, new UpdateProductRequest(bread.Name, "", 1m));
+        var same = await PutAsync(client, token, storeId, milk.Id, new UpdateProductRequest(milk.Name, "New text", 9m));
+
+        Assert.Equal(HttpStatusCode.Conflict, clash.StatusCode);
+        Assert.Equal("Product.DuplicateName", (await ProblemAsync(clash)).GetProperty("code").GetString());
+        Assert.Equal(HttpStatusCode.OK, same.StatusCode);
+    }
+
+    [Fact]
+    public async Task AStoreUserTakenOut_CannotEditAtOnce_EvenWithATokenThatStillSaysStoreUser()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        var (token, userId, _) = await StoreUserOfAsync(client, admin, storeId);
+        var milk = await AddProductAsync(client, token, storeId);
+        await SendAsync(client, HttpMethod.Delete, $"/stores/{storeId}/members/{userId}", admin);
+
+        var response = await PutAsync(client, token, storeId, milk.Id, new UpdateProductRequest("Hacked", "", 1m));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(milk.Name, (await ReadAsync(client, admin, storeId, milk.Id))?.Name);
+    }
+
+    [Theory]
+    [InlineData("", 1.0, "name")]
+    [InlineData("Milk", 0.0, "price")]
+    [InlineData("Milk", 1.005, "price")]
+    public async Task EditingWithABadNameOrPrice_Is400_AndChangesNothing(string name, double price, string field)
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        var (token, _, _) = await StoreUserOfAsync(client, admin, storeId);
+        var milk = await AddProductAsync(client, token, storeId);
+
+        var response = await PutAsync(client, token, storeId, milk.Id, new { name, description = "", price = (decimal)price });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.True((await ProblemAsync(response)).GetProperty("errors").TryGetProperty(field, out _));
+        Assert.Equal(milk, await ReadAsync(client, token, storeId, milk.Id));
+    }
 }

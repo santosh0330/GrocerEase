@@ -23,6 +23,7 @@ namespace GrocerEase.Api.Controllers;
 public sealed class ProductsController(
     ICommandHandler<CreateProductCommand, Result<ProductResult>> createHandler,
     ICommandHandler<GetProductQuery, Result<ProductResult>> getHandler,
+    ICommandHandler<UpdateProductCommand, Result<ProductResult>> updateHandler,
     ICommandHandler<ListProductsQuery, Result<PagedResult<ProductResult>>> listHandler) : ControllerBase
 {
     private const string ProblemJson = "application/problem+json";
@@ -61,6 +62,26 @@ public sealed class ProductsController(
     {
         var result = await listHandler.Handle(new ListProductsQuery(storeId, page, pageSize), cancellationToken);
         return result.Match<IActionResult>(products => Ok(products.ToResponse()), error => this.ToProblem(error));
+    }
+
+    // Replaces the name, description and price. The id and the store do not change.
+    [HttpPut("{productId:guid}")]
+    [Authorize(Policy = Permissions.ProductsManage)]
+    [ProducesResponseType<ProductResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, ProblemJson)]
+    public async Task<IActionResult> Update(Guid storeId, Guid productId, UpdateProductRequest request, CancellationToken cancellationToken)
+    {
+        if (User.GetUserId() is not { } callerId)
+        {
+            return this.InvalidTokenProblem();
+        }
+
+        var result = await updateHandler.Handle(request.ToCommand(storeId, productId, callerId), cancellationToken);
+        return result.Match<IActionResult>(product => Ok(product.ToResponse()), error => this.ToProblem(error));
     }
 
     [HttpGet("{productId:guid}")]

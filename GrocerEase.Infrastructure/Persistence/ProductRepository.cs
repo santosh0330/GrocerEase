@@ -1,5 +1,6 @@
 using GrocerEase.Application.Abstractions;
 using GrocerEase.Application.Common;
+using GrocerEase.Application.Products.Common;
 using GrocerEase.Domain.Entities;
 using GrocerEase.Infrastructure.Persistence.Configurations;
 using Microsoft.EntityFrameworkCore;
@@ -30,6 +31,30 @@ public sealed class ProductRepository(AppDbContext db) : IProductRepository
             .Skip((page - 1) * pageSize).Take(pageSize)
             .ToListAsync(cancellationToken);
         return new PagedResult<Product>(items, page, pageSize, total);
+    }
+
+    public async Task<ProductUpdateOutcome> TryUpdateAsync(Product product, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(product);
+
+        try
+        {
+            // UPDATE products SET name, description, price WHERE id = @id AND store_id = @store AND archived_at IS NULL
+            var changed = await db.Products
+                .Where(existing => existing.Id == product.Id && existing.StoreId == product.StoreId && existing.ArchivedAt == null)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(existing => existing.Name, product.Name)
+                        .SetProperty(existing => existing.Description, product.Description)
+                        .SetProperty(existing => existing.Price, product.Price),
+                    cancellationToken);
+            return changed == 1 ? ProductUpdateOutcome.Updated : ProductUpdateOutcome.NotFound;
+        }
+        catch (PostgresException exception) when (IsDuplicateName(exception))
+        {
+            // ExecuteUpdate does not wrap the database's error the way SaveChanges does, so it is the PostgresException itself.
+            return ProductUpdateOutcome.DuplicateName;
+        }
     }
 
     public async Task<bool> TryAddAsync(Product product, CancellationToken cancellationToken)

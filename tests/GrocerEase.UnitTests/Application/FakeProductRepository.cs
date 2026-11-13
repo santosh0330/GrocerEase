@@ -1,5 +1,6 @@
 using GrocerEase.Application.Abstractions;
 using GrocerEase.Application.Common;
+using GrocerEase.Application.Products.Common;
 using GrocerEase.Domain.Entities;
 
 namespace GrocerEase.UnitTests.Application;
@@ -18,6 +19,25 @@ internal sealed class FakeProductRepository : IProductRepository
         var items = live.OrderBy(product => product.Name, StringComparer.Ordinal).ThenBy(product => product.Id)
             .Skip((page - 1) * pageSize).Take(pageSize).ToList();
         return Task.FromResult(new PagedResult<Product>(items, page, pageSize, live.Count));
+    }
+
+    public Task<ProductUpdateOutcome> TryUpdateAsync(Product product, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(product);
+
+        var index = Products.FindIndex(existing => existing.Id == product.Id && existing.StoreId == product.StoreId && !existing.IsArchived);
+        if (index < 0)
+        {
+            return Task.FromResult(ProductUpdateOutcome.NotFound);
+        }
+
+        if (Products.Exists(other => other.Id != product.Id && other.StoreId == product.StoreId && !other.IsArchived && string.Equals(other.Name, product.Name, StringComparison.Ordinal)))
+        {
+            return Task.FromResult(ProductUpdateOutcome.DuplicateName);
+        }
+
+        Products[index] = product;
+        return Task.FromResult(ProductUpdateOutcome.Updated);
     }
 
     public Task<bool> TryAddAsync(Product product, CancellationToken cancellationToken)

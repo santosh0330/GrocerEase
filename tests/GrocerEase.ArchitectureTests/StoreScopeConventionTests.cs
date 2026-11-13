@@ -134,6 +134,7 @@ public class StoreScopeConventionTests
     [InlineData(typeof(StoreMember), "store_members", nameof(StoreMemberRepository))]
     [InlineData(typeof(InventoryItem), "inventory_items", nameof(InventoryItemRepository))]
     [InlineData(typeof(Order), "orders", nameof(OrderRepository))]
+    [InlineData(typeof(StockMovement), "stock_movements", nameof(InventoryItemRepository))] // the ledger is part of the stock: one statement writes both
     public void AStoreOwnedTable_IsChangedOnlyByItsRepository_AndReadOnlyByItAndTheNamedReadModels(Type entity, string table, string repository)
     {
         var strangers = TopLevelTypesThatQuery(entity).Union(TopLevelTypesWhoseSqlNames(table), StringComparer.Ordinal)
@@ -226,7 +227,7 @@ public class StoreScopeConventionTests
     public void EveryStoreOwnedEntity_HasATestedRepositoryRule()
     {
         // A new store-owned entity (an order, an inventory item) must be added to the theory above, or its table would be unguarded.
-        var covered = new[] { typeof(InventoryItem), typeof(Order), typeof(Product), typeof(StoreMember) };
+        var covered = new[] { typeof(InventoryItem), typeof(Order), typeof(Product), typeof(StockMovement), typeof(StoreMember) };
 
         Assert.Equal(StoreOwnedEntities().Select(type => type.Name), covered.Select(type => type.Name).Order(StringComparer.Ordinal), StringComparer.Ordinal);
     }

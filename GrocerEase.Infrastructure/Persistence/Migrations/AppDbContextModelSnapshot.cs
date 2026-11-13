@@ -474,6 +474,75 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GrocerEase.Domain.Entities.StockMovement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuidv7()");
+
+                    b.Property<Guid?>("ActorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("Delta")
+                        .HasColumnType("integer")
+                        .HasColumnName("delta");
+
+                    b.Property<Guid?>("OrderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("order_id");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("product_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("StoreId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("store_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_stock_movements");
+
+                    b.HasIndex("ActorId")
+                        .HasDatabaseName("ix_stock_movements_actor_id");
+
+                    b.HasIndex("OrderId")
+                        .HasDatabaseName("ix_stock_movements_order_id");
+
+                    b.HasIndex("ProductId", "StoreId")
+                        .HasDatabaseName("ix_stock_movements_product_id_store_id");
+
+                    b.HasIndex("ProductId", "CreatedAt", "Id")
+                        .IsDescending(false, true, true)
+                        .HasDatabaseName("ix_stock_movements_product_id_created_at");
+
+                    b.ToTable("stock_movements", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_stock_movements_actor_id_matches_reason", "(reason = 'OpeningBalance') = (actor_id IS NULL)");
+
+                            t.HasCheckConstraint("ck_stock_movements_delta_in_range", "delta <> 0 AND delta >= -1000000000 AND delta <= 1000000000");
+
+                            t.HasCheckConstraint("ck_stock_movements_delta_matches_reason", "(reason = 'Correction') OR (reason = 'OrderPlaced' AND delta < 0) OR (reason IN ('OpeningBalance', 'Received', 'OrderCancelled') AND delta > 0)");
+
+                            t.HasCheckConstraint("ck_stock_movements_id_is_uuid_v7", "uuid_extract_version(id) = 7");
+
+                            t.HasCheckConstraint("ck_stock_movements_order_id_matches_reason", "(reason IN ('OrderPlaced', 'OrderCancelled')) = (order_id IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_stock_movements_reason_is_known", "reason IN ('OpeningBalance', 'Received', 'Correction', 'OrderPlaced', 'OrderCancelled')");
+                        });
+                });
+
             modelBuilder.Entity("GrocerEase.Domain.Entities.Store", b =>
                 {
                     b.Property<Guid>("Id")
@@ -673,6 +742,29 @@ namespace GrocerEase.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_role_claims_roles_role_id");
+                });
+
+            modelBuilder.Entity("GrocerEase.Domain.Entities.StockMovement", b =>
+                {
+                    b.HasOne("GrocerEase.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("ActorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_stock_movements_users_actor_id");
+
+                    b.HasOne("GrocerEase.Domain.Entities.Order", null)
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_stock_movements_orders_order_id");
+
+                    b.HasOne("GrocerEase.Domain.Entities.Product", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId", "StoreId")
+                        .HasPrincipalKey("Id", "StoreId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_stock_movements_products_product_id_store_id");
                 });
 
             modelBuilder.Entity("GrocerEase.Domain.Entities.StoreMember", b =>

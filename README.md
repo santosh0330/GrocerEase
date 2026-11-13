@@ -104,7 +104,7 @@ curl -s http://localhost:8080/me -H "Authorization: Bearer $TOKEN"
 | `POST /stores/{storeId}/members` | the `stores.manage` permission | assigns the customer whose email is in the body to the store, which makes them a store user |
 | `DELETE /stores/{storeId}/members/{userId}` | the `stores.manage` permission | takes the store user out of the store, which makes them a customer again; `204` |
 | `POST /stores/{storeId}/products` | the `products.manage` permission **and** running that store (a store user) | `201` and the product `{ id, storeId, name, description, price }`; `409 Product.DuplicateName` (see [Products](#products)) |
-| `PUT /stores/{storeId}/products/{productId}`, `DELETE ...` | the same | edits the product (`200`), or archives it (`204`) |
+| `PUT /stores/{storeId}/products/{productId}`, `DELETE ...` | the same | edits the product on top of the `version` you read (`200`, and the product at its next version; `409 Product.Outdated` if someone changed it since, with the current product), or archives it (`204`) (see [Products](#products)) |
 | `GET /stores/{storeId}/products`, `GET .../{productId}` | the `products.read` permission (every role) | a page of the products on sale in a store, or one; `404 Product.NotFound` |
 | `POST /stores/{storeId}/products/{productId}/stock-adjustments` | the `inventory.manage` permission **and** running that store | body `{ "delta": 12, "reason": "Received" }` (positive adds, negative removes; `reason` is optional: `Received` or `Correction`); `200` and `{ productId, quantityOnHand }`; `409 Inventory.NotEnoughStock` (see [Inventory](#inventory)) |
 | `GET /stores/{storeId}/products/{productId}/stock-movements` | the same | a page of the product's stock history, **newest first**: `{ id, productId, delta, reason, actorId, orderId, createdAt }`; they add up to the quantity (see [The stock ledger](#the-stock-ledger)) |
@@ -226,7 +226,7 @@ curl -s -X POST http://localhost:8080/stores/$STORE_ID/products -H "Authorizatio
   -d '{"name":"Milk","description":"Fresh","price":2.50}'                 # 201 { "id": "...", "storeId": "...", "name": "Milk", ... }
 curl -s "http://localhost:8080/stores/$STORE_ID/products?page=1&pageSize=20" -H "Authorization: Bearer $TOKEN"   # anyone signed in
 curl -s -X PUT    http://localhost:8080/stores/$STORE_ID/products/$PRODUCT_ID -H "Authorization: Bearer $STORE_USER_TOKEN" \
-  -H 'Content-Type: application/json' -d '{"name":"Oat milk","description":"Vegan","price":3.20}'                # 200
+  -H 'Content-Type: application/json' -d '{"name":"Oat milk","description":"Vegan","price":3.20,"version":1}'     # 200, "version": 2; or 409 Product.Outdated if it is no longer version 1
 curl -s -X DELETE http://localhost:8080/stores/$STORE_ID/products/$PRODUCT_ID -H "Authorization: Bearer $STORE_USER_TOKEN"   # 204: archived
 ```
 
@@ -236,12 +236,32 @@ curl -s -X DELETE http://localhost:8080/stores/$STORE_ID/products/$PRODUCT_ID -H
 |---|---|---|
 | `400` | | a blank or too long name or description, a price that is not above zero, has more than 2 decimals or does not fit `numeric(12, 2)`; a `page` or `pageSize` outside the limits |
 | `404` | `Store.NotFound` | no such store, **or** a store the caller does not run (adding, editing, archiving) |
+| `400` | | **no `version`** (or one below 1) on an edit, naming `version`: an edit is never applied blindly |
 | `404` | `Product.NotFound` | no such product in that store, it is another store's, or it is archived |
 | `409` | `Product.DuplicateName` | the store already sells a live product with that name |
+| `409` | `Product.Outdated` | the product was changed after you read it: nothing was saved, and `current` in the problem is the product as it is now |
 
 - **A product is archived, not deleted.** `archived_at` is set, it leaves the catalogue and the list, and its name is free for a new product (the unique index on `(store_id, name)` is partial: `WHERE archived_at IS NULL`). The row stays, so an order placed later can say what it bought. An archived product cannot be edited or brought back.
 - **Money** is `numeric(12, 2)` in the database and a `decimal` in the API, never a floating point number. A price with half a cent is refused with a `400`, not rounded. One currency, no currency field.
-- **Every write is one statement with its conditions inside it** (`WHERE id = ... AND store_id = ... AND archived_at IS NULL`), so a product of another store is never touched, and two requests archiving, or renaming to one name, cannot both win. Two people editing the same product do not know about each other: the last write wins (a version on the product is planned).
+- **Every write is one statement with its conditions inside it** (`WHERE id = ... AND store_id = ... AND archived_at IS NULL`), so a product of another store is never touched, and two requests archiving, or renaming to one name, cannot both win. 
+
+**Two people editing the same product do not overwrite each other.** Every product carries a `version`: 1 when it is made, and one more for every change to the row (an edit, the archiving). An edit says which version it was made from, and nothing is locked while anyone edits (this is *optimistic* concurrency):
+
+```text
+Asha reads the product: version 3          Ben reads the product: version 3
+Asha saves "price 4.00" (version 3)  ->  200, now version 4
+                                           Ben saves "name Oat milk" (version 3)  ->  409 Product.Outdated
+                                                                                     { "current": { ..., "price": 4.00, "version": 4 } }
+                                           Ben sees Asha's change, applies his on top of version 4  ->  200, version 5
+```
+
+- **The check is the write.** One statement: `UPDATE products SET ..., version = version + 1 WHERE id = ... AND store_id = ... AND archived_at IS NULL AND version = @version`. Of two edits made from the same version, the database writes one and the other matches no row. Ten people saving at once from version 1 give one `200`, nine `409`, and a product that holds one person's whole edit, never a mixture.
+- **The refusal shows the difference.** `409 Product.Outdated` carries `current`: the product as it is now, in the same shape as everywhere else, so the client can show what changed and let the person decide.
+- **A request with no `version` is a `400`** naming `version` (an old client, or a mistake), never applied blindly: the point is that nobody overwrites what they have not seen. A version that does not exist yet is a `409` too.
+- **The version is an integer, not Postgres's `xmin`**, because a client reads it, stores it and sends it back, and `xmin` is an internal transaction id that changes on a dump and restore.
+- **A stale edit does not reveal anything it should not.** A product of a store that is not yours, or an archived one, is the same `404` as always, whatever version you send: the `409` and its `current` exist only for a product you may edit.
+- **Stock is not versioned.** Quantities change by amounts and compare-and-set (see [Inventory](#inventory)), which need no version.
+- An architecture test keeps every writer honest: any method that changes products must mention the version, and none may delete one.
 
 ### Inventory
 

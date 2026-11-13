@@ -124,6 +124,9 @@ Authorization: Bearer {{login.response.body.$.token}}
 
 ###
 
+# Edits a product ON TOP OF THE VERSION YOU READ (every product response has "version": 1 when made, one more for every change). Nothing is locked: if someone
+# changed the product after you read it, nothing is saved and the answer is 409 "Product.Outdated" with the product as it is now ("current" in the problem), so
+# you can see what changed and send your change again with the version in it. No "version" at all is 400, never applied blindly.
 PUT {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/products/{{createProduct.response.body.$.id}}
 Authorization: Bearer {{login.response.body.$.token}}
 Content-Type: application/json
@@ -131,7 +134,8 @@ Content-Type: application/json
 {
   "name": "Oat milk",
   "description": "Vegan",
-  "price": 3.20
+  "price": 3.20,
+  "version": {{createProduct.response.body.$.version}}
 }
 
 ###

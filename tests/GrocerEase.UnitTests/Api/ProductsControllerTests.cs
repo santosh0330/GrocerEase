@@ -8,6 +8,7 @@ using GrocerEase.Application.Products.Commands;
 using GrocerEase.Application.Products.Common;
 using GrocerEase.Application.Products.Queries;
 using GrocerEase.Application.Stores.Common;
+using GrocerEase.Contracts.Common;
 using GrocerEase.Contracts.Products;
 using GrocerEase.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
@@ -34,9 +35,15 @@ public class ProductsControllerTests
     private static readonly ProductResult Milk = new(Guid.CreateVersion7(), StoreId, "Milk", "Fresh milk", 2.50m);
 
     private static ProductsController ControllerWith(
-        Spy<CreateProductCommand, Result<ProductResult>> create, Spy<GetProductQuery, Result<ProductResult>>? get = null, string? sub = null)
+        Spy<CreateProductCommand, Result<ProductResult>> create,
+        Spy<GetProductQuery, Result<ProductResult>>? get = null,
+        string? sub = null,
+        Spy<ListProductsQuery, Result<PagedResult<ProductResult>>>? list = null)
     {
-        var controller = new ProductsController(create, get ?? new Spy<GetProductQuery, Result<ProductResult>>(Result.Success(Milk)))
+        var controller = new ProductsController(
+            create,
+            get ?? new Spy<GetProductQuery, Result<ProductResult>>(Result.Success(Milk)),
+            list ?? new Spy<ListProductsQuery, Result<PagedResult<ProductResult>>>(Result.Success(new PagedResult<ProductResult>([Milk], 1, 20, 1))))
         {
             ProblemDetailsFactory = new StubProblemDetailsFactory(),
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
@@ -100,6 +107,40 @@ public class ProductsControllerTests
     }
 
     [Fact]
+    public async Task List_RunsTheQueryWithTheStoreAndThePaging_AndReturnsThePageMapped()
+    {
+        var list = new Spy<ListProductsQuery, Result<PagedResult<ProductResult>>>(Result.Success(new PagedResult<ProductResult>([Milk], 2, 5, 11)));
+
+        var result = await ControllerWith(new Spy<CreateProductCommand, Result<ProductResult>>(Result.Success(Milk)), list: list)
+            .List(StoreId, CancellationToken.None, page: 2, pageSize: 5);
+
+        Assert.Equal(new ListProductsQuery(StoreId, 2, 5), list.Received);
+        var body = Assert.IsType<PagedResponse<ProductResponse>>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal([new ProductResponse(Milk.Id, StoreId, "Milk", "Fresh milk", 2.50m)], body.Items);
+        Assert.Equal((2, 5, 11), (body.Page, body.PageSize, body.TotalCount));
+    }
+
+    [Fact]
+    public async Task List_WithNoPaging_AsksForTheFirstPageOfTheDefaultSize()
+    {
+        var list = new Spy<ListProductsQuery, Result<PagedResult<ProductResult>>>(Result.Success(new PagedResult<ProductResult>([], 1, 20, 0)));
+
+        await ControllerWith(new Spy<CreateProductCommand, Result<ProductResult>>(Result.Success(Milk)), list: list).List(StoreId, CancellationToken.None);
+
+        Assert.Equal(new ListProductsQuery(StoreId, 1, Paging.DefaultPageSize), list.Received);
+    }
+
+    [Fact]
+    public async Task List_AnUnknownStore_Is404()
+    {
+        var list = new Spy<ListProductsQuery, Result<PagedResult<ProductResult>>>(Result.Failure<PagedResult<ProductResult>>(StoreErrors.NotFound));
+
+        var result = await ControllerWith(new Spy<CreateProductCommand, Result<ProductResult>>(Result.Success(Milk)), list: list).List(StoreId, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status404NotFound, Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value).Status);
+    }
+
+    [Fact]
     public async Task Get_RunsTheQueryWithTheStoreAndTheProductFromTheRoute_AndReturnsIt()
     {
         var get = new Spy<GetProductQuery, Result<ProductResult>>(Result.Success(Milk));
@@ -124,6 +165,7 @@ public class ProductsControllerTests
     [Theory]
     [InlineData(nameof(ProductsController.Create), Permissions.ProductsManage)]
     [InlineData(nameof(ProductsController.Get), Permissions.ProductsRead)]
+    [InlineData(nameof(ProductsController.List), Permissions.ProductsRead)]
     public void EachRoute_NeedsItsPermission_NotARoleName(string action, string permission)
     {
         var authorize = typeof(ProductsController).GetMethod(action)!.GetCustomAttribute<AuthorizeAttribute>();

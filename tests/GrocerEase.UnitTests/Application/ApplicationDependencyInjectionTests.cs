@@ -75,6 +75,8 @@ public class ApplicationDependencyInjectionTests
             scope.ServiceProvider.GetRequiredService<ICommandHandler<CreateProductCommand, Result<ProductResult>>>());
         Assert.IsType<ValidationDecorator<GetProductQuery, Result<ProductResult>>>(
             scope.ServiceProvider.GetRequiredService<ICommandHandler<GetProductQuery, Result<ProductResult>>>());
+        Assert.IsType<ValidationDecorator<ListProductsQuery, Result<PagedResult<ProductResult>>>>(
+            scope.ServiceProvider.GetRequiredService<ICommandHandler<ListProductsQuery, Result<PagedResult<ProductResult>>>>());
         Assert.IsType<ValidationDecorator<RemoveStoreMemberCommand, Result<StoreMemberResult>>>(
             scope.ServiceProvider.GetRequiredService<ICommandHandler<RemoveStoreMemberCommand, Result<StoreMemberResult>>>());
         Assert.IsType<ValidationDecorator<AssignStoreMemberCommand, Result<StoreMemberResult>>>(

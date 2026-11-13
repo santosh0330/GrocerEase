@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using GrocerEase.Contracts.Common;
 using GrocerEase.Contracts.Products;
 using static GrocerEase.IntegrationTests.ApiScenario;
 
@@ -279,5 +280,145 @@ public class ProductsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactor
         Assert.Equal(HttpStatusCode.NotFound, wrongStore.StatusCode);
         Assert.Equal("Product.NotFound", (await ProblemAsync(unknown)).GetProperty("code").GetString());
         Assert.Equal("Product.NotFound", (await ProblemAsync(wrongStore)).GetProperty("code").GetString());
+    }
+
+    private static async Task<string> StoreWithProductsAsync(HttpClient client, string admin, Guid storeId, params string[] names)
+    {
+        var (token, _, _) = await StoreUserOfAsync(client, admin, storeId);
+        foreach (var name in names)
+        {
+            Assert.Equal(HttpStatusCode.Created, (await SendAsync(client, HttpMethod.Post, $"/stores/{storeId}/products", token, Milk(name))).StatusCode);
+        }
+
+        return token;
+    }
+
+    private static async Task<PagedResponse<ProductResponse>> PageAsync(HttpClient client, string token, Guid storeId, string query = "")
+    {
+        var response = await SendAsync(client, HttpMethod.Get, $"/stores/{storeId}/products{query}", token);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<PagedResponse<ProductResponse>>())!;
+    }
+
+    [Fact]
+    public async Task ACustomer_BrowsesTheProductsOfAStore_APageAtATime_InOrderOfName()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        await StoreWithProductsAsync(client, admin, storeId, "Eggs", "Bread", "Milk", "Apples", "Cheese");
+        var customer = (await RegisterAsync(client)).Token;
+
+        var first = await PageAsync(client, customer, storeId, "?page=1&pageSize=2");
+        var second = await PageAsync(client, customer, storeId, "?page=2&pageSize=2");
+        var last = await PageAsync(client, customer, storeId, "?page=3&pageSize=2");
+
+        Assert.Equal(["Apples", "Bread"], first.Items.Select(product => product.Name), StringComparer.Ordinal);
+        Assert.Equal(["Cheese", "Eggs"], second.Items.Select(product => product.Name), StringComparer.Ordinal);
+        Assert.Equal(["Milk"], last.Items.Select(product => product.Name), StringComparer.Ordinal);
+        Assert.Equal((5, 5, 5), (first.TotalCount, second.TotalCount, last.TotalCount));
+        Assert.Equal((3, 2), (last.Page, last.PageSize));
+    }
+
+    [Fact]
+    public async Task WithNoPagingGiven_ItIsThePageOneOfTwentyItems_AndAPagePastTheEndIsEmpty()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        await StoreWithProductsAsync(client, admin, storeId, "Milk");
+        var customer = (await RegisterAsync(client)).Token;
+
+        var defaults = await PageAsync(client, customer, storeId);
+        var past = await PageAsync(client, customer, storeId, "?page=99");
+
+        Assert.Equal((1, 20, 1, 1), (defaults.Page, defaults.PageSize, defaults.TotalCount, defaults.Items.Count));
+        Assert.Empty(past.Items);
+        Assert.Equal(1, past.TotalCount);
+    }
+
+    [Fact]
+    public async Task TheList_ShowsOnlyThatStoresProducts()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        var other = await CreateStoreAsync(client, admin);
+        await StoreWithProductsAsync(client, admin, storeId, "Milk");
+        await StoreWithProductsAsync(client, admin, other, "Elsewhere", "Also elsewhere");
+
+        var page = await PageAsync(client, (await RegisterAsync(client)).Token, storeId);
+
+        Assert.Equal(["Milk"], page.Items.Select(product => product.Name), StringComparer.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("?page=0", "page")]
+    [InlineData("?page=-1", "page")]
+    [InlineData("?page=100001", "page")]
+    [InlineData("?pageSize=0", "pageSize")]
+    [InlineData("?pageSize=101", "pageSize")]
+    public async Task PagingOutsideTheLimits_Is400_NamingTheParameter(string query, string parameter)
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+
+        var response = await SendAsync(client, HttpMethod.Get, $"/stores/{storeId}/products{query}", (await RegisterAsync(client)).Token);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.True((await ProblemAsync(response)).GetProperty("errors").TryGetProperty(parameter, out _));
+    }
+
+    [Fact]
+    public async Task PagingThatIsNotANumber_Is400()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+
+        var response = await SendAsync(client, HttpMethod.Get, $"/stores/{storeId}/products?page=abc", (await RegisterAsync(client)).Token);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task TheLargestPageSize_IsAccepted()
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+
+        var page = await PageAsync(client, (await RegisterAsync(client)).Token, storeId, "?pageSize=100");
+
+        Assert.Equal(100, page.PageSize);
+    }
+
+    [Theory]
+    [InlineData("admin")]
+    [InlineData("storeuser-of-another-store")]
+    public async Task EveryRole_MayBrowse_AndAnUnknownStoreIs404(string who)
+    {
+        using var client = factory.CreateClient();
+        var admin = await AdminTokenAsync(client);
+        var storeId = await CreateStoreAsync(client, admin);
+        var token = string.Equals(who, "admin", StringComparison.Ordinal)
+            ? admin
+            : (await StoreUserOfAsync(client, admin, await CreateStoreAsync(client, admin))).Token;
+
+        var known = await SendAsync(client, HttpMethod.Get, $"/stores/{storeId}/products", token);
+        var unknown = await SendAsync(client, HttpMethod.Get, $"/stores/{Guid.CreateVersion7()}/products", token);
+
+        Assert.Equal(HttpStatusCode.OK, known.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+        Assert.Equal("Store.NotFound", (await ProblemAsync(unknown)).GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task Browsing_WithNoToken_Is401()
+    {
+        using var client = factory.CreateClient();
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await SendAsync(client, HttpMethod.Get, $"/stores/{Guid.CreateVersion7()}/products", token: null)).StatusCode);
     }
 }

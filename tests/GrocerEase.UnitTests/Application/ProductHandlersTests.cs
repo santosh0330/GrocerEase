@@ -80,6 +80,62 @@ public class ProductHandlersTests
         Assert.Same(StoreErrors.NotFound, result.Error);
     }
 
+    private async Task AddStoreAsync(FakeStoreRepository stores) =>
+        Assert.True(await stores.TryAddAsync(new Store(_storeId, "Fresh Mart", "1 High Street"), CancellationToken.None));
+
+    [Fact]
+    public async Task List_ReturnsOnePage_OrderedByName_WithTheTotal()
+    {
+        var stores = new FakeStoreRepository();
+        await AddStoreAsync(stores);
+        foreach (var name in new[] { "Eggs", "Bread", "Milk", "Apples", "Cheese" })
+        {
+            await Create().Handle(Milk(name), CancellationToken.None);
+        }
+
+        var second = await new ListProductsQueryHandler(stores, _products).Handle(new ListProductsQuery(_storeId, 2, 2), CancellationToken.None);
+
+        Assert.Equal(["Cheese", "Eggs"], second.Value.Items.Select(product => product.Name), StringComparer.Ordinal);
+        Assert.Equal((2, 2, 5), (second.Value.Page, second.Value.PageSize, second.Value.TotalCount));
+    }
+
+    [Fact]
+    public async Task List_LeavesOutArchivedProducts_AndAnotherStoresProducts()
+    {
+        var stores = new FakeStoreRepository();
+        await AddStoreAsync(stores);
+        await Create().Handle(Milk("Milk"), CancellationToken.None);
+        _products.Products.Add(new Product(Guid.CreateVersion7(), _storeId, "Archived", "", 1m, DateTimeOffset.UtcNow));
+        _products.Products.Add(new Product(Guid.CreateVersion7(), Guid.CreateVersion7(), "Elsewhere", "", 1m));
+
+        var result = await new ListProductsQueryHandler(stores, _products).Handle(new ListProductsQuery(_storeId, 1, 20), CancellationToken.None);
+
+        Assert.Equal(["Milk"], result.Value.Items.Select(product => product.Name), StringComparer.Ordinal);
+        Assert.Equal(1, result.Value.TotalCount);
+    }
+
+    [Fact]
+    public async Task List_APagePastTheEnd_IsEmpty_NotAnError_AndStillSaysHowLongTheListIs()
+    {
+        var stores = new FakeStoreRepository();
+        await AddStoreAsync(stores);
+        await Create().Handle(Milk(), CancellationToken.None);
+
+        var result = await new ListProductsQueryHandler(stores, _products).Handle(new ListProductsQuery(_storeId, 9, 20), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Value.Items);
+        Assert.Equal(1, result.Value.TotalCount);
+    }
+
+    [Fact]
+    public async Task List_AnUnknownStore_IsNotFound()
+    {
+        var result = await new ListProductsQueryHandler(new FakeStoreRepository(), _products).Handle(new ListProductsQuery(Guid.CreateVersion7(), 1, 20), CancellationToken.None);
+
+        Assert.Same(StoreErrors.NotFound, result.Error);
+    }
+
     [Fact]
     public async Task Get_ReturnsAProductThatIsOnSale_InItsStore()
     {

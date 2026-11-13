@@ -106,6 +106,8 @@ curl -s http://localhost:8080/me -H "Authorization: Bearer $TOKEN"
 | `POST /stores/{storeId}/products` | the `products.manage` permission **and** running that store (a store user) | `201` and the product `{ id, storeId, name, description, price }`; `409 Product.DuplicateName` (see [Products](#products)) |
 | `PUT /stores/{storeId}/products/{productId}`, `DELETE ...` | the same | edits the product (`200`), or archives it (`204`) |
 | `GET /stores/{storeId}/products`, `GET .../{productId}` | the `products.read` permission (every role) | a page of the products on sale in a store, or one; `404 Product.NotFound` |
+| `POST /stores/{storeId}/products/{productId}/stock-adjustments` | the `inventory.manage` permission **and** running that store | body `{ "delta": 12 }` (positive adds, negative removes); `200` and `{ productId, quantityOnHand }`; `409 Inventory.NotEnoughStock` (see [Inventory](#inventory)) |
+| `GET /stores/{storeId}/inventory` | the same | a page of every product on sale with `{ productId, productName, quantityOnHand }`, zero when it has never had stock |
 
 An access token lives 10 minutes (`Jwt:ExpiryMinutes`); the refresh token keeps the session going. A request without a valid token never reaches the route. It gets `application/problem+json` with a `code` to switch on, plus a `WWW-Authenticate` header:
 
@@ -145,7 +147,7 @@ Every user holds **exactly one role**, stored in `users.role_id`. A role **grant
 |---|---|---|---|
 | `Customer` | `019e0000-0000-7000-8000-000000000001` | everyone who registers | `profile.read`, `stores.read`, `products.read` |
 | `Admin` | `019e0000-0000-7000-8000-000000000002` | made by hand, see below | `profile.read`, `roles.read`, `stores.read`, `stores.manage`, `products.read` |
-| `StoreUser` | `019e0000-0000-7000-8000-000000000003` | a customer an admin assigned to a store | `profile.read`, `stores.read`, `products.read`, `products.manage` |
+| `StoreUser` | `019e0000-0000-7000-8000-000000000003` | a customer an admin assigned to a store | `profile.read`, `stores.read`, `products.read`, `products.manage`, `inventory.manage` |
 
 | Permission | Needed by |
 |---|---|
@@ -155,6 +157,7 @@ Every user holds **exactly one role**, stored in `users.role_id`. A role **grant
 | `stores.manage` | `POST /stores`, and assigning or removing a store's users |
 | `products.read` | browsing the products of a store |
 | `products.manage` | adding, editing and archiving products, **in a store the caller runs** (see [Products](#products)) |
+| `inventory.manage` | reading and changing the stock, **in a store the caller runs** (see [Inventory](#inventory)) |
 
 The token carries the role's name as `role` and the permissions as a `permission` array (`["products.read","profile.read","stores.read"]`). A route names the permission it needs, `[Authorize(Policy = "roles.read")]`, not a role: the policy checks the `permission` claims of the token, so giving the permission to another role changes no endpoint. `GET /me` shows the role and the permissions the token carries.
 
@@ -229,9 +232,31 @@ curl -s -X DELETE http://localhost:8080/stores/$STORE_ID/products/$PRODUCT_ID -H
 - **Money** is `numeric(12, 2)` in the database and a `decimal` in the API, never a floating point number. A price with half a cent is refused with a `400`, not rounded. One currency, no currency field.
 - **Every write is one statement with its conditions inside it** (`WHERE id = ... AND store_id = ... AND archived_at IS NULL`), so a product of another store is never touched, and two requests archiving, or renaming to one name, cannot both win. Two people editing the same product do not know about each other: the last write wins (a version on the product is planned).
 
+### Inventory
+
+Each store has stock for its products: **how many units are on hand**, changed by the people who run the store.
+
+```bash
+curl -s -X POST http://localhost:8080/stores/$STORE_ID/products/$PRODUCT_ID/stock-adjustments -H "Authorization: Bearer $STORE_USER_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"delta": 12}'      # 200 { "productId": "...", "quantityOnHand": 12 }
+curl -s -X POST ... -d '{"delta": -5}'                          # 200 ... "quantityOnHand": 7
+curl -s "http://localhost:8080/stores/$STORE_ID/inventory?page=1" -H "Authorization: Bearer $STORE_USER_TOKEN"   # every product on sale, with its quantity
+```
+
+- **A change is an amount, never a new total.** `{"delta": 12}` means "12 more arrived"; there is no "set it to 40", because that would overwrite whatever changed while the person was counting. A change of zero, or of more than a billion either way, is a `400`.
+- **The quantity is never below zero, however many requests arrive at once.** Each change is **one SQL statement with the limits inside it** (`UPDATE ... SET quantity = quantity + @delta WHERE ... AND quantity + @delta >= 0`, and an `INSERT ... ON CONFLICT DO UPDATE` for adding), not a read followed by a write: twenty requests removing one each from stock of five give exactly five `200` and fifteen `409`, and a quantity of zero. The table's `CHECK` is the last line of defence.
+- **No row means none.** The row for a product is made by its first addition; before that it has no stock, removing is refused, and the list shows zero.
+- **Stock belongs to a store.** An item carries its product's store, tied to it by a composite foreign key, so the two cannot disagree, and every statement names the store. Only a store user of that store may see or change it (the same ownership rule as products: a `404` for a store that is not yours); a customer or an admin gets `403`.
+
+| Status | `code` | When |
+|---|---|---|
+| `409` | `Inventory.NotEnoughStock` | the change would take the quantity below zero (including removing from a product that has never had stock) |
+| `409` | `Inventory.TooMuchStock` | the quantity would pass a billion |
+| `404` | `Store.NotFound` / `Product.NotFound` | a store the caller does not run, an unknown product, an archived one, or another store's |
+
 ### Paging
 
-Every list is paged, with one set of limits: `?page=` counts **from 1** (at most 100 000), `?pageSize=` is **1 to 100** (20 by default). A value outside them is a `400` naming the parameter. The answer is `{ "items": [...], "page": 1, "pageSize": 20, "totalCount": 57 }`, and a page past the end has no items but still says `totalCount`. `GET /stores` and `GET /stores/{storeId}/products` are paged; the roles are not (there are three).
+Every list is paged, with one set of limits: `?page=` counts **from 1** (at most 100 000), `?pageSize=` is **1 to 100** (20 by default). A value outside them is a `400` naming the parameter. The answer is `{ "items": [...], "page": 1, "pageSize": 20, "totalCount": 57 }`, and a page past the end has no items but still says `totalCount`. `GET /stores`, `GET /stores/{storeId}/products` and `GET /stores/{storeId}/inventory` are paged; the roles are not (there are three).
 
 ## Health checks
 

@@ -103,6 +103,45 @@ Authorization: Bearer {{login.response.body.$.token}}
 
 ###
 
+# Products. Adding, editing and archiving need products.manage AND running the store: sign in as the store user you assigned above (log in as
+# asha@example.com). Anyone signed in may browse. A store you do not run is 404 "Store.NotFound", never 403.
+# @name createProduct
+POST {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/products
+Authorization: Bearer {{login.response.body.$.token}}
+Content-Type: application/json
+
+{
+  "name": "Milk",
+  "description": "Fresh",
+  "price": 2.50
+}
+
+###
+
+# A page of the store's products: page counts from 1, pageSize is 1 to 100 (20 by default). { "items": [...], "page", "pageSize", "totalCount" }
+GET {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/products?page=1&pageSize=20
+Authorization: Bearer {{login.response.body.$.token}}
+
+###
+
+PUT {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/products/{{createProduct.response.body.$.id}}
+Authorization: Bearer {{login.response.body.$.token}}
+Content-Type: application/json
+
+{
+  "name": "Oat milk",
+  "description": "Vegan",
+  "price": 3.20
+}
+
+###
+
+# "Deletes" the product by archiving it: 204, it leaves the catalogue, and its name is free again.
+DELETE {{GrocerEase.Api_HostAddress}}/stores/{{createStore.response.body.$.id}}/products/{{createProduct.response.body.$.id}}
+Authorization: Bearer {{login.response.body.$.token}}
+
+###
+
 # Health, readiness: open to anyone, no token. Runs every check, including the database.
 # 200 { "status": "Healthy", "totalDurationMs": 4.1, "checks": [ { "name": "database", "status": "Healthy", "durationMs": 3.8 } ] }
 # 503 with "status": "Unhealthy" when the database cannot be reached or has not been migrated. It never says why: that goes to the log.

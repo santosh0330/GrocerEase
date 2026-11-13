@@ -100,9 +100,12 @@ curl -s http://localhost:8080/me -H "Authorization: Bearer $TOKEN"
 | `GET /me` | a valid bearer token | `{ id, firstName, lastName, email, role, permissions }` of the signed-in user |
 | `GET /roles` | a valid bearer token with the `roles.read` permission | every role and what it grants, `[{ id, name, permissions }]` (see [Roles and permissions](#roles-and-permissions)) |
 | `POST /stores` | the `stores.manage` permission (the admin) | `201` and the new store, `{ id, name, address }`; `409 Store.DuplicateName` if the name is taken (see [Stores and store users](#stores-and-store-users)) |
-| `GET /stores`, `GET /stores/{storeId}` | the `stores.read` permission (every role) | every store ordered by name, or one; `404 Store.NotFound` |
+| `GET /stores`, `GET /stores/{storeId}` | the `stores.read` permission (every role) | a page of stores ordered by name (`{ items, page, pageSize, totalCount }`, see [Paging](#paging)), or one; `404 Store.NotFound` |
 | `POST /stores/{storeId}/members` | the `stores.manage` permission | assigns the customer whose email is in the body to the store, which makes them a store user |
 | `DELETE /stores/{storeId}/members/{userId}` | the `stores.manage` permission | takes the store user out of the store, which makes them a customer again; `204` |
+| `POST /stores/{storeId}/products` | the `products.manage` permission **and** running that store (a store user) | `201` and the product `{ id, storeId, name, description, price }`; `409 Product.DuplicateName` (see [Products](#products)) |
+| `PUT /stores/{storeId}/products/{productId}`, `DELETE ...` | the same | edits the product (`200`), or archives it (`204`) |
+| `GET /stores/{storeId}/products`, `GET .../{productId}` | the `products.read` permission (every role) | a page of the products on sale in a store, or one; `404 Product.NotFound` |
 
 An access token lives 10 minutes (`Jwt:ExpiryMinutes`); the refresh token keeps the session going. A request without a valid token never reaches the route. It gets `application/problem+json` with a `code` to switch on, plus a `WWW-Authenticate` header:
 
@@ -140,9 +143,9 @@ Every user holds **exactly one role**, stored in `users.role_id`. A role **grant
 
 | Role | Id | Who | May do |
 |---|---|---|---|
-| `Customer` | `019e0000-0000-7000-8000-000000000001` | everyone who registers | `profile.read`, `stores.read` |
-| `Admin` | `019e0000-0000-7000-8000-000000000002` | made by hand, see below | `profile.read`, `roles.read`, `stores.read`, `stores.manage` |
-| `StoreUser` | `019e0000-0000-7000-8000-000000000003` | a customer an admin assigned to a store | `profile.read`, `stores.read` |
+| `Customer` | `019e0000-0000-7000-8000-000000000001` | everyone who registers | `profile.read`, `stores.read`, `products.read` |
+| `Admin` | `019e0000-0000-7000-8000-000000000002` | made by hand, see below | `profile.read`, `roles.read`, `stores.read`, `stores.manage`, `products.read` |
+| `StoreUser` | `019e0000-0000-7000-8000-000000000003` | a customer an admin assigned to a store | `profile.read`, `stores.read`, `products.read`, `products.manage` |
 
 | Permission | Needed by |
 |---|---|
@@ -150,8 +153,10 @@ Every user holds **exactly one role**, stored in `users.role_id`. A role **grant
 | `roles.read` | `GET /roles` |
 | `stores.read` | `GET /stores`, `GET /stores/{storeId}` |
 | `stores.manage` | `POST /stores`, and assigning or removing a store's users |
+| `products.read` | browsing the products of a store |
+| `products.manage` | adding, editing and archiving products, **in a store the caller runs** (see [Products](#products)) |
 
-The token carries the role's name as `role` and the permissions as a `permission` array (`["profile.read","stores.read"]`). A route names the permission it needs, `[Authorize(Policy = "roles.read")]`, not a role: the policy checks the `permission` claims of the token, so giving the permission to another role changes no endpoint. `GET /me` shows the role and the permissions the token carries.
+The token carries the role's name as `role` and the permissions as a `permission` array (`["products.read","profile.read","stores.read"]`). A route names the permission it needs, `[Authorize(Policy = "roles.read")]`, not a role: the policy checks the `permission` claims of the token, so giving the permission to another role changes no endpoint. `GET /me` shows the role and the permissions the token carries.
 
 - **They are read when a token is made** (register, login, refresh), not on every request. So a changed role, or a changed permission, applies from the **next token**: an access token lives up to 10 minutes (`Jwt:ExpiryMinutes`), and until then it keeps saying what it said. Logging in, or refreshing, gives a token with the current ones. A token made before permissions existed has a role and no permissions, so it is refused by `GET /roles` until its owner logs in or refreshes.
 - **The token grows with the permissions.** A handful is fine; the refresh endpoint accepts up to 2048 characters so an access token sent there by mistake still gets the usual single `401`.
@@ -196,7 +201,37 @@ curl -s -X DELETE http://localhost:8080/stores/$STORE_ID/members/$USER_ID -H "Au
 
 - **The membership and the role are written together or not at all** (a transaction), and each write is guarded in the database: the unique index on `store_members.user_id` allows one store per user, and the role changes only if the user still holds the role it is changing from. So two admins assigning the same customer at once cannot both win.
 - **Access follows the database, the token follows later.** The new store user's access to a store is checked against `store_members` on every request, so it starts, and ends, at once. Their *token* still says `Customer` until it is refreshed or they sign in again, which is at most 10 minutes (`Jwt:ExpiryMinutes`); after a removal it keeps saying `StoreUser` for that long, which opens nothing.
-- A store user belongs to **one** store. A store cannot be deleted, or renamed, through the API yet, and `GET /stores` is not paged yet.
+- A store user belongs to **one** store. A store cannot be deleted, or renamed, through the API yet.
+
+### Products
+
+A store user adds, edits and archives the products of **their own store**; anyone signed in may browse them.
+
+```bash
+curl -s -X POST http://localhost:8080/stores/$STORE_ID/products -H "Authorization: Bearer $STORE_USER_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"Milk","description":"Fresh","price":2.50}'                 # 201 { "id": "...", "storeId": "...", "name": "Milk", ... }
+curl -s "http://localhost:8080/stores/$STORE_ID/products?page=1&pageSize=20" -H "Authorization: Bearer $TOKEN"   # anyone signed in
+curl -s -X PUT    http://localhost:8080/stores/$STORE_ID/products/$PRODUCT_ID -H "Authorization: Bearer $STORE_USER_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"name":"Oat milk","description":"Vegan","price":3.20}'                # 200
+curl -s -X DELETE http://localhost:8080/stores/$STORE_ID/products/$PRODUCT_ID -H "Authorization: Bearer $STORE_USER_TOKEN"   # 204: archived
+```
+
+**Two questions, answered in two places.** `products.manage` says *what kind of user* may add a product, and it is in the token. Whether they may do it *in this store* is a **membership check against the database, on every request**, made by the use case: so a store user taken out of a store is refused at once, even with a token that still says `StoreUser` and still carries `products.manage`. A store the caller does not run is answered **`404 Store.NotFound`, the same as a store that does not exist**: a `403` would tell them the store is there. Browsing needs no membership.
+
+| Status | `code` | When |
+|---|---|---|
+| `400` | | a blank or too long name or description, a price that is not above zero, has more than 2 decimals or does not fit `numeric(12, 2)`; a `page` or `pageSize` outside the limits |
+| `404` | `Store.NotFound` | no such store, **or** a store the caller does not run (adding, editing, archiving) |
+| `404` | `Product.NotFound` | no such product in that store, it is another store's, or it is archived |
+| `409` | `Product.DuplicateName` | the store already sells a live product with that name |
+
+- **A product is archived, not deleted.** `archived_at` is set, it leaves the catalogue and the list, and its name is free for a new product (the unique index on `(store_id, name)` is partial: `WHERE archived_at IS NULL`). The row stays, so an order placed later can say what it bought. An archived product cannot be edited or brought back.
+- **Money** is `numeric(12, 2)` in the database and a `decimal` in the API, never a floating point number. A price with half a cent is refused with a `400`, not rounded. One currency, no currency field.
+- **Every write is one statement with its conditions inside it** (`WHERE id = ... AND store_id = ... AND archived_at IS NULL`), so a product of another store is never touched, and two requests archiving, or renaming to one name, cannot both win. Two people editing the same product do not know about each other: the last write wins (a version on the product is planned).
+
+### Paging
+
+Every list is paged, with one set of limits: `?page=` counts **from 1** (at most 100 000), `?pageSize=` is **1 to 100** (20 by default). A value outside them is a `400` naming the parameter. The answer is `{ "items": [...], "page": 1, "pageSize": 20, "totalCount": 57 }`, and a page past the end has no items but still says `totalCount`. `GET /stores` and `GET /stores/{storeId}/products` are paged; the roles are not (there are three).
 
 ## Health checks
 

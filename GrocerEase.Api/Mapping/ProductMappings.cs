@@ -21,6 +21,8 @@ public static class ProductMappings
         return new UpdateProductCommand(storeId, productId, actorId, request.Name, request.Description ?? string.Empty, request.Price);
     }
 
+    public static ArchiveProductCommand ToArchiveCommand(this Guid productId, Guid storeId, Guid actorId) => new(storeId, productId, actorId);
+
     public static PagedResponse<ProductResponse> ToResponse(this PagedResult<ProductResult> page)
     {
         ArgumentNullException.ThrowIfNull(page);

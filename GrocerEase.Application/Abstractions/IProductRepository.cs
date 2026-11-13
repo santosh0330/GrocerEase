@@ -28,6 +28,13 @@ public interface IProductRepository
     Task<ProductUpdateOutcome> TryUpdateAsync(Product product, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Takes a product off sale by recording when. Returns <c>false</c>, and changes nothing, when it is not on sale in that store: it
+    /// never existed, is another store's, or was archived already. One statement, so two requests archiving the same product cannot both
+    /// succeed. The row stays: an order that bought it can still say what it was.
+    /// </summary>
+    Task<bool> TryArchiveAsync(Guid storeId, Guid productId, DateTimeOffset archivedAt, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Stores a new product. Returns <c>false</c>, and stores nothing, when the store already sells a product with that name. The
     /// unique index has the last word, as for a user's email: this is an expected outcome, not an exception.
     /// </summary>

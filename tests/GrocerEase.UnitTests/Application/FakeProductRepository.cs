@@ -40,6 +40,19 @@ internal sealed class FakeProductRepository : IProductRepository
         return Task.FromResult(ProductUpdateOutcome.Updated);
     }
 
+    public Task<bool> TryArchiveAsync(Guid storeId, Guid productId, DateTimeOffset archivedAt, CancellationToken cancellationToken)
+    {
+        var index = Products.FindIndex(product => product.Id == productId && product.StoreId == storeId && !product.IsArchived);
+        if (index < 0)
+        {
+            return Task.FromResult(false);
+        }
+
+        var product = Products[index];
+        Products[index] = new Product(product.Id, product.StoreId, product.Name, product.Description, product.Price, archivedAt);
+        return Task.FromResult(true);
+    }
+
     public Task<bool> TryAddAsync(Product product, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(product);

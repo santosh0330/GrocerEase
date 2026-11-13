@@ -24,6 +24,7 @@ public sealed class ProductsController(
     ICommandHandler<CreateProductCommand, Result<ProductResult>> createHandler,
     ICommandHandler<GetProductQuery, Result<ProductResult>> getHandler,
     ICommandHandler<UpdateProductCommand, Result<ProductResult>> updateHandler,
+    ICommandHandler<ArchiveProductCommand, Result<ProductResult>> archiveHandler,
     ICommandHandler<ListProductsQuery, Result<PagedResult<ProductResult>>> listHandler) : ControllerBase
 {
     private const string ProblemJson = "application/problem+json";
@@ -82,6 +83,25 @@ public sealed class ProductsController(
 
         var result = await updateHandler.Handle(request.ToCommand(storeId, productId, callerId), cancellationToken);
         return result.Match<IActionResult>(product => Ok(product.ToResponse()), error => this.ToProblem(error));
+    }
+
+    // "Deletes" the product by archiving it: 204, it leaves the catalogue, and its name is free again.
+    [HttpDelete("{productId:guid}")]
+    [Authorize(Policy = Permissions.ProductsManage)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, ProblemJson)]
+    public async Task<IActionResult> Archive(Guid storeId, Guid productId, CancellationToken cancellationToken)
+    {
+        if (User.GetUserId() is not { } callerId)
+        {
+            return this.InvalidTokenProblem();
+        }
+
+        var result = await archiveHandler.Handle(productId.ToArchiveCommand(storeId, callerId), cancellationToken);
+        return result.Match<IActionResult>(_ => NoContent(), error => this.ToProblem(error));
     }
 
     [HttpGet("{productId:guid}")]

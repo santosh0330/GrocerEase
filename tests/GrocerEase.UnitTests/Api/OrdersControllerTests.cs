@@ -7,6 +7,7 @@ using GrocerEase.Application.Common;
 using GrocerEase.Application.Orders.Commands;
 using GrocerEase.Application.Orders.Common;
 using GrocerEase.Application.Orders.Queries;
+using GrocerEase.Contracts.Common;
 using GrocerEase.Contracts.Orders;
 using GrocerEase.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
@@ -36,9 +37,23 @@ public class OrdersControllerTests
     private static readonly OrderResult Placed = new(
         Guid.CreateVersion7(), StoreId, "Pending", "1 High Street", Now, 5.00m, [new OrderLineResult(ProductId, "Milk", 2.50m, 2, 5.00m)]);
 
-    private static OrdersController ControllerWith(Spy<PlaceOrderCommand> place, Spy<GetMyOrderQuery>? get = null, string? sub = null)
+    private sealed class ListSpy(Result<PagedResult<OrderResult>> result) : ICommandHandler<ListMyOrdersQuery, Result<PagedResult<OrderResult>>>
     {
-        var controller = new OrdersController(place, get ?? new Spy<GetMyOrderQuery>(Result.Success(Placed)))
+        public ListMyOrdersQuery? Received { get; private set; }
+
+        public Task<Result<PagedResult<OrderResult>>> Handle(ListMyOrdersQuery command, CancellationToken cancellationToken)
+        {
+            Received = command;
+            return Task.FromResult(result);
+        }
+    }
+
+    private static OrdersController ControllerWith(Spy<PlaceOrderCommand> place, Spy<GetMyOrderQuery>? get = null, string? sub = null, ListSpy? list = null)
+    {
+        var controller = new OrdersController(
+            place,
+            get ?? new Spy<GetMyOrderQuery>(Result.Success(Placed)),
+            list ?? new ListSpy(Result.Success(new PagedResult<OrderResult>([], 1, 20, 0))))
         {
             ProblemDetailsFactory = new StubProblemDetailsFactory(),
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
@@ -115,8 +130,33 @@ public class OrdersControllerTests
         Assert.Equal(StatusCodes.Status404NotFound, Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(notMine).Value).Status);
     }
 
+    [Fact]
+    public async Task List_PutsTheCustomerFromTheTokenAndThePagingInTheQuery_AndReturnsThePageMapped()
+    {
+        var list = new ListSpy(Result.Success(new PagedResult<OrderResult>([Placed], 2, 5, 11)));
+
+        var result = await ControllerWith(new Spy<PlaceOrderCommand>(Result.Success(Placed)), sub: CustomerId.ToString(), list: list).List(CancellationToken.None, 2, 5);
+
+        Assert.Equal(new ListMyOrdersQuery(CustomerId, 2, 5), list.Received); // the customer is the token's: there is nothing in the request to ask for someone else's
+        var body = Assert.IsType<PagedResponse<OrderResponse>>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal([Placed.Id], body.Items.Select(order => order.Id));
+        Assert.Equal((2, 5, 11), (body.Page, body.PageSize, body.TotalCount));
+    }
+
+    [Fact]
+    public async Task List_WithATokenThatDoesNotNameAUser_Is401_AndRunsNothing()
+    {
+        var list = new ListSpy(Result.Success(new PagedResult<OrderResult>([], 1, 20, 0)));
+
+        var result = await ControllerWith(new Spy<PlaceOrderCommand>(Result.Success(Placed)), list: list).List(CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value).Status);
+        Assert.Null(list.Received);
+    }
+
     [Theory]
     [InlineData(nameof(OrdersController.Place), Permissions.OrdersPlace)]
+    [InlineData(nameof(OrdersController.List), Permissions.OrdersRead)]
     [InlineData(nameof(OrdersController.Get), Permissions.OrdersRead)]
     public void EachRoute_NeedsItsPermission_NotARoleName(string action, string permission)
     {

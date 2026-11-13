@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using GrocerEase.Contracts.Common;
 using GrocerEase.Contracts.Inventory;
 using GrocerEase.Contracts.Orders;
 using GrocerEase.Contracts.Products;
@@ -321,5 +322,84 @@ public class PlaceOrderEndpointTests(ApiFactory factory) : IClassFixture<ApiFact
         var (a, b) = (await ProblemAsync(theirs), await ProblemAsync(unknown));
         Assert.Equal((a.GetProperty("code").GetString(), a.GetProperty("detail").GetString()), (b.GetProperty("code").GetString(), b.GetProperty("detail").GetString()));
         Assert.Equal("Order.NotFound", a.GetProperty("code").GetString());
+    }
+
+    private static async Task<PagedResponse<OrderResponse>> MyOrdersAsync(HttpClient client, string token, string query = "")
+    {
+        var response = await SendAsync(client, HttpMethod.Get, $"/orders{query}", token);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<PagedResponse<OrderResponse>>())!;
+    }
+
+    [Fact]
+    public async Task ACustomer_ListsTheirOwnOrders_NewestFirst_WithTheirLines_AndNeverSomeoneElses()
+    {
+        using var client = factory.CreateClient();
+        var shop = await AShopAsync(client);
+        var me = (await RegisterAsync(client)).Token;
+        var other = (await RegisterAsync(client)).Token;
+        var first = await CreatedAsync(await PlaceAsync(client, me, shop.StoreId, Order(lines: (shop.Milk.Id, 1))));
+        await Task.Delay(20); // so the placing times differ
+        var second = await CreatedAsync(await PlaceAsync(client, me, shop.StoreId, Order(lines: [(shop.Milk.Id, 2), (shop.Bread.Id, 1)])));
+        await CreatedAsync(await PlaceAsync(client, other, shop.StoreId, Order(lines: (shop.Bread.Id, 1))));
+
+        var mine = await MyOrdersAsync(client, me);
+        var theirs = await MyOrdersAsync(client, other);
+
+        Assert.Equal([second.Id, first.Id], mine.Items.Select(order => order.Id));
+        Assert.Equal((2, 1, 2), (mine.TotalCount, mine.Items[1].Lines.Count, mine.Items[0].Lines.Count));
+        Assert.Equal(1, theirs.TotalCount);
+        Assert.DoesNotContain(theirs.Items, order => order.Id == first.Id || order.Id == second.Id);
+    }
+
+    [Fact]
+    public async Task TheListOfOrders_IsPaged_AndAPagePastTheEndIsEmpty()
+    {
+        using var client = factory.CreateClient();
+        var shop = await AShopAsync(client);
+        var me = (await RegisterAsync(client)).Token;
+        var placed = new List<Guid>();
+        for (var i = 0; i < 5; i++)
+        {
+            placed.Add((await CreatedAsync(await PlaceAsync(client, me, shop.StoreId, Order(lines: (shop.Milk.Id, 1))))).Id);
+            await Task.Delay(20);
+        }
+
+        placed.Reverse(); // newest first
+        var second = await MyOrdersAsync(client, me, "?page=2&pageSize=2");
+        var past = await MyOrdersAsync(client, me, "?page=9");
+
+        Assert.Equal([placed[2], placed[3]], second.Items.Select(order => order.Id));
+        Assert.Equal((5, 2, 2), (second.TotalCount, second.Page, second.PageSize));
+        Assert.Empty(past.Items);
+        Assert.Equal(5, past.TotalCount);
+    }
+
+    [Fact]
+    public async Task ACustomerWithNoOrders_ListsNone_AndTheListNeedsTheReadPermission()
+    {
+        using var client = factory.CreateClient();
+        var shop = await AShopAsync(client);
+
+        var none = await MyOrdersAsync(client, (await RegisterAsync(client)).Token);
+
+        Assert.Empty(none.Items);
+        Assert.Equal(0, none.TotalCount);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await SendAsync(client, HttpMethod.Get, "/orders", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await SendAsync(client, HttpMethod.Get, "/orders", shop.StoreUser)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await SendAsync(client, HttpMethod.Get, "/orders", shop.Admin)).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("?page=0", "page")]
+    [InlineData("?pageSize=101", "pageSize")]
+    public async Task TheListOfOrders_PagingOutsideTheLimits_Is400_NamingTheParameter(string query, string parameter)
+    {
+        using var client = factory.CreateClient();
+
+        var response = await SendAsync(client, HttpMethod.Get, $"/orders{query}", (await RegisterAsync(client)).Token);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.True((await ProblemAsync(response)).GetProperty("errors").TryGetProperty(parameter, out _));
     }
 }

@@ -61,7 +61,11 @@ public sealed class Order
 
     public Guid CustomerId { get; }
 
-    public OrderStatus Status { get; }
+    /// <summary>
+    /// Where the order is in its life. Only <see cref="Verify"/>, <see cref="Ship"/> and <see cref="Cancel"/> change it (the setter is
+    /// private, and an architecture test says so), so an order cannot be put in a state its history does not allow.
+    /// </summary>
+    public OrderStatus Status { get; private set; }
 
     public string DeliveryAddress { get; }
 
@@ -72,6 +76,31 @@ public sealed class Order
 
     /// <summary>The sum of the lines, computed: it cannot disagree with them.</summary>
     public decimal Total => _lines.Sum(line => line.LineTotal);
+
+    /// <summary>The store accepts a <see cref="OrderStatus.Pending"/> order. Returns <c>false</c> and changes nothing from any other status.</summary>
+    public bool Verify() => MoveTo(OrderStatus.Verified, OrderStatus.Pending);
+
+    /// <summary>The store sends a <see cref="OrderStatus.Verified"/> order. Returns <c>false</c> and changes nothing from any other status.</summary>
+    public bool Ship() => MoveTo(OrderStatus.Shipped, OrderStatus.Verified);
+
+    /// <summary>
+    /// The order is refused or withdrawn while it has not shipped: from <see cref="OrderStatus.Pending"/> or <see cref="OrderStatus.Verified"/>.
+    /// Returns <c>false</c> and changes nothing from any other status. Putting the stock back is the use case's job, in the same unit of work.
+    /// </summary>
+    public bool Cancel() => MoveTo(OrderStatus.Cancelled, OrderStatus.Pending, OrderStatus.Verified);
+
+    // The whole state machine is these three calls: each says which statuses it may leave. A refused move is a value, not an exception,
+    // because "someone already shipped it" is an expected answer to a request, not a bug.
+    private bool MoveTo(OrderStatus target, params ReadOnlySpan<OrderStatus> from)
+    {
+        if (!from.Contains(Status))
+        {
+            return false;
+        }
+
+        Status = target;
+        return true;
+    }
 
     /// <summary>
     /// Makes a new <see cref="OrderStatus.Pending"/> order. The lines must belong to it (<c>OrderId</c> is this order's id), there must be

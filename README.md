@@ -87,7 +87,14 @@ The API also needs a PostgreSQL connection string, as the least-privilege role: 
 
 ## Authentication
 
-`POST /auth/register` and `POST /auth/login` return a JWT in `token` and a refresh token in `refreshToken`. Send the JWT on every request to a protected route:
+`POST /auth/register`, `POST /auth/login` and `POST /auth/refresh` all return the same shape: a JWT in `token`, **when it stops working in `expiresAt`**, and a refresh token in `refreshToken`.
+
+```json
+{ "id": "...", "firstName": "Ada", "lastName": "Lovelace", "email": "ada@example.com",
+  "token": "eyJ...", "expiresAt": "2026-11-13T12:10:00+00:00", "refreshToken": "..." }
+```
+
+`expiresAt` is a UTC instant (ISO 8601), the same moment the token carries as its `exp` claim, so a client can schedule its refresh without decoding the token. It is in whole seconds, because a JWT cannot say more, and it follows `Jwt:ExpiryMinutes`. Both come from the one place that makes the token (an architecture test keeps it that way), so they cannot disagree. Refresh a little *before* it, not at it: the API still accepts a token up to 30 seconds past its expiry (see below), but a client should not rely on that. Send the JWT on every request to a protected route:
 
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8080/auth/login -H 'Content-Type: application/json' \
@@ -130,19 +137,19 @@ A token is accepted up to 30 seconds past its expiry, to forgive small clock dif
 
 ### Refresh tokens
 
-A JWT lives 60 minutes. To stay signed in without asking for the password again, exchange the **refresh token** for a new pair:
+A JWT lives 10 minutes (`Jwt:ExpiryMinutes`; the response says exactly when, in `expiresAt`). To stay signed in without asking for the password again, exchange the **refresh token** for a new pair:
 
 ```bash
 curl -s -X POST http://localhost:8080/auth/refresh -H 'Content-Type: application/json' \
   -d "{\"refreshToken\":\"$REFRESH_TOKEN\"}"
 ```
 
-The response has the same shape as login: a new `token` and a **new** `refreshToken`. The one you sent is now used up, so store the new one and discard the old.
+The response has the same shape as login: a new `token` with its new `expiresAt`, and a **new** `refreshToken`. The one you sent is now used up, so store the new one and discard the old.
 
 - **In the JSON body, never the URL.** A URL is written to access logs and proxies; a body is not. `GET /auth/refresh` is `405`.
 - **Lives 3 days** (`RefreshToken:LifetimeDays`), counted from when it was issued. Each refresh starts a new 3-day window.
 - **A session ends after 30 days at most** (`RefreshToken:MaxLifetimeDays`), however often it is refreshed: the token issued near the end is cut short to the 30th day, and after that the user signs in again. Neither setting may be above 30 (the API refuses to start), and the database refuses a row that lives longer.
-- **One use each.** A token that is presented a second time means someone kept a copy. The server then **revokes the whole session** (every token descended from that sign-in), so the thief and the owner are both signed out and the owner signs in again. Other sessions of the same user (another device) are not touched. An access token that was already issued stays valid until it expires (at most 60 minutes): it is a signed token the server does not look up.
+- **One use each.** A token that is presented a second time means someone kept a copy. The server then **revokes the whole session** (every token descended from that sign-in), so the thief and the owner are both signed out and the owner signs in again. Other sessions of the same user (another device) are not touched. An access token that was already issued stays valid until it expires (at most 10 minutes, `Jwt:ExpiryMinutes`): it is a signed token the server does not look up.
 - **Two requests with the same token at once:** exactly one succeeds. The other is treated as a reuse, so a client must not refresh from two places in parallel with the same token.
 - **Only a SHA-256 hash is stored.** A copy of the database cannot be used to refresh a session. The token itself (32 random bytes, 43 base64url characters) is never stored or logged.
 - **Failures** are `application/problem+json`: `401` with code `Authentication.InvalidRefreshToken` for a token that is unknown, expired, used or revoked (one answer for all, so nothing is learned from the difference); `400` for an empty or oversized token; `429` over the limit (30 per minute per address, `RateLimiting:Refresh`).

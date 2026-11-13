@@ -11,12 +11,15 @@ public class LoginCommandHandlerTests
 {
     private sealed class StubTokenGenerator : IJwtTokenGenerator
     {
+        /// <summary>What the stub says every token expires at; a handler must pass it on untouched.</summary>
+        public static readonly DateTimeOffset ExpiresAt = new(2026, 11, 13, 10, 10, 0, TimeSpan.Zero);
+
         public Role? LastRole { get; private set; }
 
-        public string GenerateToken(User user, Role role)
+        public IssuedAccessToken GenerateToken(User user, Role role)
         {
             LastRole = role;
-            return $"token-for-{user.Email}";
+            return new IssuedAccessToken($"token-for-{user.Email}", ExpiresAt);
         }
     }
 

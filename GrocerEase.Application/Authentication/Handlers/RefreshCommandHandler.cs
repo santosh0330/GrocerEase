@@ -61,7 +61,7 @@ public sealed class RefreshCommandHandler(
 
         // The role is read again on every refresh, so a role changed since the last token shows up in the new one.
         var role = await roleRepository.GetRequiredByIdAsync(user.RoleId, cancellationToken);
-        var accessToken = jwtTokenGenerator.GenerateToken(user, role);
+        var accessToken = jwtTokenGenerator.GenerateToken(user, role).Token;
         return Result.Success(new AuthenticationResult(user.Id, user.FirstName, user.LastName, user.Email, accessToken, newToken));
     }
 

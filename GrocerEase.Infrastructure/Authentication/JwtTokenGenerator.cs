@@ -1,4 +1,5 @@
 using GrocerEase.Application.Abstractions;
+using GrocerEase.Application.Authentication.Common;
 using GrocerEase.Domain.Entities;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -27,7 +28,7 @@ public sealed class JwtTokenGenerator : IJwtTokenGenerator
         _credentials = new SigningCredentials(_settings.CreateSigningKey(), SecurityAlgorithms.HmacSha256);
     }
 
-    public string GenerateToken(User user, Role role)
+    public IssuedAccessToken GenerateToken(User user, Role role)
     {
         ArgumentNullException.ThrowIfNull(user);
         ArgumentNullException.ThrowIfNull(role);
@@ -39,6 +40,10 @@ public sealed class JwtTokenGenerator : IJwtTokenGenerator
         }
 
         var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        // A JWT writes exp as whole seconds. Cut the instant to the second here, and use that one value both in the token and in what is handed
+        // back, so the expiry a client is told is exactly the exp it will find in the token, never a fraction of a second later.
+        var expiresAt = DateTimeOffset.FromUnixTimeSeconds(new DateTimeOffset(now.AddMinutes(_settings.ExpiryMinutes)).ToUnixTimeSeconds());
 
         // Copied into the token, so a request needs no database query to know what its caller may do. The cost is that a change to
         // the role's permissions reaches a caller only with the next token.
@@ -60,7 +65,7 @@ public sealed class JwtTokenGenerator : IJwtTokenGenerator
             Audience = _settings.Audience,
             IssuedAt = now,
             NotBefore = now,
-            Expires = now.AddMinutes(_settings.ExpiryMinutes),
+            Expires = expiresAt.UtcDateTime,
             SigningCredentials = _credentials,
         };
 
@@ -70,6 +75,6 @@ public sealed class JwtTokenGenerator : IJwtTokenGenerator
             descriptor.Claims[JwtClaims.Permission] = permissions.ToArray();
         }
 
-        return _handler.CreateToken(descriptor);
+        return new IssuedAccessToken(_handler.CreateToken(descriptor), expiresAt);
     }
 }

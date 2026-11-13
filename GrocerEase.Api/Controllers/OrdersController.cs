@@ -4,6 +4,7 @@ using GrocerEase.Application.Common;
 using GrocerEase.Application.Orders.Commands;
 using GrocerEase.Application.Orders.Common;
 using GrocerEase.Application.Orders.Queries;
+using GrocerEase.Contracts.Common;
 using GrocerEase.Contracts.Orders;
 using GrocerEase.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
@@ -20,7 +21,8 @@ namespace GrocerEase.Api.Controllers;
 [ApiController]
 public sealed class OrdersController(
     ICommandHandler<PlaceOrderCommand, Result<OrderResult>> placeHandler,
-    ICommandHandler<GetMyOrderQuery, Result<OrderResult>> getHandler) : ControllerBase
+    ICommandHandler<GetMyOrderQuery, Result<OrderResult>> getHandler,
+    ICommandHandler<ListMyOrdersQuery, Result<PagedResult<OrderResult>>> listHandler) : ControllerBase
 {
     private const string ProblemJson = "application/problem+json";
 
@@ -44,6 +46,24 @@ public sealed class OrdersController(
         return result.Match<IActionResult>(
             order => CreatedAtAction(nameof(Get), new { orderId = order.Id }, order.ToResponse()),
             error => this.ToProblem(error));
+    }
+
+    // The caller's own orders, newest first. There is no way to ask for someone else's: the customer is the one in the token.
+    [HttpGet("/orders")]
+    [Authorize(Policy = Permissions.OrdersRead)]
+    [ProducesResponseType<PagedResponse<OrderResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, ProblemJson)]
+    public async Task<IActionResult> List(CancellationToken cancellationToken, [FromQuery] int page = 1, [FromQuery] int pageSize = Paging.DefaultPageSize)
+    {
+        if (User.GetUserId() is not { } customerId)
+        {
+            return this.InvalidTokenProblem();
+        }
+
+        var result = await listHandler.Handle(new ListMyOrdersQuery(customerId, page, pageSize), cancellationToken);
+        return result.Match<IActionResult>(orders => Ok(orders.ToResponse()), error => this.ToProblem(error));
     }
 
     [HttpGet("/orders/{orderId:guid}")]

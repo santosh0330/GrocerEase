@@ -1,5 +1,7 @@
+using GrocerEase.Application.Common;
 using GrocerEase.Application.Orders.Commands;
 using GrocerEase.Application.Orders.Common;
+using GrocerEase.Contracts.Common;
 using GrocerEase.Contracts.Orders;
 
 namespace GrocerEase.Api.Mapping;
@@ -17,6 +19,12 @@ public static class OrderMappings
             .. (request.Lines ?? []).Select(line => line is null ? new OrderLineInput(Guid.Empty, 0) : new OrderLineInput(line.ProductId, line.Quantity)),
         ];
         return new PlaceOrderCommand(storeId, customerId, request.DeliveryAddress, lines);
+    }
+
+    public static PagedResponse<OrderResponse> ToResponse(this PagedResult<OrderResult> page)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        return new PagedResponse<OrderResponse>([.. page.Items.Select(order => order.ToResponse())], page.Page, page.PageSize, page.TotalCount);
     }
 
     public static OrderResponse ToResponse(this OrderResult result)
